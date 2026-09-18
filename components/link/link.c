@@ -9,6 +9,7 @@
 #include "esp_heap_caps.h"
 #include "esp_rom_crc.h"
 #include "esp_system.h"
+#include "net/net.h"
 #include "storage/storage.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -167,6 +168,9 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
         out[n++] = 0, out[n++] = 0;   // game API minor
         n += snprintf((char *)out + n, sizeof(out) - n, "%s", app->version) + 1;
         n += snprintf((char *)out + n, sizeof(out) - n, "%s", "waveshare-amoled-175c") + 1;
+        // The Wi-Fi key. A cable is physical access, so handing it over here is the
+        // bootstrap that lets update.ps1 work unattended afterwards.
+        n += snprintf((char *)out + n, sizeof(out) - n, "%s", net_device_key()) + 1;
         send(seq, cmd | 0x80, out, n);
         ESP_LOGI(TAG, "app connected");
         break;

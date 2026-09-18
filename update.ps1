@@ -1,6 +1,10 @@
 # One command to put the current code on the Tilt-a-tron.
 #
 #   .\update.ps1            build, then install over Wi-Fi if the watch answers,
+#
+# The watch's Wi-Fi endpoints need its key (so nobody else on the network can flash it).
+# This finds it by itself when the watch is plugged in, and remembers it; otherwise pass
+# -Key, set TILTATRON_KEY, or read it from Settings > UPDATE on the watch.
 #                           otherwise over USB if it's plugged in
 #   .\update.ps1 -NoBuild   install the last build
 #   .\update.ps1 -Usb       force USB        .\update.ps1 -Wifi   force Wi-Fi
@@ -13,6 +17,7 @@
 # file it sent, so "OK" really means the new build is running.
 param(
     [string]$Ip = "",
+    [string]$Key = "",
     [switch]$NoBuild,
     [switch]$Usb,
     [switch]$Wifi,
@@ -31,6 +36,38 @@ function Get-WatchStatus($target) {
 }
 
 # Find the watch on the network: explicit -Ip, then its .local name, then the last address that worked.
+$keyCache = Join-Path $env:LOCALAPPDATA "tiltatron\key"
+
+function Get-DeviceKey {
+    if ($Key) { return $Key }
+    if ($env:TILTATRON_KEY) { return $env:TILTATRON_KEY }
+    if (Test-Path $keyCache) {
+        $k = (Get-Content $keyCache -Raw).Trim()
+        if ($k) { return $k }
+    }
+    # Plugged in? Read it over the USB link and remember it.
+    $port = Find-UsbPort
+    if ($port) {
+        try {
+            $out = python "$PSScriptRoot\tools\tatlink.py" --port $port 2>&1 | Out-String
+            if ($out -match 'wi-fi key ([0-9a-f]{16})') {
+                $k = $Matches[1]
+                New-Item -ItemType Directory -Force (Split-Path $keyCache) | Out-Null
+                Set-Content -Path $keyCache -Value $k
+                Write-Host "Read this watch's key over USB and remembered it."
+                return $k
+            }
+        } catch {}
+    }
+    return ""
+}
+
+function Add-Key([string]$url) {
+    $k = Get-DeviceKey
+    if (-not $k) { return $url }
+    return $url + $(if ($url.Contains("?")) { "&" } else { "?" }) + "key=$k"
+}
+
 function Find-Watch {
     $candidates = @()
     if ($Ip) { $candidates += $Ip }
@@ -87,7 +124,7 @@ if ($Log -or $Status -or $Crash) {
         }
         return
     }
-    (Invoke-WebRequest -UseBasicParsing "http://$($w.Ip)/log" -TimeoutSec 10).Content
+    (Invoke-WebRequest -UseBasicParsing (Add-Key "http://$($w.Ip)/log") -TimeoutSec 10).Content
     return
 }
 
@@ -123,7 +160,7 @@ if ($watch) {
     foreach ($attempt in 1..3) {
         try {
             $sw = [Diagnostics.Stopwatch]::StartNew()
-            [void](Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://$($watch.Ip)/update" -InFile $bin `
+            [void](Invoke-WebRequest -UseBasicParsing -Method Post -Uri (Add-Key "http://$($watch.Ip)/update") -InFile $bin `
                 -ContentType "application/octet-stream" -TimeoutSec 180)
             Write-Host ("  sent in {0:N1} s" -f $sw.Elapsed.TotalSeconds)
             $sent = $true

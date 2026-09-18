@@ -26,6 +26,9 @@ public sealed class Watch : IDisposable
     public string Board { get; private set; } = "";
     public (int Major, int Minor) GameApi { get; private set; }
 
+    /// <summary>The key its Wi-Fi endpoints want. A cable is physical access, so it tells us.</summary>
+    public string WifiKey { get; private set; } = "";
+
     Watch(SerialPort port, string name)
     {
         _port = port;
@@ -184,6 +187,7 @@ public sealed class Watch : IDisposable
         var rest = Encoding.UTF8.GetString(b, 6, b.Length - 6).Split('\0');
         Firmware = rest.Length > 0 ? rest[0] : "";
         Board = rest.Length > 1 ? rest[1] : "";
+        WifiKey = rest.Length > 2 ? rest[2] : "";
     }
 
     public (uint Total, uint Free, int Count) Info()

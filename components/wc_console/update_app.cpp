@@ -130,7 +130,8 @@ void UpdateApp::drawReady(Gfx &g)
     g.textCentered(C, 232, net_ip(), ui::TEXT, 2, true);
     std::string s = ssid_.size() > 20 ? ssid_.substr(0, 19) + "~" : ssid_;
     g.textCentered(C, 260, s.c_str(), ui::DIM, 2, true);
-    g.textCentered(C, 312, "RUN OTA.PS1 ON PC", ui::DIM, 2, true);
+    g.textCentered(C, 300, "KEY", ui::DIM, 2, true);
+    g.textCentered(C, 326, net_device_key(), ui::ACCENT, 2, true);
     ui::outlineButton(g, ui::buttonRect(0, 2), "WI-FI");
     ui::outlineButton(g, ui::buttonRect(1, 2), "EXIT");
 }

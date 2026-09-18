@@ -69,6 +69,13 @@ typedef struct {
 // HTTP on port 80: GET / (upload page), GET /status (JSON), GET /log (recent log
 // lines), GET /reboot, POST /update (raw .bin body)
 esp_err_t ota_server_start(void);
+
+// Every endpoint except /status needs this key, as ?key=... or an X-Tat-Key header.
+// Without it anyone on the same network could flash the watch, drive it or watch its
+// screen. It is made once on first use and kept in NVS; the watch shows it on the update
+// screen, and hands it over the USB link, where physical access already implies trust.
+#define NET_KEY_LEN 17   // 16 hex characters and a terminator
+const char *net_device_key(void);
 // Keep the most recent log output in memory so it can be read over Wi-Fi at /log.
 // Call first thing at boot.
 void net_log_capture_start(void);
