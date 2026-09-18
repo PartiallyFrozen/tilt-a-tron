@@ -1,0 +1,18 @@
+# The repo is edited on Windows but built and read on Linux and macOS too, and it had
+# drifted into a mix of LF and CRLF - sometimes within one file. That turned one-line
+# changes into hundred-line diffs. Everything text is LF in the repository from here on.
+* text=auto eol=lf
+
+# Binaries git must not touch.
+*.png binary
+*.jpg binary
+*.bin binary
+*.ico binary
+*.wad binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+
+# This one is read on a Windows PC straight off the watch's storage, so it keeps
+# Windows line endings (it is embedded in the firmware byte for byte).
+themes/README.txt text eol=crlf
