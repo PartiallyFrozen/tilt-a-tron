@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "audio/audio.h"
+#include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
 #include "engine/gestures.h"
@@ -123,7 +124,7 @@ struct Tiltatris::State {
     Gestures ges;
     int64_t touch_t0 = 0;
     bool touch_was = false;
-    bool menu = false, menu_dirty = false;
+    console::ui::PauseMenu menu;
 
     // ---- drawing
     Canvas canvas;
@@ -421,14 +422,18 @@ struct Tiltatris::State {
         phase_t += dt;
         updateTilt(in, dt);
 
-        if (menu) {
-            if (ges.tap) menuTap(e, ges.x, ges.y);
-            if (ges.swipe_right || (in.clicked & BTN_B)) menu = false;
+        if (menu.isOpen()) {
+            switch (menu.update(e, ges, in)) {
+            case 0: menu.toggleSound(); break;
+            case 1:
+                newGame();
+                menu.close();
+                break;
+            }
             return;
         }
         if (ges.swipe_left && phase != GAME_OVER) {
-            menu = true;
-            menu_dirty = true;
+            menu.open();
             return;
         }
 
@@ -454,36 +459,14 @@ struct Tiltatris::State {
     }
 
     // ------------------------------------------------------------------ menu
-    void menuTap(Engine &e, int x, int y)
-    {
-        namespace ui = console::ui;
-        if (ui::rowRect(0).hit(x, y)) {
-            wc::audio::setVolume(wc::audio::volume() == 0 ? 2 : 0);
-            if (wc::audio::volume() > 0) sfx::start();
-            menu_dirty = true;
-        } else if (ui::rowRect(1).hit(x, y)) {
-            newGame();
-            menu = false;
-        } else if (ui::buttonRect(0, 2).hit(x, y)) {
-            menu = false;
-        } else if (ui::buttonRect(1, 2).hit(x, y)) {
-            menu = false;
-            e.goHome();
-        }
-    }
-
     void drawMenu(Gfx &g)
     {
         namespace ui = console::ui;
-        ui::clearScreen(g);
-        ui::title(g, "PAUSED");
-        ui::row(g, 0, "SOUND", wc::audio::volume() ? "ON" : "OFF", wc::audio::volume() ? ui::GO : ui::DIM);
-        ui::row(g, 1, "NEW GAME", "GO", ui::ACCENT);
         char buf[16];
         snprintf(buf, sizeof(buf), "%d", best);
-        ui::row(g, 2, "BEST", buf, ui::LABEL);
-        ui::button(g, ui::buttonRect(0, 2), "RESUME");
-        ui::outlineButton(g, ui::buttonRect(1, 2), "HOME");
+        const ui::PauseMenu::Row rows[] = {
+            menu.soundRow(), {"NEW GAME", "GO", ui::ACCENT}, {"BEST", buf, ui::LABEL}};
+        menu.draw(g, rows, 3);
     }
 
     // ------------------------------------------------------------------ drawing
@@ -571,11 +554,8 @@ struct Tiltatris::State {
 
     void draw(Engine &e, Gfx &g)
     {
-        if (menu) {
-            if (menu_dirty) {
-                drawMenu(g);
-                menu_dirty = false;
-            }
+        if (menu.isOpen()) {
+            drawMenu(g);
             return;
         }
         Canvas &c = canvas;
@@ -625,14 +605,11 @@ void Tiltatris::begin(Engine &e)
 
 void Tiltatris::enter(Engine &e)
 {
-    if (s_->phase == PLAYING) {
-        s_->menu = true;
-        s_->menu_dirty = true;
-    }
-    s_->menu_dirty = s_->menu;
+    if (s_->phase == PLAYING) s_->menu.open();
+    else s_->menu.invalidate();
 }
 
-bool Tiltatris::keepAwake() const { return !s_->menu && (s_->phase == PLAYING || s_->phase == CLEARING); }
+bool Tiltatris::keepAwake() const { return !s_->menu.isOpen() && (s_->phase == PLAYING || s_->phase == CLEARING); }
 
 void Tiltatris::update(Engine &e, float dt) { s_->update(e, std::min(dt, 1.0f / 30)); }
 

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "audio/audio.h"
+#include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
 #include "engine/gestures.h"
@@ -224,7 +225,7 @@ struct Breakout::State {
     float base_speed = BASE_SPEED;
 
     // --- menu
-    bool menu = false, menu_dirty = false, menu_drawn = false;
+    console::ui::PauseMenu menu;
 
     // --- input
     Gestures ges;
@@ -534,43 +535,17 @@ struct Breakout::State {
 
     void openMenu()
     {
-        menu = true;
-        menu_dirty = true;
+        menu.open();
         ptr_down = false;
     }
 
     void closeMenu()
     {
-        menu = false;
+        menu.close();
         full_redraw = true;
         base_speed = SPEEDS[speed_idx];
         speed = std::min(base_speed * (1 + 0.08f * (level - 1)), base_speed * 1.5f);
         saveSettings();
-    }
-
-    // Pause menu (shared console layout): control, tilt direction, speed; RESUME / HOME.
-    void menuTap(Engine &e, int x, int y)
-    {
-        namespace ui = console::ui;
-        for (int i = 0; i < 4; i++) {
-            if (!ui::rowRect(i).hit(x, y)) continue;
-            if (i == 0) setMode(Mode((mode + 1) % 3));
-            if (i == 1) tilt_invert = !tilt_invert;
-            if (i == 2) speed_idx = (speed_idx + 1) % 3;
-            if (i == 3) {
-                // Sound off/on without leaving the game (console volume).
-                const int v = wc::audio::volume();
-                wc::audio::setVolume(v == 0 ? 2 : 0);
-                if (wc::audio::volume() > 0) sfx::launch();
-            }
-            menu_dirty = true;
-            return;
-        }
-        if (ui::buttonRect(0, 2).hit(x, y)) closeMenu();
-        if (ui::buttonRect(1, 2).hit(x, y)) {
-            closeMenu();
-            e.goHome();
-        }
     }
 
     void handleInput(Engine &e, float dt)
@@ -581,9 +556,15 @@ struct Breakout::State {
 
         ges.update(t);
 
-        if (menu) {
-            if (ges.tap) menuTap(e, ges.x, ges.y);
-            if (ges.swipe_right || (in.clicked & BTN_B)) closeMenu();
+        if (menu.isOpen()) {
+            const int row = menu.update(e, ges, in);
+            if (row == 0) setMode(Mode((mode + 1) % 3));
+            else if (row == 1) tilt_invert = !tilt_invert;
+            else if (row == 2) speed_idx = (speed_idx + 1) % 3;
+            else if (row == 3) menu.toggleSound();
+            // RESUME and HOME are handled inside update(); either way the game resumes
+            // through closeMenu()'s settings save.
+            if (!menu.isOpen()) closeMenu();
             return;
         }
         if (ges.swipe_left && !over) {
@@ -676,7 +657,7 @@ struct Breakout::State {
 
         const float prev = paddle;
         handleInput(e, dt);
-        if (over || menu) return;
+        if (over || menu.isOpen()) return;
 
         if (has_target) paddle += wrap(target - paddle) * std::min(1.0f, dt * 20);
         paddle = wrap(paddle);
@@ -896,24 +877,17 @@ struct Breakout::State {
     void drawMenu(Gfx &g)
     {
         namespace ui = console::ui;
-        ui::clearScreen(g);
-        ui::title(g, "PAUSED");
-        ui::row(g, 0, "CONTROL", MODE_NAMES[mode]);
-        ui::row(g, 1, "TILT DIR", tilt_invert ? "MIRROR" : "NORMAL");
-        ui::row(g, 2, "SPEED", SPEED_NAMES[speed_idx]);
-        ui::row(g, 3, "SOUND", wc::audio::volume() ? "ON" : "OFF",
-                wc::audio::volume() ? ui::GO : ui::DIM);
-        ui::button(g, ui::buttonRect(0, 2), "RESUME");
-        ui::outlineButton(g, ui::buttonRect(1, 2), "HOME");
+        const ui::PauseMenu::Row rows[] = {{"CONTROL", MODE_NAMES[mode]},
+                                           {"TILT DIR", tilt_invert ? "MIRROR" : "NORMAL"},
+                                           {"SPEED", SPEED_NAMES[speed_idx]},
+                                           menu.soundRow()};
+        menu.draw(g, rows, 4);
     }
 
     void draw(Engine &e, Gfx &g)
     {
-        if (menu) {
-            if (menu_dirty) {
-                drawMenu(g);
-                menu_dirty = false;
-            }
+        if (menu.isOpen()) {
+            drawMenu(g);
             return;
         }
         Canvas &c = canvas;
@@ -1011,7 +985,7 @@ void Breakout::enter(Engine &e)
 
 bool Breakout::keepAwake() const
 {
-    if (s_->over || s_->menu) return false;
+    if (s_->over || s_->menu.isOpen()) return false;
     return std::any_of(s_->balls.begin(), s_->balls.end(), [](const Ball &b) { return !b.stuck; });
 }
 

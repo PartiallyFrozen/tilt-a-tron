@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "audio/audio.h"
+#include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
 #include "engine/gestures.h"
@@ -136,7 +137,7 @@ struct Maze::State {
 
     // ---- menu / input
     Gestures ges;
-    bool menu = false, menu_dirty = false;
+    console::ui::PauseMenu menu;
 
     // ------------------------------------------------------------------ helpers
     int idx(int c, int r) const { return r * n + c; }
@@ -436,14 +437,19 @@ struct Maze::State {
         ges.update(in.touch);
         phase_t += dt;
 
-        if (menu) {
-            if (ges.tap) menuTap(e, ges.x, ges.y);
-            if (ges.swipe_right || (in.clicked & BTN_B)) closeMenu();
+        if (menu.isOpen()) {
+            switch (menu.update(e, ges, in)) {
+            case 0: levelTap(e); break;
+            case 1: menu.toggleSound(); break;
+            case 2:
+                newGame();   // back to level 1 with three balls
+                menu.close();
+                break;
+            }
             return;
         }
         if (ges.swipe_left && (phase == PLAYING || phase == READY)) {
-            menu = true;
-            menu_dirty = true;
+            menu.open();
             return;
         }
 
@@ -485,49 +491,29 @@ struct Maze::State {
     }
 
     // ------------------------------------------------------------------ menu
-    void closeMenu() { menu = false; }
-
-    void menuTap(Engine &e, int x, int y)
+    // Hold the watch how you like, then tap: that becomes level. Tap again to go back to flat.
+    void levelTap(Engine &e)
     {
-        namespace ui = console::ui;
-        if (ui::rowRect(0).hit(x, y)) {
-            // Hold the watch how you like, then tap: that becomes level. Tap again to go back to flat.
-            if (tilt_nx == 0 && tilt_ny == 0) {
-                tilt_nx = e.input().tilt.ax;
-                tilt_ny = e.input().tilt.ay;
-            } else {
-                tilt_nx = tilt_ny = 0;
-            }
-            vx = vy = 0;
-            menu_dirty = true;
-        } else if (ui::rowRect(1).hit(x, y)) {
-            wc::audio::setVolume(wc::audio::volume() == 0 ? 2 : 0);
-            if (wc::audio::volume() > 0) sfx::start();
-            menu_dirty = true;
-        } else if (ui::rowRect(2).hit(x, y)) {
-            newGame();   // back to level 1 with three balls
-            closeMenu();
-        } else if (ui::buttonRect(0, 2).hit(x, y)) {
-            closeMenu();
-        } else if (ui::buttonRect(1, 2).hit(x, y)) {
-            closeMenu();
-            e.goHome();
+        if (tilt_nx == 0 && tilt_ny == 0) {
+            tilt_nx = e.input().tilt.ax;
+            tilt_ny = e.input().tilt.ay;
+        } else {
+            tilt_nx = tilt_ny = 0;
         }
+        vx = vy = 0;
     }
 
     void drawMenu(Gfx &g)
     {
         namespace ui = console::ui;
-        ui::clearScreen(g);
-        ui::title(g, "PAUSED");
-        ui::row(g, 0, "LEVEL", tilt_nx == 0 && tilt_ny == 0 ? "FLAT" : "CUSTOM", ui::ACCENT);
-        ui::row(g, 1, "SOUND", wc::audio::volume() ? "ON" : "OFF", wc::audio::volume() ? ui::GO : ui::DIM);
-        ui::row(g, 2, "NEW GAME", "GO", ui::ACCENT);
         char buf[16];
         snprintf(buf, sizeof(buf), "%d", best);
-        ui::row(g, 3, "BEST LEVEL", buf, ui::LABEL);
-        ui::button(g, ui::buttonRect(0, 2), "RESUME");
-        ui::outlineButton(g, ui::buttonRect(1, 2), "HOME");
+        const ui::PauseMenu::Row rows[] = {
+            {"LEVEL", tilt_nx == 0 && tilt_ny == 0 ? "FLAT" : "CUSTOM", ui::ACCENT},
+            menu.soundRow(),
+            {"NEW GAME", "GO", ui::ACCENT},
+            {"BEST LEVEL", buf, ui::LABEL}};
+        menu.draw(g, rows, 4);
     }
 
     // ------------------------------------------------------------------ drawing
@@ -659,11 +645,8 @@ struct Maze::State {
 
     void draw(Engine &e, Gfx &g)
     {
-        if (menu) {
-            if (menu_dirty) {
-                drawMenu(g);
-                menu_dirty = false;
-            }
+        if (menu.isOpen()) {
+            drawMenu(g);
             return;
         }
         Canvas &c = canvas;
@@ -707,8 +690,7 @@ void Maze::enter(Engine &e)
     s_->redraw = true;
     // Coming back from the home screen mid-roll: pause rather than let it run blind.
     if (s_->phase == PLAYING) {
-        s_->menu = true;
-        s_->menu_dirty = true;
+        s_->menu.open();
     }
 }
 
@@ -716,7 +698,7 @@ bool Maze::keepAwake() const
 {
     // A marble game has no button presses, so count a rolling ball as "in use",
     // but not a watch left on the table with the ball at rest.
-    return !s_->menu && s_->phase == PLAYING && s_->still_t < 20.0f;
+    return !s_->menu.isOpen() && s_->phase == PLAYING && s_->still_t < 20.0f;
 }
 
 void Maze::update(Engine &e, float dt)

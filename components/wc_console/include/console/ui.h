@@ -19,6 +19,7 @@ inline Color TEXT = rgb(255, 255, 255);
 inline Color PANEL = rgb(16, 18, 26);   // solid fill behind rows/buttons, so busy
                                         // backgrounds don't show through the text
 inline Color BOX = rgb(90, 90, 100);
+inline Color SCRIM = rgb(30, 32, 40);   // solid backdrop behind a menu, so text always reads
 inline Color LABEL = rgb(225, 225, 225);
 inline Color VALUE = wc::colors::cyan;
 inline Color GO = rgb(40, 200, 110);

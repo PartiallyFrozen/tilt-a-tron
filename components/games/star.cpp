@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "audio/audio.h"
+#include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
 #include "engine/gestures.h"
@@ -333,7 +334,7 @@ struct Star::State {
 
     // ---- ui
     Gestures ges;
-    bool menu = false, menu_dirty = false;
+    console::ui::PauseMenu menu;
     bool dirty = true;
     int64_t last_tap_us = 0;
     int stars_earned = 0;
@@ -564,14 +565,28 @@ struct Star::State {
         const InputState &in = e.input();
         ges.update(in.touch);
         phase_t += dt;
-        if (menu) {
-            if (ges.tap) menuTap(e, ges.x, ges.y);
-            if (ges.swipe_right || (in.clicked & BTN_B)) closeMenu();
+        if (menu.isOpen()) {
+            switch (menu.update(e, ges, in)) {
+            case 0:
+                won = false;
+                startLevel(level >= depth ? 1 : level + 1);   // step through the levels reached so far
+                break;
+            case 1: menu.toggleSound(); break;
+            case 2:
+                flat_play = !flat_play;
+                save();
+                break;
+            case 3:
+                won = false;
+                startLevel(level);
+                menu.close();
+                break;
+            }
+            if (!menu.isOpen()) dirty = true;   // the board is showing again
             return;
         }
         if (ges.swipe_left) {
-            menu = true;
-            menu_dirty = true;
+            menu.open();
             return;
         }
         if (tween_t < 1) {
@@ -625,52 +640,16 @@ struct Star::State {
     }
 
     // ------------------------------------------------------------------ menu
-    void closeMenu()
-    {
-        menu = false;
-        dirty = true;
-    }
-
-    void menuTap(Engine &e, int x, int y)
-    {
-        namespace ui = console::ui;
-        if (ui::rowRect(0).hit(x, y)) {
-            won = false;
-            startLevel(level >= depth ? 1 : level + 1);   // step through the levels reached so far
-            menu_dirty = true;
-        } else if (ui::rowRect(1).hit(x, y)) {
-            wc::audio::setVolume(wc::audio::volume() == 0 ? 2 : 0);
-            if (wc::audio::volume() > 0) sfx::click();
-            menu_dirty = true;
-        } else if (ui::rowRect(2).hit(x, y)) {
-            flat_play = !flat_play;
-            save();
-            menu_dirty = true;
-        } else if (ui::rowRect(3).hit(x, y)) {
-            won = false;
-            startLevel(level);
-            closeMenu();
-        } else if (ui::buttonRect(0, 2).hit(x, y)) {
-            closeMenu();
-        } else if (ui::buttonRect(1, 2).hit(x, y)) {
-            closeMenu();
-            e.goHome();
-        }
-    }
-
     void drawMenu(Gfx &g)
     {
         namespace ui = console::ui;
-        ui::clearScreen(g);
-        ui::title(g, "PAUSED");
         char buf[16];
         snprintf(buf, sizeof(buf), "%d / %d", level, depth);
-        ui::row(g, 0, "LEVEL", buf);
-        ui::row(g, 1, "SOUND", wc::audio::volume() ? "ON" : "OFF", wc::audio::volume() ? ui::GO : ui::DIM);
-        ui::row(g, 2, "FLAT PLAY", flat_play ? "GYRO" : "OFF", flat_play ? ui::VALUE : ui::DIM);
-        ui::row(g, 3, "RESET LEVEL", "GO", ui::ACCENT);
-        ui::button(g, ui::buttonRect(0, 2), "RESUME");
-        ui::outlineButton(g, ui::buttonRect(1, 2), "HOME");
+        const ui::PauseMenu::Row rows[] = {{"LEVEL", buf},
+                                           menu.soundRow(),
+                                           {"FLAT PLAY", flat_play ? "GYRO" : "OFF", flat_play ? ui::VALUE : ui::DIM},
+                                           {"RESET LEVEL", "GO", ui::ACCENT}};
+        menu.draw(g, rows, 4);
     }
 
     // ------------------------------------------------------------------ drawing
@@ -816,11 +795,8 @@ struct Star::State {
 
     void draw(Engine &e, Gfx &g)
     {
-        if (menu) {
-            if (menu_dirty) {
-                drawMenu(g);
-                menu_dirty = false;
-            }
+        if (menu.isOpen()) {
+            drawMenu(g);
             return;
         }
         // Turn-based: nothing moves unless something changed, so don't redraw (or send a frame).
@@ -905,11 +881,15 @@ void Star::begin(Engine &e)
 
 void Star::enter(Engine &e)
 {
-    s_->menu = false;
+    s_->menu.close();
     s_->dirty = true;
 }
 
-void Star::redraw() { s_->dirty = s_->menu_dirty = true; }
+void Star::redraw()
+{
+    s_->dirty = true;
+    s_->menu.invalidate();
+}
 
 void Star::update(Engine &e, float dt) { s_->update(e, std::min(dt, 0.1f)); }
 
