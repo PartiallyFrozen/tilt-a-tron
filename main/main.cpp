@@ -8,7 +8,11 @@
 #include "console/theme.h"
 #include "console/update_app.h"
 #include "engine/engine.h"
+#include "esp_heap_caps.h"
+#include "lodepng.h"
 #include "esp_log.h"
+#include <cmath>
+#include <cstdio>
 #include <cstring>
 
 #include "esp_ota_ops.h"
@@ -24,6 +28,10 @@
 #include "storage/storage.h"
 
 static const char *TAG = "main";
+
+static wc::Engine *s_engine;
+static const console::App *s_apps;
+static int s_app_count;
 
 extern "C" void app_main(void)
 {
@@ -49,6 +57,7 @@ extern "C" void app_main(void)
     const bool update_mode = net_take_update_mode();
 
     static wc::Engine engine;
+    s_engine = &engine;
     wc::EngineConfig cfg;
     cfg.spi_hz = 80 * 1000 * 1000;   // 40 MHz is the safe fallback if the picture ever glitches
     cfg.present_buffers = 2;
@@ -69,6 +78,40 @@ extern "C" void app_main(void)
         snprintf(extra, sizeof(extra), "\"safe\":%s,\"failed_boots\":%d,\"crash\":\"%s\"",
                  safe_mode ? "true" : "false", failed_boots, console::lastCrashText());
         net_status_set_extra(extra);
+        // GET /screen: a PNG of the display, for checking the look over Wi-Fi.
+        net_set_screen_hook([](uint8_t **png_out) -> size_t {
+            wc::Engine &en = *s_engine;
+            en.presenter().snapshotInto(&en.gfx());
+            vTaskDelay(pdMS_TO_TICKS(120));   // a frame or two, so the copy has happened
+            const int n = wc::Gfx::W * wc::Gfx::H;
+            uint8_t *rgb = static_cast<uint8_t *>(heap_caps_malloc(n * 3, MALLOC_CAP_SPIRAM));
+            if (!rgb) return 0;
+            const wc::Color *px = en.gfx().pixels();
+            for (int i = 0; i < n; i++) {
+                const uint16_t c = uint16_t((px[i] >> 8) | (px[i] << 8));
+                rgb[i * 3] = uint8_t((c >> 11) << 3);
+                rgb[i * 3 + 1] = uint8_t(((c >> 5) & 63) << 2);
+                rgb[i * 3 + 2] = uint8_t((c & 31) << 3);
+            }
+            unsigned char *png = nullptr;
+            size_t len = 0;
+            LodePNGState st;
+            lodepng_state_init(&st);
+            st.info_raw.colortype = LCT_RGB;
+            st.info_png.color.colortype = LCT_RGB;
+            st.encoder.zlibsettings.btype = 2;
+            st.encoder.zlibsettings.use_lz77 = 1;
+            st.encoder.zlibsettings.windowsize = 2048;   // quick rather than small
+            const unsigned err = lodepng_encode(&png, &len, rgb, wc::Gfx::W, wc::Gfx::H, &st);
+            lodepng_state_cleanup(&st);
+            heap_caps_free(rgb);
+            if (err) {
+                free(png);
+                return 0;
+            }
+            *png_out = png;
+            return len;
+        });
     }
     if (console::crashedLastBoot()) ESP_LOGE(TAG, "previous boot: %s", console::lastCrashText());
 
@@ -151,6 +194,47 @@ extern "C" void app_main(void)
         {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings},
     };
     static console::Launcher launcher(apps, sizeof(apps) / sizeof(apps[0]));
+    // GET /input: remote control for testing without touching the watch.
+    //   app=N (0 = home)  tap=x,y  swipe=x0,y0,x1,y1  hold=x,y,ms  btn=a|b[,ms]  tilt=ax,ay,az|off
+    s_apps = apps;
+    s_app_count = sizeof(apps) / sizeof(apps[0]);
+    net_set_control_hook([](const char *q) -> bool {
+        int a, b, c, d, ms;
+        float fx, fy, fz;
+        const char *p;
+        bool any = false;
+        if ((p = std::strstr(q, "app=")) && std::sscanf(p + 4, "%d", &a) == 1) {
+            if (a == 0) s_engine->goHome();
+            else if (a > 0 && a <= s_app_count && s_apps[a - 1].game) s_engine->switchTo(*s_apps[a - 1].game);
+            else return false;
+            any = true;
+        }
+        if ((p = std::strstr(q, "tap=")) && std::sscanf(p + 4, "%d,%d", &a, &b) == 2) {
+            s_engine->injectTouch(a, b, a, b, 80);
+            any = true;
+        }
+        if ((p = std::strstr(q, "hold=")) && std::sscanf(p + 5, "%d,%d,%d", &a, &b, &ms) == 3) {
+            s_engine->injectTouch(a, b, a, b, ms);
+            any = true;
+        }
+        if ((p = std::strstr(q, "swipe=")) && std::sscanf(p + 6, "%d,%d,%d,%d", &a, &b, &c, &d) == 4) {
+            s_engine->injectTouch(a, b, c, d, 160);
+            any = true;
+        }
+        if ((p = std::strstr(q, "btn="))) {
+            ms = 80;
+            std::sscanf(p + 5, ",%d", &ms);
+            s_engine->injectButton(p[4] == 'a' ? wc::BTN_A : wc::BTN_B, ms);
+            any = true;
+        }
+        if ((p = std::strstr(q, "tilt="))) {
+            if (std::strncmp(p + 5, "off", 3) == 0) s_engine->injectTilt(NAN, 0, 0);
+            else if (std::sscanf(p + 5, "%f,%f,%f", &fx, &fy, &fz) == 3) s_engine->injectTilt(fx, fy, fz);
+            else return false;
+            any = true;
+        }
+        return any;
+    });
     engine.setHome(launcher);
     engine.setSleepHooks(net_suspend, net_resume);
     // Don't sleep while plugged in: a computer may be copying theme files, and on the

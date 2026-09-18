@@ -71,6 +71,13 @@ esp_err_t ota_server_start(void);
 void net_log_capture_start(void);
 // Extra fields for /status, e.g. "\"safe\":true,\"crash\":\"...\"" (no braces).
 void net_status_set_extra(const char *json_fields);
+// GET /screen returns a PNG of the display. The hook must return a malloc'd PNG
+// (the server frees it) and its size, or 0 on failure.
+typedef size_t (*net_screen_fn)(uint8_t **png_out);
+void net_set_screen_hook(net_screen_fn fn);
+// GET /input?<query>: remote control for testing; the hook gets the raw query string.
+typedef bool (*net_control_fn)(const char *query);
+void net_set_control_hook(net_control_fn fn);
 void ota_get_status(ota_status_t *out);
 
 // ---------------------------------------------------------------- update mode

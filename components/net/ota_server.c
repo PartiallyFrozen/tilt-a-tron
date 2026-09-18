@@ -28,6 +28,37 @@ static bool s_log_wrapped;
 static portMUX_TYPE s_log_mux = portMUX_INITIALIZER_UNLOCKED;
 static vprintf_like_t s_prev_vprintf;
 static char s_status_extra[192];
+static net_screen_fn s_screen_fn;
+static net_control_fn s_control_fn;
+
+void net_set_control_hook(net_control_fn fn) { s_control_fn = fn; }
+
+static esp_err_t input_get(httpd_req_t *req)
+{
+    char q[160] = "";
+    httpd_req_get_url_query_str(req, q, sizeof(q));
+    const bool ok = s_control_fn && s_control_fn(q);
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_sendstr(req, ok ? "ok" : "bad request");
+}
+
+void net_set_screen_hook(net_screen_fn fn) { s_screen_fn = fn; }
+
+static esp_err_t screen_get(httpd_req_t *req)
+{
+    uint8_t *png = NULL;
+    const size_t n = s_screen_fn ? s_screen_fn(&png) : 0;
+    if (!n || !png) {
+        free(png);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no screenshot");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "image/png");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    const esp_err_t err = httpd_resp_send(req, (const char *)png, n);
+    free(png);
+    return err;
+}
 
 // Runs on whatever task is logging, some of which have tiny stacks, so the line
 // buffer is shared (guarded by a mutex) rather than living on the caller's stack.
@@ -213,6 +244,8 @@ esp_err_t ota_server_start(void)
         {.uri = "/status", .method = HTTP_GET, .handler = status_get},
         {.uri = "/log", .method = HTTP_GET, .handler = log_get},
         {.uri = "/reboot", .method = HTTP_GET, .handler = reboot_get},
+        {.uri = "/screen", .method = HTTP_GET, .handler = screen_get},
+        {.uri = "/input", .method = HTTP_GET, .handler = input_get},
         {.uri = "/update", .method = HTTP_POST, .handler = update_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s_server, &uris[i]);

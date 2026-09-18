@@ -34,8 +34,11 @@ class Canvas {
 public:
     static constexpr int MAX_W = Gfx::W / 2 + 1;   // at 2x the canvas is 233 wide
 
-    // `scale` is 2 or 3. The canvas covers the whole screen: ceil(466 / scale) square.
-    bool init(int scale);
+    // `scale` is 2 or 3. By default the canvas covers the screen exactly
+    // (ceil(466 / scale) square); a bigger `size` is centred on the screen with
+    // the edges cut off, which gives a rotated canvas (presentRotated) something
+    // to show in the corners.
+    bool init(int scale, int size = 0);
     int width() const { return w_; }
     int height() const { return h_; }
     int scale() const { return scale_; }
@@ -48,6 +51,8 @@ public:
     // Reserve `n` entries the game will change itself (gradients, tints).
     uint8_t reserve(int n);
     void setColor(uint8_t i, Color c) { pal_[i] = c; }
+    // Install a whole palette (index 0 stays black); later color() calls append.
+    void setPalette(const Color *pal, int n);
     Color getColor(uint8_t i) const { return pal_[i]; }
     int used() const { return used_; }
 
@@ -77,6 +82,9 @@ public:
 
     // ---- output: scale up and send the whole screen
     void present(Presenter &p);
+    // Same, but rotated by `angle` (radians, clockwise) about the centre. Samples
+    // once per two screen pixels, which is invisible at 2x and halves the reads.
+    void presentRotated(Presenter &p, float angle);
 
 private:
     int scale_ = 3, w_ = 0, h_ = 0;

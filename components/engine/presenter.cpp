@@ -176,6 +176,11 @@ void Presenter::presentBands(const BandFill &fill)
         Item *it;
         xQueueReceive(FREE_Q, &it, portMAX_DELAY);   // waits here while the wire is busy
         fill(y, rows, x0, x1 - x0, it->px);
+        if (snap_) {
+            Color *fb = snap_->pixels();
+            for (int r = 0; r < rows; r++)
+                std::memcpy(fb + (y + r) * Gfx::W + x0, it->px + r * (x1 - x0), (x1 - x0) * sizeof(Color));
+        }
         it->x = int16_t(x0);
         it->y = int16_t(y);
         it->w = int16_t(x1 - x0);
@@ -188,6 +193,7 @@ void Presenter::presentBands(const BandFill &fill)
     Item *end = kFrameEnd;
     xQueueSend(WORK_Q, &end, portMAX_DELAY);
     streamed_ = true;
+    snap_ = nullptr;
     stats_.last_copy_us = uint32_t(esp_timer_get_time() - t0) - stats_.last_wait_us;
 }
 
