@@ -150,8 +150,10 @@ extern "C" void app_main(void)
 
     // Hold BOOT as the screen comes on (not during reset: that enters download
     // mode) to get the bench/calibration app.
-    bool bench = false;
-    for (int i = 0; i < 20 && !bench; i++) {
+    // It has to be held the whole time (1.2 s): one stray press while the watch wakes
+    // used to be enough, and the bench app is a developer tool nobody should land in.
+    bool bench = true;
+    for (int i = 0; i < 48 && bench; i++) {
         bench = buttons_read() & BTN_BOOT;
         vTaskDelay(pdMS_TO_TICKS(25));
     }
