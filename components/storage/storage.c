@@ -16,7 +16,6 @@ static const char *TAG = "storage";
 
 static wl_handle_t s_wl = WL_INVALID_HANDLE;
 static volatile bool s_ready;
-static volatile bool s_on_computer;
 static volatile uint32_t s_generation;
 static volatile bool s_seed_pending;
 
@@ -290,10 +289,6 @@ bool storage_free_bytes(uint32_t *total, uint32_t *free_bytes)
 }
 
 bool storage_ready(void) { return s_ready; }
-bool storage_on_computer(void) { return s_on_computer; }
 uint32_t storage_generation(void) { return s_generation; }
 
-// Settings > USB DRIVE. Off (the default) keeps the USB port as the flashing/log
-// port and never starts the USB drive; on, plugging in shows the theme drive.
-// (Replaces the old inverted DEBUG MODE switch; its saved value is ignored.)
 

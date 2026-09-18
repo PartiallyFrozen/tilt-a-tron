@@ -1,7 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Tiltatron.Manager.MainWindow"
-        Title="Tilt-a-tron" Width="760" Height="620" MinWidth="620" MinHeight="460">
+        Title="Tilt-a-tron" Icon="/icon.ico"
+        Width="760" Height="700" MinWidth="620" MinHeight="480">
 
   <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="18">
 
@@ -12,7 +13,7 @@
           <TextBlock Classes="title" Text="TILT-A-TRON" />
           <TextBlock x:Name="StatusLine" Classes="dim" Text="Looking for a watch..." />
         </StackPanel>
-        <Button Grid.Column="1" x:Name="ConnectButton" Content="Connect" VerticalAlignment="Center" />
+        <Button Grid.Column="1" x:Name="ConnectButton" Content="Refresh" VerticalAlignment="Center" />
       </Grid>
     </Border>
 

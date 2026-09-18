@@ -27,6 +27,20 @@ tiltatron-manager bench                    # measures transfer speed
 On Windows it is a GUI binary, so a shell will not wait for it unless you pipe its output
 (`tiltatron-manager list | Out-Host` in PowerShell).
 
+## A file to hand someone
+
+```bash
+dotnet publish -c Release -r win-x64 -o publish
+```
+
+`publish/tiltatron-manager.exe` is one file, about 42 MB, that runs on a machine with no
+.NET installed - double-click it and it opens. That size is what a self-contained .NET
+app costs; trimming it was tried and broke the build, because Avalonia loads its XAML by
+reflection.
+
+CI builds the same file for Windows, macOS and Linux on every change to `app/`, and
+attaches them to the run.
+
 ## Building something to hand out
 
 ```bash

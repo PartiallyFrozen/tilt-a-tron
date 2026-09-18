@@ -1,7 +1,7 @@
 # One command to put the current code on the Tilt-a-tron.
 #
 #   .\update.ps1            build, then install over Wi-Fi if the watch answers,
-#                           otherwise over USB if it's plugged in (debug mode)
+#                           otherwise over USB if it's plugged in
 #   .\update.ps1 -NoBuild   install the last build
 #   .\update.ps1 -Usb       force USB        .\update.ps1 -Wifi   force Wi-Fi
 #   .\update.ps1 -Log       print the watch's recent log (over Wi-Fi)

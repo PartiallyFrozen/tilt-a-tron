@@ -78,10 +78,13 @@ public partial class MainWindow : Window
         }
         ContentPanel.Children.Add(grid);
 
-        var themes = await Task.Run(() => w.ListFiles("Theme").Where(f => f.IsDirectory).ToList());
+        var themes = await Task.Run(() => w.ListFiles("Theme")
+            .Where(f => f.IsDirectory)
+            .Select(f => (f.Name, Size: FolderSize(w, $"Theme/{f.Name}")))
+            .ToList());
         ContentPanel.Children.Add(Heading("THEMES"));
-        var list = new StackPanel { Spacing = 6 };
-        foreach (var t in themes) list.Children.Add(ThemeCard(t.Name));
+        var list = new StackPanel { Spacing = 5 };
+        foreach (var t in themes) list.Children.Add(ThemeCard(t.Name, t.Size));
         ContentPanel.Children.Add(list);
 
         EnableActions(true);
@@ -199,7 +202,7 @@ public partial class MainWindow : Window
 
     static Control GameTile(GameEntry g, byte[]? iconPng)
     {
-        var stack = new StackPanel { Width = 96, Spacing = 6, Margin = new Avalonia.Thickness(0, 0, 10, 10) };
+        var stack = new StackPanel { Width = 78, Spacing = 3, Margin = new Avalonia.Thickness(0, 0, 8, 8) };
         if (iconPng is not null)
         {
             try
@@ -207,8 +210,8 @@ public partial class MainWindow : Window
                 stack.Children.Add(new Image
                 {
                     Source = new Bitmap(new MemoryStream(iconPng)),
-                    Width = 72,
-                    Height = 72,
+                    Width = 56,
+                    Height = 56,
                 });
             }
             catch
@@ -235,7 +238,15 @@ public partial class MainWindow : Window
         return stack;
     }
 
-    Control ThemeCard(string name)
+    static uint FolderSize(Watch w, string path)
+    {
+        uint total = 0;
+        foreach (var e in w.ListFiles(path))
+            total += e.IsDirectory ? FolderSize(w, $"{path}/{e.Name}") : e.Size;
+        return total;
+    }
+
+    Control ThemeCard(string name, uint bytes)
     {
         var card = new Border
         {
@@ -244,7 +255,20 @@ public partial class MainWindow : Window
             BorderThickness = new Avalonia.Thickness(2),
             CornerRadius = new Avalonia.CornerRadius(3),
             Padding = new Avalonia.Thickness(10, 8),
-            Child = new TextBlock { Text = name, Foreground = new SolidColorBrush(Color.Parse("#EAF0FF")) },
+            Child = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                Children =
+                {
+                    new TextBlock { Text = name, Foreground = new SolidColorBrush(Color.Parse("#EAF0FF")) },
+                    new TextBlock
+                    {
+                        Text = $"{bytes / 1024} KB",
+                        [Grid.ColumnProperty] = 1,
+                        Foreground = new SolidColorBrush(Color.Parse("#8A97C0")),
+                    },
+                },
+            },
         };
         card.PointerPressed += (_, _) =>
         {

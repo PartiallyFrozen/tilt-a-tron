@@ -10,4 +10,5 @@ releases/*.bin
 # .NET build output for the manager app
 app/**/bin/
 app/**/obj/
+app/**/publish/
 __pycache__/

@@ -46,7 +46,7 @@ void setAutoOffIndex(int index);      // saves; caller applies to the engine
 const char *firmwareVersion();
 
 // ---- crash breadcrumbs
-// With DEBUG MODE off there's no serial log, so the console remembers what it was
+// A crash takes the serial log with it, so the console remembers what it was
 // doing (this survives a crash), shows it on screen after a restart, and appends it
 // to last_crash.txt on the drive.
 void crumb(const char *what);

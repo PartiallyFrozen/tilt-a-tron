@@ -232,7 +232,7 @@ void reportCrashIfAny(wc::Engine &e)
     const esp_reset_reason_t reason = esp_reset_reason();
     ESP_LOGE("crash", "last boot ended with %s", s_crash_text);
 
-    // Leave a note on the drive: with DEBUG MODE off this is the only way to see it.
+    // Leave a note in storage: the log is gone once the watch restarts.
     if (storage_ready()) {
         if (FILE *f = std::fopen(STORAGE_ROOT "/last_crash.txt", "a")) {
             std::fprintf(f, "%s (firmware %s)\n", s_crash_text, firmwareVersion());
