@@ -6,6 +6,7 @@
 #   .\update.ps1 -Usb       force USB        .\update.ps1 -Wifi   force Wi-Fi
 #   .\update.ps1 -Log       print the watch's recent log (over Wi-Fi)
 #   .\update.ps1 -Status    show what the watch is running
+#   .\update.ps1 -Bin releases\pre-canvas.bin   install a saved build (roll back)
 #
 # Every build has a unique hash; the script compares the watch's hash with the
 # file it sent, so "OK" really means the new build is running.
@@ -15,7 +16,8 @@ param(
     [switch]$Usb,
     [switch]$Wifi,
     [switch]$Log,
-    [switch]$Status
+    [switch]$Status,
+    [string]$Bin = ""
 )
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -72,7 +74,7 @@ if ($Log -or $Status) {
     return
 }
 
-if (-not $NoBuild) {
+if (-not $NoBuild -and -not $Bin) {
     Write-Host "Building ..."
     $ErrorActionPreference = "Continue"   # the compiler writes to stderr; that's not a script error
     $out = powershell -ExecutionPolicy Bypass -File "$PSScriptRoot\idf.ps1" build 2>&1 | ForEach-Object { "$_" }
@@ -85,8 +87,8 @@ if (-not $NoBuild) {
         exit 1
     }
 }
-$bin = Join-Path $PSScriptRoot "build\tiltatron.bin"
-if (-not (Test-Path $bin)) { throw "No build found - run without -NoBuild." }
+$bin = if ($Bin) { $Bin } else { Join-Path $PSScriptRoot "build\tiltatron.bin" }
+if (-not (Test-Path $bin)) { throw "No build found at $bin" }
 $want = Get-BinSha $bin
 $sizeKB = [math]::Round((Get-Item $bin).Length / 1024)
 
