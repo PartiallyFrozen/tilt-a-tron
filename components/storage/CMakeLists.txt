@@ -11,6 +11,7 @@ idf_component_register(
         "../../themes/Default/icons/maze.png"
         "../../themes/Default/icons/racer.png"
         "../../themes/Default/icons/jump.png"
+        "../../themes/Default/icons/ringdrop.png"
         "../../themes/Guide/guide-home.png"
         "../../themes/Guide/guide-menus.png"
         "../../themes/Guide/guide-icon.png"

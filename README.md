@@ -199,6 +199,15 @@ Handy for checking a game without picking the watch up.
 - The sky turns to stars as you climb. **Swipe left** menu (tilt sensitivity, sound,
   new game, best) · **BOOT** home. Best height is saved
 
+## Ring Drop controls
+
+- Radial Tetris: wedge pieces fall inward from the rim; fill a whole ring to clear it
+- The pile is locked to the real world: **turn the watch** to spin the pile under the
+  falling piece, which stays at the top of the screen
+- **Tap** rotates the piece · **hold** soft-drops · **PWR** hard-drops
+- Score, level and the next piece live in the core. **Swipe left** menu (sound, new
+  game, best) · **BOOT** home. Best score is saved
+
 ## Bench app
 
 Hold BOOT as the screen turns on. **Tilt** rolls the ball, **touch** drags the dot,

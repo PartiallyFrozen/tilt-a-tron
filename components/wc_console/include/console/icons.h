@@ -10,5 +10,6 @@ void settings(wc::Color *buf, int r);
 void maze(wc::Color *buf, int r);
 void racer(wc::Color *buf, int r);
 void jump(wc::Color *buf, int r);
+void ringdrop(wc::Color *buf, int r);
 
 }  // namespace console::icons

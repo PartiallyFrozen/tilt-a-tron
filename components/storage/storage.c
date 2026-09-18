@@ -34,6 +34,7 @@ EMBED(settings_png)
 EMBED(maze_png)
 EMBED(racer_png)
 EMBED(jump_png)
+EMBED(ringdrop_png)
 EMBED(guide_home_png)
 EMBED(guide_menus_png)
 EMBED(guide_icon_png)
@@ -67,6 +68,7 @@ bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len)
         {"maze", _binary_maze_png_start, _binary_maze_png_end},
         {"racer", _binary_racer_png_start, _binary_racer_png_end},
         {"jump", _binary_jump_png_start, _binary_jump_png_end},
+        {"ringdrop", _binary_ringdrop_png_start, _binary_ringdrop_png_end},
     };
     for (size_t i = 0; i < sizeof(icons) / sizeof(icons[0]); i++) {
         if (strcmp(icons[i].id, id) != 0) continue;
@@ -97,6 +99,7 @@ static void seed_defaults(void)
     write_file(STORAGE_THEMES "/Default/icons/maze.png", _binary_maze_png_start, _binary_maze_png_end, false);
     write_file(STORAGE_THEMES "/Default/icons/racer.png", _binary_racer_png_start, _binary_racer_png_end, false);
     write_file(STORAGE_THEMES "/Default/icons/jump.png", _binary_jump_png_start, _binary_jump_png_end, false);
+    write_file(STORAGE_THEMES "/Default/icons/ringdrop.png", _binary_ringdrop_png_start, _binary_ringdrop_png_end, false);
 
     // Design templates: where icons, titles and menu rows land on the round screen.
     mkdir(STORAGE_ROOT "/Guide", 0775);
