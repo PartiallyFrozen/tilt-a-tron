@@ -8,6 +8,7 @@
 #include <sys/time.h>
 
 #include "audio/audio.h"
+#include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
 #include "engine/gestures.h"
@@ -61,7 +62,7 @@ struct Clock::State {
 
     // ---- ui
     Gestures ges;
-    bool menu = false, menu_dirty = false;
+    console::ui::PauseMenu menu;
     bool setting = false, set_dirty = false;
     int set_h = 12, set_m = 0;
     float t = 0;               // animation time
@@ -456,56 +457,30 @@ struct Clock::State {
     void drawMenu(Gfx &g)
     {
         namespace ui = console::ui;
-        ui::clearScreen(g);
-        ui::title(g, "CLOCK");
         char tz[24];
         snprintf(tz, sizeof(tz), "%s%+d:%02d", tz_auto ? "AUTO " : "", tz_min / 60, std::abs(tz_min % 60));
-        ui::row(g, 0, "FACE", FACE_NAMES[face]);
-        ui::row(g, 1, "CLOCK", h24 ? "24H" : "12H");
-        ui::row(g, 2, "TIME ZONE", tz);
-        ui::row(g, 3, "SET TIME", now().known && net_state() == NET_CONNECTED ? "AUTO" : "GO", ui::ACCENT);
-        ui::button(g, ui::buttonRect(0, 2), "RESUME");
-        ui::outlineButton(g, ui::buttonRect(1, 2), "HOME");
+        const ui::PauseMenu::Row rows[] = {
+            {"FACE", FACE_NAMES[face]},
+            {"CLOCK", h24 ? "24H" : "12H"},
+            {"TIME ZONE", tz},
+            {"SET TIME", now().known && net_state() == NET_CONNECTED ? "AUTO" : "GO", ui::ACCENT}};
+        menu.draw(g, rows, 4, "CLOCK");
     }
 
-    void menuTap(Engine &e, int x, int y)
+    // AUTO (from the network), then whole hours -12 .. +14 by hand, then AUTO again.
+    void nextTimeZone()
     {
-        namespace ui = console::ui;
-        if (ui::rowRect(0).hit(x, y)) {
-            face = (face + 1) % FACE_COUNT;
-            save();
-            menu_dirty = true;
-        } else if (ui::rowRect(1).hit(x, y)) {
-            h24 = !h24;
-            save();
-            menu_dirty = true;
-        } else if (ui::rowRect(2).hit(x, y)) {
-            // AUTO (from the network), then whole hours -12 .. +14 by hand, then AUTO again.
-            if (tz_auto) {
-                tz_auto = false;
-                tz_min = -12 * 60;
-            } else if (tz_min >= 14 * 60) {
-                tz_auto = true;
-                int m;
-                tz_min = net_tz_offset_min(&m) ? m : 0;
-            } else {
-                tz_min = (tz_min / 60 + 1) * 60;
-            }
-            save();
-            menu_dirty = true;
-        } else if (ui::rowRect(3).hit(x, y)) {
-            const Now nw = now();
-            set_h = nw.h;
-            set_m = nw.m;
-            setting = true;
-            set_dirty = true;
-            menu = false;
-        } else if (ui::buttonRect(0, 2).hit(x, y)) {
-            menu = false;
-        } else if (ui::buttonRect(1, 2).hit(x, y)) {
-            menu = false;
-            e.goHome();
+        if (tz_auto) {
+            tz_auto = false;
+            tz_min = -12 * 60;
+        } else if (tz_min >= 14 * 60) {
+            tz_auto = true;
+            int m;
+            tz_min = net_tz_offset_min(&m) ? m : 0;
+        } else {
+            tz_min = (tz_min / 60 + 1) * 60;
         }
+        save();
     }
 
     void drawSetTime(Gfx &g)
@@ -566,21 +541,40 @@ struct Clock::State {
         if (tz_auto && net_tz_offset_min(&net_tz) && net_tz != tz_min) {
             tz_min = net_tz;
             save();
-            menu_dirty = true;
+            menu.invalidate();
         }
         if (setting) {
             if (ges.tap) setTimeTap(ges.x, ges.y);
             if (ges.swipe_right || (in.clicked & BTN_B)) setting = false;
             return;
         }
-        if (menu) {
-            if (ges.tap) menuTap(e, ges.x, ges.y);
-            if (ges.swipe_right || (in.clicked & BTN_B)) menu = false;
+        if (menu.isOpen()) {
+            switch (menu.update(e, ges, in)) {
+            case 0:
+                face = (face + 1) % FACE_COUNT;
+                save();
+                break;
+            case 1:
+                h24 = !h24;
+                save();
+                break;
+            case 2:
+                nextTimeZone();
+                break;
+            case 3: {
+                const Now nw = now();
+                set_h = nw.h;
+                set_m = nw.m;
+                setting = true;
+                set_dirty = true;
+                menu.close();
+                break;
+            }
+            }
             return;
         }
         if (ges.swipe_left) {
-            menu = true;
-            menu_dirty = true;
+            menu.open();
             return;
         }
         if (ges.tap || (in.clicked & BTN_B)) {
@@ -599,11 +593,8 @@ struct Clock::State {
             }
             return;
         }
-        if (menu) {
-            if (menu_dirty) {
-                drawMenu(g);
-                menu_dirty = false;
-            }
+        if (menu.isOpen()) {
+            drawMenu(g);
             return;
         }
         const Now nw = now();
@@ -634,7 +625,8 @@ void Clock::begin(Engine &e)
 
 void Clock::enter(Engine &e)
 {
-    s_->menu = s_->setting = false;
+    s_->menu.close();
+    s_->setting = false;
 }
 
 void Clock::update(Engine &e, float dt) { s_->update(e, std::min(dt, 0.1f)); }

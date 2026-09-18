@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "audio/audio.h"
+#include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
 #include "engine/gestures.h"
@@ -194,7 +195,8 @@ struct Racer::State {
 
     // ---- menu
     Gestures ges;
-    bool menu = false, menu_dirty = false, menu_swallow = false;
+    console::ui::PauseMenu menu;
+    bool menu_swallow = false;
 
     // ================================================================= track
     void addSegment(float curve) { segs.push_back({curve}); }
@@ -414,23 +416,36 @@ struct Racer::State {
         phase_t += dt;
         updateSteering(in, dt);
 
-        if (menu) {
+        if (menu.isOpen()) {
             // The touch that paused the game is still down when the menu appears; its
             // release must not count as a tap on whatever row is under the finger.
             if (menu_swallow) {
                 if (in.touch.released || !in.touch.down) menu_swallow = false;
                 return;
             }
-            if (ges.tap) menuTap(e, ges.x, ges.y);
-            if (ges.swipe_right || (in.clicked & BTN_B)) menu = false;
-            if (!menu) pitch_neutral = pitch;   // your grip may have changed while paused
+            switch (menu.update(e, ges, in)) {
+            case 0:
+                mirror = !mirror;
+                save();
+                break;
+            case 1:
+                pitch_sens = (pitch_sens + 1) % 4;
+                pitch_neutral = pitch;
+                save();
+                break;
+            case 2: menu.toggleSound(); break;
+            case 3:
+                newRace();   // fresh circuit, back on the grid
+                menu.close();
+                break;
+            }
+            if (!menu.isOpen()) pitch_neutral = pitch;   // your grip may have changed while paused
             return;
         }
         // Touching the screen mid-race pauses (you're holding a steering wheel, not
         // looking for a button). Swipe left works everywhere.
         if (ges.swipe_left || (in.touch.pressed && (phase == RACING || phase == COUNTDOWN))) {
-            menu = true;
-            menu_dirty = true;
+            menu.open();
             menu_swallow = in.touch.down;
             return;
         }
@@ -465,44 +480,15 @@ struct Racer::State {
     }
 
     // ================================================================= menu
-    void menuTap(Engine &e, int x, int y)
-    {
-        namespace ui = console::ui;
-        if (ui::rowRect(0).hit(x, y)) {
-            mirror = !mirror;
-            save();
-            menu_dirty = true;
-        } else if (ui::rowRect(1).hit(x, y)) {
-            pitch_sens = (pitch_sens + 1) % 4;
-            pitch_neutral = pitch;
-            save();
-            menu_dirty = true;
-        } else if (ui::rowRect(2).hit(x, y)) {
-            wc::audio::setVolume(wc::audio::volume() == 0 ? 2 : 0);
-            menu_dirty = true;
-        } else if (ui::rowRect(3).hit(x, y)) {
-            newRace();   // fresh circuit, back on the grid
-            menu = false;
-        } else if (ui::buttonRect(0, 2).hit(x, y)) {
-            menu = false;
-        } else if (ui::buttonRect(1, 2).hit(x, y)) {
-            menu = false;
-            e.goHome();
-        }
-    }
-
     void drawMenu(Gfx &g)
     {
         namespace ui = console::ui;
-        ui::clearScreen(g);
-        ui::title(g, "PAUSED");
-        ui::row(g, 0, "STEERING", mirror ? "MIRROR" : "NORMAL");
         static const char *const kSens[4] = {"OFF", "LOW", "MED", "HIGH"};
-        ui::row(g, 1, "TILT SPEED", kSens[pitch_sens], pitch_sens ? ui::VALUE : ui::DIM);
-        ui::row(g, 2, "SOUND", wc::audio::volume() ? "ON" : "OFF", wc::audio::volume() ? ui::GO : ui::DIM);
-        ui::row(g, 3, "RESTART RACE", "GO", ui::ACCENT);
-        ui::button(g, ui::buttonRect(0, 2), "RESUME");
-        ui::outlineButton(g, ui::buttonRect(1, 2), "HOME");
+        const ui::PauseMenu::Row rows[] = {{"STEERING", mirror ? "MIRROR" : "NORMAL"},
+                                           {"TILT SPEED", kSens[pitch_sens], pitch_sens ? ui::VALUE : ui::DIM},
+                                           menu.soundRow(),
+                                           {"RESTART RACE", "GO", ui::ACCENT}};
+        menu.draw(g, rows, 4);
     }
 
     // ================================================================= scene (8-bit, upright)
@@ -824,11 +810,8 @@ struct Racer::State {
 
     void draw(Engine &e, Gfx &g)
     {
-        if (menu) {
-            if (menu_dirty) {
-                drawMenu(g);
-                menu_dirty = false;
-            }
+        if (menu.isOpen()) {
+            drawMenu(g);
             return;
         }
         const int64_t t_draw0 = esp_timer_get_time();
@@ -888,12 +871,11 @@ void Racer::enter(Engine &e)
     s_->fps_t0 = esp_timer_get_time();
     s_->fps_frames = 0;
     if (s_->phase == RACING) {   // came back from the home screen mid-race
-        s_->menu = true;
-        s_->menu_dirty = true;
+        s_->menu.open();
     }
 }
 
-bool Racer::keepAwake() const { return !s_->menu && (s_->phase == RACING || s_->phase == COUNTDOWN); }
+bool Racer::keepAwake() const { return !s_->menu.isOpen() && (s_->phase == RACING || s_->phase == COUNTDOWN); }
 
 void Racer::update(Engine &e, float dt)
 {

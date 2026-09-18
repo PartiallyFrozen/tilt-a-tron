@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "audio/audio.h"
+#include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
 #include "engine/gestures.h"
@@ -190,7 +191,7 @@ struct Jump::State {
 
     // ---- menu / input
     Gestures ges;
-    bool menu = false, menu_dirty = false;
+    console::ui::PauseMenu menu;
 
     // ---- drawing
     Canvas canvas;
@@ -532,14 +533,22 @@ struct Jump::State {
         ges.update(in.touch);
         phase_t += dt;
 
-        if (menu) {
-            if (ges.tap) menuTap(e, ges.x, ges.y);
-            if (ges.swipe_right || (in.clicked & BTN_B)) closeMenu();
+        if (menu.isOpen()) {
+            switch (menu.update(e, ges, in)) {
+            case 0:
+                tilt_sens = (tilt_sens + 1) % 3;
+                save();
+                break;
+            case 1: menu.toggleSound(); break;
+            case 2:
+                newGame();
+                menu.close();
+                break;
+            }
             return;
         }
         if (ges.swipe_left && (phase == PLAYING || phase == READY)) {
-            menu = true;
-            menu_dirty = true;
+            menu.open();
             return;
         }
 
@@ -558,44 +567,17 @@ struct Jump::State {
     }
 
     // ------------------------------------------------------------------ menu
-    void closeMenu() { menu = false; }
-
-    void menuTap(Engine &e, int x, int y)
-    {
-        namespace ui = console::ui;
-        if (ui::rowRect(0).hit(x, y)) {
-            tilt_sens = (tilt_sens + 1) % 3;
-            save();
-            menu_dirty = true;
-        } else if (ui::rowRect(1).hit(x, y)) {
-            wc::audio::setVolume(wc::audio::volume() == 0 ? 2 : 0);
-            if (wc::audio::volume() > 0) sfx::start();
-            menu_dirty = true;
-        } else if (ui::rowRect(2).hit(x, y)) {
-            newGame();
-            closeMenu();
-        } else if (ui::buttonRect(0, 2).hit(x, y)) {
-            closeMenu();
-        } else if (ui::buttonRect(1, 2).hit(x, y)) {
-            closeMenu();
-            e.goHome();
-        }
-    }
-
     void drawMenu(Gfx &g)
     {
         namespace ui = console::ui;
         static const char *kSens[] = {"LOW", "MED", "HIGH"};
-        ui::clearScreen(g);
-        ui::title(g, "PAUSED");
-        ui::row(g, 0, "TILT", kSens[tilt_sens]);
-        ui::row(g, 1, "SOUND", wc::audio::volume() ? "ON" : "OFF", wc::audio::volume() ? ui::GO : ui::DIM);
-        ui::row(g, 2, "NEW GAME", "GO", ui::ACCENT);
         char buf[16];
         snprintf(buf, sizeof(buf), "%d M", best);
-        ui::row(g, 3, "BEST", buf, ui::LABEL);
-        ui::button(g, ui::buttonRect(0, 2), "RESUME");
-        ui::outlineButton(g, ui::buttonRect(1, 2), "HOME");
+        const ui::PauseMenu::Row rows[] = {{"TILT", kSens[tilt_sens]},
+                                           menu.soundRow(),
+                                           {"NEW GAME", "GO", ui::ACCENT},
+                                           {"BEST", buf, ui::LABEL}};
+        menu.draw(g, rows, 4);
     }
 
     // ------------------------------------------------------------------ drawing
@@ -716,11 +698,8 @@ struct Jump::State {
 
     void draw(Engine &e, Gfx &g)
     {
-        if (menu) {
-            if (menu_dirty) {
-                drawMenu(g);
-                menu_dirty = false;
-            }
+        if (menu.isOpen()) {
+            drawMenu(g);
             return;
         }
         const int64_t t0 = esp_timer_get_time();
@@ -779,14 +758,12 @@ void Jump::enter(Engine &e)
 {
     // Coming back from the home screen mid-run: pause rather than let it run blind.
     if (s_->phase == PLAYING) {
-        s_->menu = true;
-        s_->menu_dirty = true;
+        s_->menu.open();
     }
-    s_->menu_dirty = s_->menu;
     s_->fps_t0 = esp_timer_get_time();
 }
 
-bool Jump::keepAwake() const { return !s_->menu && (s_->phase == PLAYING || s_->phase == DEAD); }
+bool Jump::keepAwake() const { return !s_->menu.isOpen() && (s_->phase == PLAYING || s_->phase == DEAD); }
 
 void Jump::update(Engine &e, float dt) { s_->update(e, std::min(dt, 1.0f / 30)); }
 

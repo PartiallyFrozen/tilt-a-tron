@@ -229,6 +229,7 @@ void Theme::clear()
     ui::DIM = wc::rgb(150, 150, 150);
     ui::PANEL = wc::rgb(16, 18, 26);
     ui::BOX = wc::rgb(90, 90, 100);
+    ui::SCRIM = wc::rgb(30, 32, 40);
     ui::VALUE = wc::colors::cyan;
     ui::ACCENT = wc::colors::yellow;
     ui::GO = wc::rgb(40, 200, 110);
@@ -282,6 +283,7 @@ void Theme::load(const std::string &name, wc::Engine *progress_ui)
                 parseColor(c, "dim", ui::DIM);
                 parseColor(c, "panel", ui::PANEL);
                 parseColor(c, "box", ui::BOX);
+                parseColor(c, "scrim", ui::SCRIM);
                 parseColor(c, "value", ui::VALUE);
                 parseColor(c, "accent", ui::ACCENT);
                 parseColor(c, "go", ui::GO);
