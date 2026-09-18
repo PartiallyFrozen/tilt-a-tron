@@ -1,5 +1,7 @@
 #include "bench_game.h"
 
+#include "esp_system.h"
+
 #include <cmath>
 
 #include "board/board.h"
@@ -22,6 +24,8 @@ void BenchGame::update(Engine &e, float dt)
 {
     const auto &in = e.input();
 
+    // Holding either button leaves the bench (restarts into the console).
+    if (in.long_press & (BTN_A | BTN_B)) esp_restart();
     if (in.pressed & BTN_A) e.presenter().setVsync(!e.presenter().vsync());
     if (in.pressed & BTN_B) {
         stress_ = !stress_;
