@@ -22,6 +22,7 @@ public:
     void enter(wc::Engine &e) override;
     void update(wc::Engine &e, float dt) override;
     void draw(wc::Engine &e, wc::Gfx &g) override;
+    void redraw() override;
     bool keepAwake() const override { return false; }   // a puzzle: no need to hold off sleep
 
 private:

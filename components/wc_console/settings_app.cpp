@@ -65,6 +65,9 @@ void SettingsApp::activate(wc::Engine &e, int item)
         setAutoOffIndex(autoOffIndex() + 1);
         e.setAutoOffSeconds(autoOffSeconds());
         break;
+    case CALIBRATE:
+        if (calibrate_) e.switchTo(*calibrate_);
+        return;
     case UPDATE:
         if (net_state() == NET_CONNECTED && updater_) e.switchTo(*updater_);
         else net_request_update_mode();   // reboots into the update screen
@@ -138,6 +141,7 @@ void SettingsApp::drawRow(wc::Gfx &g, int item, int y)
         break;
     }
     case AUTO_OFF: ui::rowAt(g, y, "AUTO OFF", AUTO_OFF_NAMES[autoOffIndex()]); break;
+    case CALIBRATE: ui::rowAt(g, y, "CALIBRATE", tiltCalibrated() ? "DONE" : "GO", tiltCalibrated() ? ui::GO : ui::ACCENT); break;
     case UPDATE: ui::rowAt(g, y, "UPDATE", "GO", ui::ACCENT); break;
     case VERSION: ui::rowAt(g, y, "VERSION", firmwareVersion(), ui::DIM); break;
     }

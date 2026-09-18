@@ -12,6 +12,7 @@ namespace {
 portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool s_pause_req = false;
 volatile bool s_paused = false;
+TiltCal s_cal;
 
 struct Shared {
     uint32_t held = 0;
@@ -179,12 +180,29 @@ void Input::snapshot(InputState &out)
     out.touch.y = s.ty;
     out.touch.t_us = s.t_us;
     out.tilt = s.tilt;
+    out.tilt.ax -= s_cal.ax, out.tilt.ay -= s_cal.ay;
+    out.tilt.gx -= s_cal.gx, out.tilt.gy -= s_cal.gy, out.tilt.gz -= s_cal.gz;
     out.touch_hz = s.touch_hz;
     out.imu_ok = s.imu_ok;
     out.imu_err = s.imu_err;
     s.pressed_acc = s.released_acc = s.clicked_acc = s.long_acc = s.double_acc = 0;
     s.touch_pressed_acc = s.touch_released_acc = false;
     portEXIT_CRITICAL(&s_mux);
+}
+
+void Input::setCalibration(const TiltCal &cal)
+{
+    portENTER_CRITICAL(&s_mux);
+    s_cal = cal;
+    portEXIT_CRITICAL(&s_mux);
+}
+
+TiltCal Input::calibration()
+{
+    portENTER_CRITICAL(&s_mux);
+    const TiltCal cal = s_cal;
+    portEXIT_CRITICAL(&s_mux);
+    return cal;
 }
 
 }  // namespace wc

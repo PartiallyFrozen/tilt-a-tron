@@ -2,6 +2,7 @@
 #include "bench_game.h"
 #include "console/console.h"
 #include "console/icons.h"
+#include "console/calibrate_app.h"
 #include "console/launcher.h"
 #include "console/settings_app.h"
 #include "audio/audio.h"
@@ -69,6 +70,7 @@ extern "C" void app_main(void)
         return;
     }
     console::applyBrightness();
+    console::loadTiltCalibration();
 
     // The screen works, so this firmware can boot: keep it rather than silently
     // rolling back. Anything that breaks after this point reports itself on screen
@@ -85,6 +87,7 @@ extern "C" void app_main(void)
         net_set_screen_hook([](uint8_t **png_out) -> size_t {
             wc::Engine &en = *s_engine;
             en.presenter().snapshotInto(&en.gfx());
+            en.requestRedraw();
             vTaskDelay(pdMS_TO_TICKS(120));   // a frame or two, so the copy has happened
             const int n = wc::Gfx::W * wc::Gfx::H;
             uint8_t *rgb = static_cast<uint8_t *>(heap_caps_malloc(n * 3, MALLOC_CAP_SPIRAM));
@@ -193,7 +196,8 @@ extern "C" void app_main(void)
     static console::SettingsApp settings;
     static console::WifiApp wifi_setup(&settings);
     static console::UpdateApp updater(&settings);
-    settings.setScreens(&wifi_setup, &updater);
+    static console::CalibrateApp calibrate(&settings);
+    settings.setScreens(&wifi_setup, &updater, &calibrate);
     static const console::App apps[] = {
         {"breakout", "BREAKOUT", wc::rgb(0xff, 0xd2, 0x3f), console::icons::breakout, &breakout},
         {"maze", "MARBLE MAZE", wc::rgb(222, 178, 112), console::icons::maze, &maze},

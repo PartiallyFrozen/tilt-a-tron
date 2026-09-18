@@ -25,6 +25,13 @@ struct Tilt {
     float gx = 0, gy = 0, gz = 0;   // deg/s
 };
 
+// Resting error of this watch's motion sensor, measured by Settings > CALIBRATE and
+// taken off every sample, so "flat" and "still" mean the same thing in every game.
+struct TiltCal {
+    float ax = 0, ay = 0;           // g read with the watch lying truly level
+    float gx = 0, gy = 0, gz = 0;   // deg/s read with the watch still
+};
+
 struct InputState {
     uint32_t held = 0;
     uint32_t pressed = 0;      // went down (instant; use for action buttons)
@@ -45,6 +52,9 @@ public:
     void snapshot(InputState &out);
     // Stop touching I2C (before light sleep). Blocks until the input task is idle.
     void pause(bool paused);
+    // Applies from the next snapshot on.
+    static void setCalibration(const TiltCal &cal);
+    static TiltCal calibration();
 };
 
 }  // namespace wc

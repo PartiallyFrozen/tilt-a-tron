@@ -908,6 +908,8 @@ void Star::enter(Engine &e)
     s_->dirty = true;
 }
 
+void Star::redraw() { s_->dirty = s_->menu_dirty = true; }
+
 void Star::update(Engine &e, float dt) { s_->update(e, std::min(dt, 0.1f)); }
 
 void Star::draw(Engine &e, Gfx &g)
