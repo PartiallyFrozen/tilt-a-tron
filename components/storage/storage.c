@@ -96,7 +96,10 @@ static uint32_t fnv1a(uint32_t h, const uint8_t *p, size_t n)
 static bool file_hash(const char *path, uint32_t *out)
 {
     FILE *f = fopen(path, "rb");
-    if (!f) return false;
+    if (!f) {
+        ESP_LOGW(TAG, "can't read %s (%d)", path, errno);
+        return false;
+    }
     uint32_t h = 2166136261u;
     uint8_t buf[512];
     size_t n;
@@ -161,7 +164,7 @@ static void seed_default_file(const char *name, const uint8_t *start, const uint
     char path[96];
     snprintf(path, sizeof(path), STORAGE_THEMES "/Default/%s", name);
     const uint32_t fw = fnv1a(2166136261u, start, end - start);
-    uint32_t cur;
+    uint32_t cur = 0;
     const bool exists = file_hash(path, &cur);
     const uint32_t *rec = record_for(name);
     bool write = !exists;
@@ -170,6 +173,8 @@ static void seed_default_file(const char *name, const uint8_t *start, const uint
         else if (cur == fw) record_set(name, fw);         // pre-tracking file that matches: adopt it
         // Otherwise the user made it: leave it, and don't record it as ours.
     }
+    ESP_LOGD(TAG, "Default/%s: exists %d cur %08x rec %08x fw %08x -> %s", name, exists, (unsigned)cur,
+             rec ? (unsigned)*rec : 0u, (unsigned)fw, write ? "write" : "keep");
     if (write) {
         write_file(path, start, end, false);
         record_set(name, fw);
