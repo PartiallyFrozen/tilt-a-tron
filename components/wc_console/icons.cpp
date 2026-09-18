@@ -161,6 +161,24 @@ void jump(Color *buf, int r)
     });
 }
 
+void ringdrop(Color *buf, int r)
+{
+    // Fallback only (the real icon is a PNG): coloured wedge rings around a dark core.
+    static constexpr Color BG = rgb(12, 12, 20), EDGE = rgb(70, 74, 92), CORE = rgb(16, 19, 28);
+    static constexpr Color RING[3] = {rgb(255, 150, 40), rgb(80, 220, 240), rgb(190, 90, 240)};
+    forEach(buf, r, [&](float nd, float a, float, float) -> Color {
+        if (nd > 0.955f) return EDGE;
+        if (nd < 0.22f) return CORE;
+        if (nd < 0.85f) {
+            const int ring = int((nd - 0.22f) / 0.21f);
+            const float frac = std::fmod(a / TAU * 12 + ring * 0.3f, 1.0f);
+            if (frac < 0.08f || (ring == 2 && int(a / TAU * 12) % 5 == 0)) return BG;
+            return RING[ring % 3];
+        }
+        return BG;
+    });
+}
+
 void settings(Color *buf, int r)
 {
     static constexpr Color BG = rgb(26, 30, 40), EDGE = rgb(70, 74, 92), GEAR = rgb(205, 210, 222),

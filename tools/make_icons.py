@@ -234,12 +234,57 @@ def settings_icon():
     finish(img, "settings")
 
 
+def ringdrop_icon():
+    img = canvas((12, 12, 20))
+    c = 26
+    cols = [(80, 220, 240), (255, 215, 60), (190, 90, 240), (255, 150, 40), (70, 130, 255), (90, 230, 110),
+            (255, 80, 90)]
+    px = img.load()
+    # Three settled rings of wedges (with gaps), and an orange piece dropping in from the rim.
+    for yy in range(L):
+        for xx in range(L):
+            dx, dy = xx + 0.5 - c, yy + 0.5 - c
+            d = math.hypot(dx, dy)
+            if d < 6:
+                px[xx, yy] = ((74, 80, 100) if d > 4.5 else (16, 19, 28)) + (255,)
+                continue
+            if d >= 25:
+                continue
+            ring = int((d - 6) / 4.4)
+            rf = (d - 6) - ring * 4.4
+            a = (math.atan2(dy, dx) + math.pi) / (2 * math.pi) * 12
+            k, frac = int(a), a - int(a)
+            gap = 0.5 * 12 / (2 * math.pi * d)
+            if frac < gap or frac > 1 - gap:
+                px[xx, yy] = (8, 8, 12, 255)
+                continue
+            filled = ring < 3 and not (ring == 2 and k in (2, 3)) and not (ring == 1 and k == 3)
+            if filled:
+                col = cols[(k * 3 + ring * 5) % 7]
+                if rf > 3.4:
+                    col = tuple(min(255, int(v * 0.6 + 100)) for v in col)
+                elif rf < 1:
+                    col = tuple(int(v * 0.5) for v in col)
+                px[xx, yy] = col + (255,)
+            elif (ring == 3 and k in (2, 3)) or (ring == 4 and k == 2):
+                col = (255, 150, 40)
+                if rf > 3.4:
+                    col = (255, 205, 140)
+                elif rf < 1:
+                    col = (128, 75, 20)
+                px[xx, yy] = col + (255,)
+            elif rf < 1:
+                px[xx, yy] = (26, 26, 40, 255)
+    finish(img, "ringdrop")
+
+
 def main():
     jump_icon()
     racer_icon()
     maze_icon()
     breakout_icon()
     settings_icon()
+    ringdrop_icon()
 
 
 if __name__ == "__main__":
