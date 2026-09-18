@@ -21,6 +21,8 @@ public:
     virtual void enter(Engine &) {}   // every time the app becomes active (screen is black)
     virtual void update(Engine &, float dt) = 0;
     virtual void draw(Engine &, Gfx &) = 0;
+    // Apps that only draw when something changes: draw the next frame regardless.
+    virtual void redraw() {}
     // Return true while something is going on that shouldn't be auto-powered-off
     // (a ball in play, a firmware download).
     virtual bool keepAwake() const { return false; }
@@ -52,6 +54,8 @@ public:
     // Console navigation. BOOT anywhere returns to the home app.
     void setHome(Game &home) { home_ = &home; }
     void switchTo(Game &app) { pending_ = &app; }
+    // Ask the running app for a fresh frame (GET /screen uses it). Safe from any task.
+    void requestRedraw() { redraw_req_ = true; }
     void goHome()
     {
         if (home_) pending_ = home_;
@@ -122,6 +126,7 @@ private:
     Game *game_ = nullptr;
     Game *home_ = nullptr;
     Game *pending_ = nullptr;
+    volatile bool redraw_req_ = false;
     bool sleep_requested_ = false;
     int auto_off_s_ = 120;
     int64_t last_activity_us_ = 0;

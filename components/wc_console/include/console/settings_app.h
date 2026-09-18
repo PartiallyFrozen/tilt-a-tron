@@ -1,5 +1,5 @@
 // Console settings (scrollable): brightness, theme, Wi-Fi on/off, network, auto off,
-// debug mode, firmware update, version.
+// USB drive, motion sensor calibration, firmware update, version.
 #pragma once
 
 #include "console/scroll_list.h"
@@ -25,22 +25,24 @@ private:
 
 class SettingsApp : public wc::Game {
 public:
-    void setScreens(wc::Game *wifi, wc::Game *updater)
+    void setScreens(wc::Game *wifi, wc::Game *updater, wc::Game *calibrate = nullptr)
     {
         wifi_ = wifi;
         updater_ = updater;
+        calibrate_ = calibrate;
     }
     void enter(wc::Engine &e) override { full_ = true; }
     void update(wc::Engine &e, float dt) override;
     void draw(wc::Engine &e, wc::Gfx &g) override;
 
 private:
-    enum Item { BRIGHTNESS, VOLUME, THEME, WIFI, NETWORK, AUTO_OFF, DEBUG_MODE, UPDATE, VERSION, ITEM_COUNT };
+    enum Item { BRIGHTNESS, VOLUME, THEME, WIFI, NETWORK, AUTO_OFF, CALIBRATE, DEBUG_MODE, UPDATE, VERSION, ITEM_COUNT };
     void activate(wc::Engine &e, int item);
     void drawRow(wc::Gfx &g, int item, int y);
 
     wc::Game *wifi_ = nullptr;
     wc::Game *updater_ = nullptr;
+    wc::Game *calibrate_ = nullptr;
     wc::Gestures ges_;
     ui::ScrollList list_;
     bool full_ = true;

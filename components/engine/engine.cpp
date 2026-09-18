@@ -254,6 +254,10 @@ void Engine::loop()
             input_state_.held = 0;
         }
 
+        if (redraw_req_) {
+            redraw_req_ = false;
+            game_->redraw();
+        }
         game_->update(*this, dt);
         if (sleep_requested_) {
             sleep_requested_ = false;

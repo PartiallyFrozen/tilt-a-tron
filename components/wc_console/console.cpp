@@ -79,6 +79,47 @@ void setAutoOffIndex(int index)
     }
 }
 
+static bool s_tilt_calibrated = false;
+
+void loadTiltCalibration()
+{
+    nvs_handle_t h;
+    if (nvs_open("console", NVS_READONLY, &h) != ESP_OK) return;
+    wc::TiltCal cal;
+    size_t len = sizeof(cal);
+    if (nvs_get_blob(h, "tiltcal", &cal, &len) == ESP_OK && len == sizeof(cal)) {
+        wc::Input::setCalibration(cal);
+        s_tilt_calibrated = true;
+    }
+    nvs_close(h);
+}
+
+void saveTiltCalibration(const wc::TiltCal &cal)
+{
+    wc::Input::setCalibration(cal);
+    s_tilt_calibrated = true;
+    nvs_handle_t h;
+    if (nvs_open("console", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_blob(h, "tiltcal", &cal, sizeof(cal));
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+void clearTiltCalibration()
+{
+    wc::Input::setCalibration(wc::TiltCal{});
+    s_tilt_calibrated = false;
+    nvs_handle_t h;
+    if (nvs_open("console", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_key(h, "tiltcal");
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+bool tiltCalibrated() { return s_tilt_calibrated; }
+
 const char *firmwareVersion() { return esp_app_get_description()->version; }
 
 // ------------------------------------------------------------------ crash breadcrumbs

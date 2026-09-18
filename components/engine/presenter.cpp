@@ -93,6 +93,11 @@ void Presenter::present(Gfx &gfx)
     const int64_t t0 = esp_timer_get_time();
     bool first = true;
 
+    // A game that streamed a whole frame with presentBands() owns the screen this frame.
+    // Anything still dirty in the framebuffer (the black clear on app entry) would land
+    // on top of it, and a game that only redraws on change would stay black.
+    if (streamed_) gfx.clearDirty();
+
     bool any = false;
     for (int b = 0; b < Gfx::BANDS && !any; b++) any = gfx.band(b).x0 < gfx.band(b).x1;
     if (!any) {

@@ -26,6 +26,12 @@ int brightnessLevel();
 void setBrightnessLevel(int level);   // applies and saves
 void applyBrightness();
 
+// ---- motion sensor calibration (persisted; measured by Settings > CALIBRATE)
+void loadTiltCalibration();   // at boot: hands the saved correction to the input layer
+void saveTiltCalibration(const wc::TiltCal &cal);
+void clearTiltCalibration();
+bool tiltCalibrated();
+
 // ---- auto off: minutes asleep before the console powers down (persisted)
 constexpr int AUTO_OFF_OPTIONS = 5;
 constexpr const char *AUTO_OFF_NAMES[AUTO_OFF_OPTIONS] = {"1 MIN", "2 MIN", "5 MIN", "10 MIN", "NEVER"};
