@@ -81,8 +81,102 @@ bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len)
 }
 
 // Make sure Theme/Default exists with the built-in files, so there's always a
-// working theme to copy. Default is the firmware's own look, so its files are
-// refreshed when a new firmware ships different ones (copy it to make your own).
+// working theme to copy. A new firmware may ship different Default files (new
+// icons, say). Those are refreshed *only* if the copy on the drive is still the
+// one an earlier firmware wrote: anything the user changed or replaced stays.
+// The record of what the firmware wrote lives in Theme/Default/.firmware.
+#define SEED_RECORD STORAGE_THEMES "/Default/.firmware"
+
+static uint32_t fnv1a(uint32_t h, const uint8_t *p, size_t n)
+{
+    for (size_t i = 0; i < n; i++) h = (h ^ p[i]) * 16777619u;
+    return h;
+}
+
+static bool file_hash(const char *path, uint32_t *out)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    uint32_t h = 2166136261u;
+    uint8_t buf[512];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) h = fnv1a(h, buf, n);
+    fclose(f);
+    *out = h;
+    return true;
+}
+
+typedef struct {
+    char name[40];
+    uint32_t hash;
+} seed_rec_t;
+static seed_rec_t s_recs[16];
+static int s_nrecs;
+
+static uint32_t *record_for(const char *name)
+{
+    for (int i = 0; i < s_nrecs; i++)
+        if (strcmp(s_recs[i].name, name) == 0) return &s_recs[i].hash;
+    return NULL;
+}
+
+static void record_set(const char *name, uint32_t hash)
+{
+    uint32_t *h = record_for(name);
+    if (h) {
+        *h = hash;
+    } else if (s_nrecs < (int)(sizeof(s_recs) / sizeof(s_recs[0]))) {
+        strlcpy(s_recs[s_nrecs].name, name, sizeof(s_recs[s_nrecs].name));
+        s_recs[s_nrecs++].hash = hash;
+    }
+}
+
+static void records_load(void)
+{
+    s_nrecs = 0;
+    FILE *f = fopen(SEED_RECORD, "r");
+    if (!f) return;
+    char line[64];
+    while (fgets(line, sizeof(line), f) && s_nrecs < (int)(sizeof(s_recs) / sizeof(s_recs[0]))) {
+        char name[40];
+        unsigned hash;
+        if (sscanf(line, "%39s %x", name, &hash) == 2) record_set(name, hash);
+    }
+    fclose(f);
+}
+
+static void records_save(void)
+{
+    FILE *f = fopen(SEED_RECORD, "w");
+    if (!f) return;
+    for (int i = 0; i < s_nrecs; i++) fprintf(f, "%s %08x\n", s_recs[i].name, (unsigned)s_recs[i].hash);
+    fclose(f);
+}
+
+// `name` is the path under Theme/Default. Writes the firmware's copy when the
+// file is missing, or when it is unchanged since the firmware last wrote it and
+// the firmware now ships something different.
+static void seed_default_file(const char *name, const uint8_t *start, const uint8_t *end)
+{
+    char path[96];
+    snprintf(path, sizeof(path), STORAGE_THEMES "/Default/%s", name);
+    const uint32_t fw = fnv1a(2166136261u, start, end - start);
+    uint32_t cur;
+    const bool exists = file_hash(path, &cur);
+    const uint32_t *rec = record_for(name);
+    bool write = !exists;
+    if (exists) {
+        if (rec) write = (cur == *rec) && (fw != cur);   // ours and out of date
+        else if (cur == fw) record_set(name, fw);         // pre-tracking file that matches: adopt it
+        // Otherwise the user made it: leave it, and don't record it as ours.
+    }
+    if (write) {
+        write_file(path, start, end, false);
+        record_set(name, fw);
+        ESP_LOGI(TAG, "Default/%s refreshed", name);
+    }
+}
+
 static void seed_defaults(void)
 {
     mkdir(STORAGE_THEMES, 0775);
@@ -90,17 +184,17 @@ static void seed_defaults(void)
     mkdir(STORAGE_THEMES "/Default/icons", 0775);
     // The README is ours, not the user's: keep it current with the firmware.
     write_file(STORAGE_ROOT "/README.txt", _binary_README_txt_start, _binary_README_txt_end, false);
-    write_file(STORAGE_THEMES "/Default/theme.json", _binary_theme_json_start, _binary_theme_json_end, false);
-    write_file(STORAGE_THEMES "/Default/background.png", _binary_background_png_start,
-               _binary_background_png_end, false);
-    write_file(STORAGE_THEMES "/Default/icons/breakout.png", _binary_breakout_png_start,
-               _binary_breakout_png_end, false);
-    write_file(STORAGE_THEMES "/Default/icons/settings.png", _binary_settings_png_start,
-               _binary_settings_png_end, false);
-    write_file(STORAGE_THEMES "/Default/icons/maze.png", _binary_maze_png_start, _binary_maze_png_end, false);
-    write_file(STORAGE_THEMES "/Default/icons/racer.png", _binary_racer_png_start, _binary_racer_png_end, false);
-    write_file(STORAGE_THEMES "/Default/icons/jump.png", _binary_jump_png_start, _binary_jump_png_end, false);
-    write_file(STORAGE_THEMES "/Default/icons/tiltatris.png", _binary_tiltatris_png_start, _binary_tiltatris_png_end, false);
+
+    records_load();
+    seed_default_file("theme.json", _binary_theme_json_start, _binary_theme_json_end);
+    seed_default_file("background.png", _binary_background_png_start, _binary_background_png_end);
+    seed_default_file("icons/breakout.png", _binary_breakout_png_start, _binary_breakout_png_end);
+    seed_default_file("icons/settings.png", _binary_settings_png_start, _binary_settings_png_end);
+    seed_default_file("icons/maze.png", _binary_maze_png_start, _binary_maze_png_end);
+    seed_default_file("icons/racer.png", _binary_racer_png_start, _binary_racer_png_end);
+    seed_default_file("icons/jump.png", _binary_jump_png_start, _binary_jump_png_end);
+    seed_default_file("icons/tiltatris.png", _binary_tiltatris_png_start, _binary_tiltatris_png_end);
+    records_save();
     unlink(STORAGE_THEMES "/Default/icons/ringdrop.png");   // the game was renamed
 
     // Design templates: where icons, titles and menu rows land on the round screen.
