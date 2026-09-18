@@ -12,7 +12,7 @@
 #include "engine/canvas.h"
 #include "engine/store.h"
 
-#include "game_ui.h"
+#include "console/banner.h"
 #include "engine/gestures.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -632,8 +632,8 @@ struct Maze::State {
 
     void banner(Canvas &c, const char *top, const char *bottom, uint8_t col)
     {
-        const games::ui::BannerStyle style{c_panel, c_box, c_label, c_label};
-        games::ui::banner(c, W / 2, 100, W - 84, top, bottom, nullptr, col, style);
+        const console::ui::BannerStyle style{c_panel, c_box, c_label, c_label};
+        console::ui::banner(c, W / 2, 100, W - 84, top, bottom, nullptr, col, style);
     }
 
     void draw(Engine &e, Gfx &g)

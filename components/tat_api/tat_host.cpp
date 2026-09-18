@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "audio/audio.h"
+#include "console/banner.h"
 #include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
@@ -241,13 +242,23 @@ const void *api_asset(const char *name, size_t *len)
 {
     if (!s.game) return nullptr;
     for (int i = 0; i < s.game->asset_count; i++) {
-        if (std::strcmp(s.game->assets[i].name, name) == 0) {
-            if (len) *len = s.game->assets[i].len;
-            return s.game->assets[i].data;
+        const tat_asset_t &a = s.game->assets[i];
+        if (std::strcmp(a.name, name) == 0) {
+            if (len) *len = size_t(a.end - a.data);
+            return a.data;
         }
     }
     if (len) *len = 0;
     return nullptr;
+}
+
+void api_canvas_banner(tat_canvas_t *c, int cx, int y, int w, const tat_banner_t *b)
+{
+    console::ui::BannerStyle style{b->panel, b->border, b->mid_color, b->bottom_color};
+    style.top_scale = b->top_scale ? b->top_scale : 1;
+    style.bars = b->bars;
+    style.bottom_bold = b->bottom_bold;
+    console::ui::banner(*cv(c), cx, y, w, b->top, b->mid, b->bottom, b->top_color, style);
 }
 
 tat_api_t s_api = {
@@ -266,6 +277,7 @@ tat_api_t s_api = {
     api_tone, api_volume,
     api_save_get, api_save_set,
     api_asset,
+    api_canvas_banner,
 };
 
 // The input the game sees is a copy: it must not be able to reach into the engine's.

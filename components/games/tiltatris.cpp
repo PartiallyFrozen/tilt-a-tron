@@ -11,7 +11,7 @@
 #include "engine/canvas.h"
 #include "engine/store.h"
 
-#include "game_ui.h"
+#include "console/banner.h"
 #include "engine/gestures.h"
 #include "engine/polar.h"
 #include "esp_log.h"
@@ -540,8 +540,8 @@ struct Tiltatris::State {
 
     void banner(Canvas &c, const char *top, const char *mid, const char *bottom, uint8_t col)
     {
-        const games::ui::BannerStyle style{c_panel, c_box, c_dim, c_dim};
-        games::ui::banner(c, CW / 2, 100, CW - 60, top, mid, bottom, col, style);
+        const console::ui::BannerStyle style{c_panel, c_box, c_dim, c_dim};
+        console::ui::banner(c, CW / 2, 100, CW - 60, top, mid, bottom, col, style);
     }
 
     void draw(Engine &e, Gfx &g)

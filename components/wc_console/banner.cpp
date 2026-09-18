@@ -1,6 +1,6 @@
-#include "game_ui.h"
+#include "console/banner.h"
 
-namespace games::ui {
+namespace console::ui {
 
 void banner(wc::Canvas &c, int cx, int y, int w, const char *top, const char *mid,
             const char *bottom, uint8_t top_color, const BannerStyle &s)
@@ -27,4 +27,4 @@ void banner(wc::Canvas &c, int cx, int y, int w, const char *top, const char *mi
     if (bottom) c.textCentered(cx, ty, bottom, s.bottom_color, 1, s.bottom_bold);
 }
 
-}  // namespace games::ui
+}  // namespace console::ui

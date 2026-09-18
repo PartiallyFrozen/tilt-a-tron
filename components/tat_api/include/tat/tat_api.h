@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 #define TAT_API_MAJOR 1
-#define TAT_API_MINOR 0
+#define TAT_API_MINOR 1
 
 // ---------------------------------------------------------------- basics
 
@@ -99,6 +99,24 @@ typedef enum {
     TAT_UI_GO,
     TAT_UI_DANGER,
 } tat_ui_color_t;
+
+// ---------------------------------------------------------------- the banner
+//
+// The little panel a game drops over the play area to say something: LEVEL 3, GAME OVER,
+// a final score. Shared for the same reason the pause menu is - a console where every
+// game announces itself differently doesn't feel like one console. Three lines at most,
+// on a panel only as tall as the lines it holds.
+
+typedef struct {
+    const char *top;             // always drawn, bold
+    const char *mid, *bottom;    // NULL to leave out
+    uint8_t top_color, mid_color, bottom_color;   // palette indices
+    uint8_t panel;               // the fill
+    uint8_t border;              // the outline, or the bars when `bars` is set
+    uint8_t top_scale;           // 0 or 1 for a line, 2 for a headline
+    bool bars;                   // accent bars above and below instead of an outline
+    bool bottom_bold;
+} tat_banner_t;
 
 // ---------------------------------------------------------------- what a game gets
 
@@ -178,6 +196,10 @@ typedef struct tat_api {
 
     // ---- the game's own files, by the name they were packaged under
     const void *(*asset)(const char *name, size_t *len);
+
+    // ---- added in 1.1
+    // `cx` is the centre, `y` the top edge, `w` the width, all in canvas pixels.
+    void (*canvas_banner)(tat_canvas_t *c, int cx, int y, int w, const tat_banner_t *b);
 } tat_api_t;
 
 // ---------------------------------------------------------------- what a game exports
@@ -189,7 +211,9 @@ typedef struct tat_api {
 typedef struct {
     const char *name;
     const uint8_t *data;
-    uint32_t len;
+    const uint8_t *end;   // one past the last byte. A length would read better, but the
+                          // difference of two linker symbols is not a constant expression
+                          // in C, so a built-in game could not write its table down.
 } tat_asset_t;
 
 typedef struct {
@@ -198,7 +222,10 @@ typedef struct {
 
     const char *id;      // "pindrop" - lowercase; also the save namespace
     const char *name;    // "PIN DROP" - what the carousel shows
-    tat_color_t accent;
+    // The game's colour, for the launcher. Plain bytes, not a tat_color_t: a descriptor
+    // is built before the game has an api pointer to ask rgb() with, and a game writing
+    // the panel's packing by hand is exactly what rgb() exists to prevent.
+    uint8_t accent_r, accent_g, accent_b;
 
     const tat_asset_t *assets;
     int asset_count;
@@ -217,6 +244,12 @@ typedef struct {
 
 // Every game defines exactly one of these, named tat_game.
 extern const tat_game_t tat_game;
+
+// A game with files of its own also declares this and points its descriptor at it. Where
+// the table comes from is the build's business, not the game's: linked into the firmware
+// for a built-in game, supplied by the package for an installed one. Either way the game
+// asks api->asset() for its files by the name it packaged them under.
+extern const tat_asset_t tat_assets[];
 
 #ifdef __cplusplus
 }

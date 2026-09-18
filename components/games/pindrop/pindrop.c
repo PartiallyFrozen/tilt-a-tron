@@ -516,13 +516,13 @@ static void draw_hud(void)
 
 static void banner(const char *top, const char *sub, uint8_t colour)
 {
-    const int h = sub ? 30 : 20;
-    const int y = (int)CCENTRE - h / 2;
-    T->canvas_fill_rect(g.cv, 26, y, CW - 52, h, g.c_hole);
-    T->canvas_fill_rect(g.cv, 26, y, CW - 52, 2, colour);
-    T->canvas_fill_rect(g.cv, 26, y + h - 2, CW - 52, 2, colour);
-    T->canvas_text_centered(g.cv, CW / 2, y + 9, top, colour, 1, true);
-    if (sub) T->canvas_text_centered(g.cv, CW / 2, y + 21, sub, g.c_text, 1, false);
+    const tat_banner_t b = {
+        .top = top, .mid = sub,
+        .top_color = colour, .mid_color = g.c_text,
+        .panel = g.c_hole, .border = colour,
+        .bars = true,
+    };
+    T->canvas_banner(g.cv, CW / 2, (int)CCENTRE - (sub ? 13 : 8), CW - 52, &b);
 }
 
 static void pd_draw(void)
@@ -585,7 +585,7 @@ const tat_game_t tat_game = {
     .api_minor = TAT_API_MINOR,
     .id = "pindrop",
     .name = "PIN DROP",
-    .accent = 0xE0C4,   /* the ball's red, in the panel's packing */
+    .accent_r = 228, .accent_g = 62, .accent_b = 96,   /* the ball's red */
     .assets = NULL,
     .asset_count = 0,
     .begin = pd_begin,

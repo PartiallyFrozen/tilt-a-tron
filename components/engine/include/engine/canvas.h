@@ -34,6 +34,13 @@ class Canvas {
 public:
     static constexpr int MAX_W = Gfx::W / 2 + 1;   // at 2x the canvas is 233 wide
 
+    Canvas() = default;
+    ~Canvas();
+    // A canvas owns its pixels, so copying one would double-free them. Games hold
+    // canvases by value and never copy them; say so rather than hope.
+    Canvas(const Canvas &) = delete;
+    Canvas &operator=(const Canvas &) = delete;
+
     // `scale` is 2 or 3. By default the canvas covers the screen exactly
     // (ceil(466 / scale) square); a bigger `size` is centred on the screen with
     // the edges cut off, which gives a rotated canvas (presentRotated) something

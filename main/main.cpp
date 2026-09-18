@@ -23,7 +23,6 @@
 #include "games/breakout.h"
 #include "games/maze.h"
 #include "games/racer.h"
-#include "games/jump.h"
 #include "games/tiltatris.h"
 #include "games/clock.h"
 #include "games/star.h"
@@ -38,6 +37,7 @@ static const char *TAG = "main";
 // Games built against tat_api.h. The build renames each one's descriptor so several can
 // live in one firmware; a loaded package will simply export "tat_game".
 extern "C" const tat_game_t tat_game_pindrop;
+extern "C" const tat_game_t tat_game_jump;
 
 static wc::Engine *s_engine;
 static const console::App *s_apps;
@@ -200,12 +200,12 @@ extern "C" void app_main(void)
     static games::Breakout breakout;
     static games::Maze maze;
     static games::Racer racer;
-    static games::Jump jump;
     static games::Tiltatris tiltatris;
     static games::Clock clock_app;
     static games::Star star;
-    // The first game written against tat_api.h alone. Compiled in for now, but it talks to
-    // the console only through the table, which is what a loaded package will do.
+    // Games written against tat_api.h alone. Compiled in for now, but they talk to the
+    // console only through the table, which is what a loaded package will do.
+    static tat::HostedGame jump(tat_game_jump);
     static tat::HostedGame pindrop(tat_game_pindrop);
     static console::SettingsApp settings;
     static console::WifiApp wifi_setup(&settings);
@@ -230,6 +230,25 @@ extern "C" void app_main(void)
     //   app=N (0 = home)  tap=x,y  swipe=x0,y0,x1,y1  hold=x,y,ms  btn=a|b[,ms]  tilt=ax,ay,az|off
     s_apps = apps;
     s_app_count = sizeof(apps) / sizeof(apps[0]);
+    // GET /tilt: the sensor, the saved correction, and what a game actually sees. Enough
+    // to tell "the sensor is off", "the correction is wrong" and "the game is wrong" apart
+    // without having to guess from how it feels in the hand.
+    net_set_tilt_hook([](char *out, size_t len) {
+        const wc::Tilt &t = s_engine->input().tilt;       // already corrected
+        const wc::TiltCal c = wc::Input::calibration();
+        const float inv = c.a_scale > 0.01f ? 1.0f / c.a_scale : 1.0f;
+        const float rax = t.ax * inv + c.ax, ray = t.ay * inv + c.ay, raz = t.az * inv;   // the sensor
+        const float raw_mag = std::sqrt(rax * rax + ray * ray + raz * raz);
+        const float mag = std::sqrt(t.ax * t.ax + t.ay * t.ay + t.az * t.az);
+        std::snprintf(out, len,
+                      "sensor   %+.4f %+.4f %+.4f g   (magnitude %.4f, 1 g if perfect)\n"
+                      "gyro     %+.3f %+.3f %+.3f deg/s   (0 when still if perfect)\n"
+                      "saved    level %+.4f %+.4f g   drift %+.2f %+.2f %+.2f deg/s   scale x%.4f   (%s)\n"
+                      "games see%+.4f %+.4f %+.4f g   magnitude %.4f, in-plane %.4f\n",
+                      rax, ray, raz, raw_mag, t.gx + c.gx, t.gy + c.gy, t.gz + c.gz, c.ax, c.ay, c.gx, c.gy,
+                      c.gz, c.a_scale, console::tiltCalibrated() ? "calibrated" : "no calibration saved",
+                      t.ax, t.ay, t.az, mag, std::sqrt(t.ax * t.ax + t.ay * t.ay));
+    });
     net_set_control_hook([](const char *q) -> bool {
         int a, b, c, d, ms;
         float fx, fy, fz;

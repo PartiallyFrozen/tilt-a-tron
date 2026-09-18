@@ -23,6 +23,11 @@ void Sheet::release()
     w = h = fw = fh = 0;
 }
 
+// Built-in games keep their canvas for the life of the console, so this only really
+// matters for a game the loader unloads - but a canvas that is deleted and does not give
+// its pixels back is 24 KB of PSRAM gone every time one is.
+Canvas::~Canvas() { heap_caps_free(px_); }
+
 bool Canvas::init(int scale, int size)
 {
     scale_ = std::max(2, std::min(3, scale));

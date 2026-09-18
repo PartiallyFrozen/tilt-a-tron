@@ -15,7 +15,7 @@
 #include "engine/canvas.h"
 #include "engine/store.h"
 
-#include "game_ui.h"
+#include "console/banner.h"
 #include "engine/gestures.h"
 #include "engine/polar.h"
 #include "esp_attr.h"
@@ -778,11 +778,11 @@ struct Star::State {
 
     void banner(Canvas &cv, const char *top, const char *mid, const char *bottom, uint8_t col)
     {
-        games::ui::BannerStyle style{c_panel, col, c_text, c_awake};
+        console::ui::BannerStyle style{c_panel, col, c_text, c_awake};
         style.top_scale = 2;
         style.bars = true;
         style.bottom_bold = true;
-        games::ui::banner(cv, int(C), 96, CW - 40, top, mid, bottom, col, style);
+        console::ui::banner(cv, int(C), 96, CW - 40, top, mid, bottom, col, style);
     }
 
     void draw(Engine &e, Gfx &g)
