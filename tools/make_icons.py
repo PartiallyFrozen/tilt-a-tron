@@ -353,45 +353,6 @@ def star_icon():
     finish(img, "star")
 
 
-def doom_icon():
-    """A horned demon glaring out of a hellish sky (original pixel art, not id's logo)."""
-    img = canvas((0, 0, 0))
-    vgradient(img, (70, 10, 6), (16, 4, 4))
-    hide, hide_d, hide_l = (158, 56, 32), (104, 32, 20), (196, 84, 48)
-    horn, horn_d = (226, 208, 172), (160, 140, 108)
-    eye, eye_hot, tooth, mouth = (255, 196, 40), (255, 250, 200), (240, 232, 214), (40, 6, 6)
-    # Horns, curving up and out.
-    for i in range(9):
-        w = max(1, 5 - i // 2)
-        rect(img, 11 - i // 2, 20 - i * 2, w, 2, horn)
-        rect(img, 11 - i // 2 + w - 1, 20 - i * 2, 1, 2, horn_d)
-        rect(img, 41 + i // 2 - w + 1, 20 - i * 2, w, 2, horn)
-        rect(img, 41 + i // 2 - w + 1, 20 - i * 2, 1, 2, horn_d)
-    # Head: wide brow, narrowing jaw.
-    for y in range(16, 46):
-        half = 16 if y < 30 else 16 - (y - 30) * 2 // 3
-        rect(img, 26 - half, y, half * 2, 1, hide)
-        rect(img, 26 - half, y, 2, 1, hide_d)
-        rect(img, 26 + half - 2, y, 2, 1, hide_d)
-    rect(img, 12, 16, 28, 2, hide_l)
-    # Heavy brow over burning eyes.
-    rect(img, 12, 22, 12, 2, hide_d)
-    rect(img, 28, 22, 12, 2, hide_d)
-    for (x0, flip) in ((14, False), (30, True)):
-        rect(img, x0, 24, 8, 4, eye)
-        rect(img, x0 + (5 if not flip else 1), 25, 2, 2, eye_hot)
-        rect(img, x0 + (0 if not flip else 6), 24, 2, 1, hide_d)
-    # Snout and a mouth full of teeth.
-    rect(img, 24, 29, 1, 2, hide_d)
-    rect(img, 27, 29, 1, 2, hide_d)
-    rect(img, 15, 34, 22, 7, mouth)
-    for i in range(6):
-        rect(img, 16 + i * 4, 34, 2, 3, tooth)
-        if 0 < i < 5:
-            rect(img, 14 + i * 4 + 1, 39, 2, 2, tooth)
-    finish(img, "doom")
-
-
 def main():
     jump_icon()
     racer_icon()
@@ -401,7 +362,6 @@ def main():
     tiltatris_icon()
     clock_icon()
     star_icon()
-    doom_icon()
 
 
 if __name__ == "__main__":

@@ -14,7 +14,6 @@ idf_component_register(
         "../../themes/Default/icons/tiltatris.png"
         "../../themes/Default/icons/clock.png"
         "../../themes/Default/icons/star.png"
-        "../../themes/Default/icons/doom.png"
         "../../themes/Guide/guide-home.png"
         "../../themes/Guide/guide-menus.png"
         "../../themes/Guide/guide-icon.png"

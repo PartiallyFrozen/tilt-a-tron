@@ -38,7 +38,6 @@ EMBED(jump_png)
 EMBED(tiltatris_png)
 EMBED(clock_png)
 EMBED(star_png)
-EMBED(doom_png)
 EMBED(guide_home_png)
 EMBED(guide_menus_png)
 EMBED(guide_icon_png)
@@ -75,7 +74,6 @@ bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len)
         {"tiltatris", _binary_tiltatris_png_start, _binary_tiltatris_png_end},
         {"clock", _binary_clock_png_start, _binary_clock_png_end},
         {"star", _binary_star_png_start, _binary_star_png_end},
-        {"doom", _binary_doom_png_start, _binary_doom_png_end},
     };
     for (size_t i = 0; i < sizeof(icons) / sizeof(icons[0]); i++) {
         if (strcmp(icons[i].id, id) != 0) continue;
@@ -207,21 +205,11 @@ static void seed_defaults(void)
     seed_default_file("icons/tiltatris.png", _binary_tiltatris_png_start, _binary_tiltatris_png_end);
     seed_default_file("icons/clock.png", _binary_clock_png_start, _binary_clock_png_end);
     seed_default_file("icons/star.png", _binary_star_png_start, _binary_star_png_end);
-    seed_default_file("icons/doom.png", _binary_doom_png_start, _binary_doom_png_end);
     records_save();
     unlink(STORAGE_THEMES "/Default/icons/ringdrop.png");   // the game was renamed
 
     // Design templates: where icons, titles and menu rows land on the round screen.
     mkdir(STORAGE_ROOT "/Guide", 0775);
-    // Doom looks here for its game data (see components/games/doom.cpp).
-    static const char doom_note[] =
-        "Doom needs a WAD file (its game data).\r\n\r\n"
-        "Copy DOOM1.WAD - the free shareware episode - or another Doom WAD into this folder,\r\n"
-        "eject the drive, and open DOOM on the watch. It copies the file into its own memory\r\n"
-        "the first time, which takes about a minute.\r\n";
-    mkdir(STORAGE_ROOT "/Doom", 0775);
-    write_if_missing(STORAGE_ROOT "/Doom/PUT A DOOM WAD HERE.txt", (const uint8_t *)doom_note,
-                     (const uint8_t *)doom_note + sizeof(doom_note) - 1);
     write_if_missing(STORAGE_ROOT "/Guide/guide-home.png", _binary_guide_home_png_start,
                      _binary_guide_home_png_end);
     write_if_missing(STORAGE_ROOT "/Guide/guide-menus.png", _binary_guide_menus_png_start,

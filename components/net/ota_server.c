@@ -53,16 +53,6 @@ static esp_err_t input_get(httpd_req_t *req)
 
 void net_set_screen_hook(net_screen_fn fn) { s_screen_fn = fn; }
 
-static net_blob_begin_fn s_blob_begin;
-static net_blob_write_fn s_blob_write;
-static net_blob_end_fn s_blob_end;
-void net_set_wad_hooks(net_blob_begin_fn begin, net_blob_write_fn write, net_blob_end_fn end)
-{
-    s_blob_begin = begin;
-    s_blob_write = write;
-    s_blob_end = end;
-}
-
 static esp_err_t screen_get(httpd_req_t *req)
 {
     note_request();
@@ -283,46 +273,11 @@ static esp_err_t update_post_inner(httpd_req_t *req)
     return ESP_OK;
 }
 
-// POST /wad?name=doom1.wad : game data for Doom, stored in its own region of the flash.
-static esp_err_t wad_post_inner(httpd_req_t *req)
-{
-    char query[64] = "", name[32] = "doom1.wad";
-    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK)
-        httpd_query_key_value(query, "name", name, sizeof(name));
-    if (!s_blob_begin || !s_blob_begin(name, req->content_len)) {
-        httpd_resp_set_status(req, "409 Conflict");
-        return httpd_resp_sendstr(req, "can't store a WAD right now (wrong size, or Doom is running: restart the watch first)");
-    }
-    ESP_LOGI(TAG, "receiving %s, %u bytes", name, (unsigned)req->content_len);
-    esp_wifi_set_ps(WIFI_PS_NONE);
-    char *buf = s_rx_buf;
-    size_t remaining = req->content_len;
-    bool ok = true;
-    while (remaining > 0 && ok) {
-        int n = httpd_req_recv(req, buf, remaining < RX_BUF ? remaining : RX_BUF);
-        if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
-        if (n <= 0) ok = false;
-        else ok = s_blob_write(buf, n), remaining -= n;
-    }
-    ok = s_blob_end() && ok;
-    if (!ok) httpd_resp_set_status(req, "500 Internal Server Error");
-    return httpd_resp_sendstr(req, ok ? "OK" : "failed");
-}
-
 // Uploads hold the watch awake from the first byte to the last (see net_busy).
 static esp_err_t update_post(httpd_req_t *req)
 {
     s_transfer = true;
     const esp_err_t err = update_post_inner(req);
-    s_transfer = false;
-    note_request();
-    return err;
-}
-
-static esp_err_t wad_post(httpd_req_t *req)
-{
-    s_transfer = true;
-    const esp_err_t err = wad_post_inner(req);
     s_transfer = false;
     note_request();
     return err;
@@ -345,7 +300,6 @@ esp_err_t ota_server_start(void)
         {.uri = "/screen", .method = HTTP_GET, .handler = screen_get},
         {.uri = "/input", .method = HTTP_GET, .handler = input_get},
         {.uri = "/update", .method = HTTP_POST, .handler = update_post},
-        {.uri = "/wad", .method = HTTP_POST, .handler = wad_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s_server, &uris[i]);
     ESP_LOGI(TAG, "update server listening on port 80");
