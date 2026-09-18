@@ -28,10 +28,15 @@ private:
     void move(int dir);
     void drawIcons(wc::Gfx &g, int shift);
     const Image &iconFor(int app) const;
+    void refreshVisible();
+    int count() const { return int(vis_.size()); }
+    const App &app(int slot) const { return apps_[vis_[slot]]; }
 
     const App *apps_;
     int n_;
-    int sel_ = 0;
+    int sel_ = 0;                        // a slot in vis_
+    int last_app_ = 0;
+    std::vector<int> vis_;               // indexes of the apps not hidden in Settings > GAMES
     std::vector<Image> builtin_icons_;   // drawn in code; a theme's icons/<id>.png wins
     uint32_t theme_gen_ = 0;
     wc::Gestures ges_;

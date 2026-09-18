@@ -45,14 +45,28 @@ void Launcher::begin(Engine &e)
     nvs_handle_t h;
     if (nvs_open("console", NVS_READONLY, &h) == ESP_OK) {
         uint8_t v;
-        if (nvs_get_u8(h, "last_app", &v) == ESP_OK && v < n_) sel_ = v;
+        if (nvs_get_u8(h, "last_app", &v) == ESP_OK && v < n_) last_app_ = v;
         nvs_close(h);
     }
+    refreshVisible();
     ESP_LOGI(TAG, "%d apps", n_);
+}
+
+// Rebuild the carousel from the apps that aren't hidden, keeping the same app selected.
+void Launcher::refreshVisible()
+{
+    const int current = vis_.empty() ? last_app_ : vis_[sel_];
+    vis_.clear();
+    for (int i = 0; i < n_; i++)
+        if (!appHidden(apps_[i].id)) vis_.push_back(i);
+    sel_ = 0;
+    for (int s = 0; s < count(); s++)
+        if (vis_[s] == current) sel_ = s;
 }
 
 void Launcher::enter(Engine &e)
 {
+    refreshVisible();
     full_ = true;
     anim_ = 0;
 }
@@ -65,7 +79,7 @@ const Image &Launcher::iconFor(int app) const
 
 void Launcher::move(int dir)
 {
-    sel_ = (sel_ + dir + n_) % n_;
+    sel_ = (sel_ + dir + count()) % count();
     anim_ += dir * SPACING;   // new selection slides in from the side we swiped from
     full_ = true;
 }
@@ -125,14 +139,14 @@ void Launcher::update(Engine &e, float dt)
         if (ges_.x < Gfx::CX - ICON_R) move(-1);
         else if (ges_.x > Gfx::CX + ICON_R) move(+1);
     }
-    if (tapped_icon && std::fabs(anim_) < 40 && apps_[sel_].game) {
+    if (tapped_icon && std::fabs(anim_) < 40 && app(sel_).game) {
         nvs_handle_t h;
         if (nvs_open("console", NVS_READWRITE, &h) == ESP_OK) {
-            nvs_set_u8(h, "last_app", uint8_t(sel_));
+            nvs_set_u8(h, "last_app", uint8_t(vis_[sel_]));
             nvs_commit(h);
             nvs_close(h);
         }
-        e.switchTo(*apps_[sel_].game);
+        e.switchTo(*app(sel_).game);
         return;
     }
 
@@ -147,7 +161,8 @@ void Launcher::drawIcons(Gfx &g, int shift)
     const int band_y = ICON_CY - ICON_R - 12, band_h = 2 * ICON_R + 24;
     ui::restoreBg(g, 0, band_y, Gfx::W, band_h);
     for (int k = -1; k <= 1; k++) {
-        const int i = (sel_ + k + n_) % n_;
+        if (k != 0 && count() < 2) continue;   // a lone app has no neighbours
+        const int i = vis_[(sel_ + k + count()) % count()];
         const Image &icon = iconFor(i);
         if (!icon.valid()) continue;
         const int cx = Gfx::CX + shift + k * SPACING;
@@ -178,9 +193,9 @@ void Launcher::draw(Engine &e, Gfx &g)
 
     if (full_) {
         ui::clearScreen(g);   // the theme's background carries any branding
-        ui::shadowText(g, Gfx::CX, Gfx::CY + 112, apps_[sel_].name, apps_[sel_].accent, 4);
-        const int dots_w = (n_ - 1) * 20;
-        for (int i = 0; i < n_; i++) {
+        ui::shadowText(g, Gfx::CX, Gfx::CY + 112, app(sel_).name, app(sel_).accent, 4);
+        const int dots_w = (count() - 1) * 20;
+        for (int i = 0; i < count(); i++) {
             const int x = Gfx::CX - dots_w / 2 + i * 20;
             g.fillCircle(x, Gfx::CY + 152, i == sel_ ? 6 : 4, i == sel_ ? ui::TEXT : ui::BOX);
         }
