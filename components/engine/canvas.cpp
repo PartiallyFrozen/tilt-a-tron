@@ -10,9 +10,9 @@
 #include "esp_log.h"
 #include "lodepng.h"
 
-extern const uint8_t kFont5x7[][5];
-
 namespace wc {
+
+extern const uint8_t kFont5x7[][5];
 
 static const char *TAG = "canvas";
 

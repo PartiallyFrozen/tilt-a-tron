@@ -8,12 +8,24 @@
 
 #include "audio/audio.h"
 #include "console/ui.h"
+#include "engine/canvas.h"
 #include "engine/gestures.h"
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "nvs.h"
 
 using namespace wc;
+
+// Sprite sheets, embedded from components/games/assets/jump/ (see tools/make_sprites.py).
+extern "C" {
+extern const uint8_t _binary_hopper_png_start[], _binary_hopper_png_end[];
+extern const uint8_t _binary_monster_png_start[], _binary_monster_png_end[];
+extern const uint8_t _binary_ledges_png_start[], _binary_ledges_png_end[];
+extern const uint8_t _binary_spring_png_start[], _binary_spring_png_end[];
+extern const uint8_t _binary_shot_png_start[], _binary_shot_png_end[];
+extern const uint8_t _binary_clouds_png_start[], _binary_clouds_png_end[];
+}
 
 namespace games {
 
@@ -21,24 +33,26 @@ namespace {
 
 const char *TAG = "jump";
 
-constexpr int W = Gfx::W, H = Gfx::H;
+// The game is drawn on a 155x155 pixel canvas that the presenter scales 3x, so
+// every sprite pixel is a chunky 3x3 block on the 466 px screen. All positions
+// below are canvas pixels.
+constexpr int SCALE = 3;
+constexpr int W = (Gfx::W + SCALE - 1) / SCALE, H = W;
 constexpr float PI = 3.14159265f;
 
-// Everything is pixel art drawn at 3x, so one sprite pixel is a 3x3 block on screen.
-constexpr int SCALE = 3;
-
-// World units are screen pixels; world y points UP (0 = the ground).
-constexpr float GRAVITY = 2800.0f;    // px/s^2
-constexpr float JUMP_V = 1170.0f;     // a normal bounce reaches 244 px
-constexpr float SPRING_V = 2100.0f;   // a spring reaches 790 px
-constexpr float BULLET_V = 1100.0f;
-constexpr float PLAYER_HALF = 24.0f;  // half of Hopper's body width, for landing / collisions
-constexpr float PLAYER_H = 66.0f;
-constexpr float PLAT_W = 90.0f, PLAT_H = 21.0f;
-constexpr float MONSTER_W = 54.0f, MONSTER_H = 48.0f;
-constexpr int PLAYER_LINE = 236;      // Hopper never rises above this screen y; the world scrolls instead
-constexpr float TILT_GAIN[3] = {950.0f, 1400.0f, 1950.0f};   // px/s at full tilt: LOW / MED / HIGH
-constexpr float PX_PER_M = 12.0f;     // score is height in "metres"
+// World y points UP (0 = the ground).
+constexpr float GRAVITY = 930.0f;     // px/s^2
+constexpr float JUMP_V = 390.0f;      // a normal bounce reaches 82 px (about half the screen)
+constexpr float SPRING_V = 700.0f;    // a spring reaches 263 px
+constexpr float BULLET_V = 370.0f;
+constexpr float PLAYER_HALF = 8.0f;   // half of Hopper's body width, for landing / collisions
+constexpr float PLAYER_H = 22.0f;
+constexpr float PLAT_W = 30.0f, PLAT_H = 7.0f;
+constexpr float MONSTER_W = 18.0f, MONSTER_H = 16.0f;
+constexpr int PLAYER_LINE = 79;       // Hopper never rises above this canvas y; the world scrolls instead
+constexpr float TILT_GAIN[3] = {320.0f, 470.0f, 650.0f};   // px/s at full tilt: LOW / MED / HIGH
+constexpr float PX_PER_M = 4.0f;      // score is height in "metres"
+constexpr int SKY_STEPS = 32;         // palette entries for the sky gradient
 
 uint32_t rnd(uint32_t n) { return esp_random() % n; }
 float frand() { return (esp_random() & 0xFFFF) / 65535.0f; }
@@ -47,162 +61,6 @@ float lerp(float a, float b, float t) { return a + (b - a) * t; }
 Color mix(uint8_t r0, uint8_t g0, uint8_t b0, uint8_t r1, uint8_t g1, uint8_t b1, float t)
 {
     return rgb(uint8_t(lerp(r0, r1, t)), uint8_t(lerp(g0, g1, t)), uint8_t(lerp(b0, b1, t)));
-}
-
-// ------------------------------------------------------------------ sprites
-// One letter per pixel, '.' is transparent. Colours come from the palette below.
-struct Sprite {
-    int w, h;
-    const char *const *rows;
-};
-
-// Hopper, facing right: orange, big eyes, a red aviator cap and little brown boots.
-constexpr const char *kHopperRows[] = {
-    "......RRRRRRR.......",
-    "....RRrrrrrrrRR.....",
-    "...RRrrrrrrrrrrRR...",
-    "..DRRRRRRRRRRRRRRD..",
-    ".DOOOOOOOOOOOOOOOOD.",
-    "DOOOWWWWWOOWWWWWOOOD",
-    "DOOWWWWWWWWWWWWWWOOD",
-    "DOOWWWWKKWWWWWKKWOOD",
-    "DOOWWWWKKWWWWWKKWOOD",
-    "DOOOWWWWWOOWWWWWOOOD",
-    "DOOOOOOOOOOOOOOOOOOD",
-    "DOOOOOoooooooooOOOOD",
-    "DOOOOooooooooooooOOD",
-    "DOOOOooooKKKKoooOOOD",
-    "DOOOOoooooooooooOOOD",
-    ".DOOOOooooooooooOOD.",
-    ".DOOOOOOOOOOOOOOOOD.",
-    "..DOOOOOOOOOOOOOOD..",
-    "...DDOOOOOOOOOODD...",
-    ".....DDDDDDDDDD.....",
-    "....FFFF....FFFF....",
-    "...FFFFF....FFFFF...",
-};
-constexpr Sprite kHopper{20, 22, kHopperRows};
-
-// Purple monster: horns, angry brows, a mouth full of teeth, stubby legs.
-constexpr const char *kMonsterRows[] = {
-    ".DD............DD.",
-    ".DPD..........DPD.",
-    "..DPD........DPD..",
-    "..DDPPDDDDDDPPDD..",
-    ".DPKKKKPPPPKKKKPD.",
-    "DPPWWWWPPPPWWWWPPD",
-    "DPWWWWWWPPWWWWWWPD",
-    "DPWWKKWWPPWWKKWWPD",
-    "DPPWWWWPPPPWWWWPPD",
-    "DPPPPPPPPPPPPPPPPD",
-    "DPPDDDDDDDDDDDDPPD",
-    "DPPDWDWDWDWDWDWDPD",
-    ".DPPDDDDDDDDDDDPD.",
-    ".DPPPPPPPPPPPPPPD.",
-    "..DDPPDDDDDDPPDD..",
-    "...DD........DD...",
-};
-constexpr Sprite kMonster{18, 16, kMonsterRows};
-
-// Ledges are 30 x 7: a grassy one, a sliding ice one and a cracked stone one.
-constexpr const char *kGrassRows[] = {
-    "..g..g.....gg...g....g..g.g...",
-    ".GGGGGGGGGGGGGGGGGGGGGGGGGGGG.",
-    "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
-    "DBBBBBBBBBBBBBBBBBBBBBBBBBBBBD",
-    "DBbBBBBbBBBBBbBBBBbBBBBBbBBbBD",
-    "DBBBBBBBBBBBBBBBBBBBBBBBBBBBBD",
-    ".DDDDDDDDDDDDDDDDDDDDDDDDDDDD.",
-};
-constexpr const char *kIceRows[] = {
-    "..............................",
-    ".WWWWWWWWWWWWWWWWWWWWWWWWWWWW.",
-    "WWwwwwwwwwwwwwwwwwwwwwwwwwwwWW",
-    "IwwIIIIIIIIIIIIIIIIIIIIIIIwwII",
-    "IIIIIIIiIIIIIiIIIIIIiIIIIIIIII",
-    "DIIIIIIIIIIIIIIIIIIIIIIIIIIIID",
-    ".DDDDDDDDDDDDDDDDDDDDDDDDDDDD.",
-};
-constexpr const char *kStoneRows[] = {
-    "..............................",
-    ".SSSSSSSSSSSSSSSSSSSSSSSSSSSS.",
-    "SSSSSSKSSSSSSSSSSSSSSKSSSSSSSS",
-    "SssssKssssssKKKsssssKsssssssss",
-    "SssssKsssssKsssKssssKKsssssssS",
-    "DssssssssssKssssssssssKsssssSD",
-    ".DDDDDDDDDDDDDDDDDDDDDDDDDDDD.",
-};
-constexpr Sprite kGrass{30, 7, kGrassRows}, kIce{30, 7, kIceRows}, kStone{30, 7, kStoneRows};
-
-// A coil spring with a red pad, sitting on a ledge.
-constexpr const char *kSpringRows[] = {
-    ".rrrrrrrrrr.",
-    "RRRRRRRRRRRR",
-    "..DssssssD..",
-    "..DsDDDDsD..",
-    "..DssssssD..",
-    "..DsDDDDsD..",
-    "..DssssssD..",
-};
-constexpr Sprite kSpring{12, 7, kSpringRows};
-
-// Bullet: a little star.
-constexpr const char *kShotRows[] = {
-    ".YY.",
-    "YWWY",
-    "YWWY",
-    ".YY.",
-};
-constexpr Sprite kShot{4, 4, kShotRows};
-
-// Clouds, drawn in "cloud" colours from the palette (C = fluffy, c = shaded).
-constexpr const char *kCloudARows[] = {
-    ".......CCCC.........",
-    ".....CCCCCCC...CCC..",
-    "...CCCCCCCCCCCCCCCC.",
-    "..CCCCCCCCCCCCCCCCCC",
-    ".CCCCCCCCCCCCCCCCCCC",
-    "CCCCCCCCCCCCCCCCCCCC",
-    "cCCCCCCCCCCCCCCCCCCc",
-    ".cccccccccccccccccc.",
-};
-constexpr const char *kCloudBRows[] = {
-    "....CCC.......",
-    "..CCCCCCC.CC..",
-    ".CCCCCCCCCCCC.",
-    "CCCCCCCCCCCCCC",
-    "cCCCCCCCCCCCCc",
-    ".cccccccccccc.",
-};
-constexpr Sprite kCloudA{20, 8, kCloudARows}, kCloudB{14, 6, kCloudBRows};
-
-// Palette shared by all the sprites above.
-Color palette(char ch, Color cloud_c, Color cloud_shade)
-{
-    switch (ch) {
-    case 'D': return rgb(40, 24, 20);       // outline
-    case 'O': return rgb(255, 185, 40);     // Hopper body
-    case 'o': return rgb(255, 228, 130);    // belly
-    case 'R': return rgb(220, 50, 50);      // cap
-    case 'r': return rgb(255, 120, 110);    // cap highlight
-    case 'W': return rgb(255, 255, 255);
-    case 'K': return rgb(20, 16, 24);
-    case 'F': return rgb(110, 65, 25);      // boots
-    case 'P': return rgb(175, 65, 210);     // monster
-    case 'G': return rgb(80, 200, 95);      // grass
-    case 'g': return rgb(170, 245, 150);    // grass tufts
-    case 'B': return rgb(150, 100, 55);     // dirt
-    case 'b': return rgb(110, 70, 40);      // dirt specks
-    case 'I': return rgb(90, 160, 240);     // ice
-    case 'i': return rgb(60, 120, 200);
-    case 'w': return rgb(200, 235, 255);
-    case 'S': return rgb(165, 165, 175);    // stone
-    case 's': return rgb(130, 130, 140);
-    case 'Y': return rgb(255, 220, 50);
-    case 'C': return cloud_c;
-    case 'c': return cloud_shade;
-    default: return 0;
-    }
 }
 
 enum PType : uint8_t { NORMAL, MOVING, CRUMBLE, SPRING, GROUND };
@@ -225,15 +83,14 @@ struct Bullet {
 };
 struct Puff {
     float x, y, vx, vy, t;
-    Color c;
+    uint8_t c;
 };
 struct Cloud {
     float x, y;        // y in the slow parallax layer
     uint8_t kind;
 };
 struct Star {
-    int16_t x, y;
-    uint8_t size;
+    uint8_t x, y, size;
 };
 
 enum Phase { READY, PLAYING, DEAD, GAME_OVER };
@@ -313,6 +170,7 @@ struct Jump::State {
     int facing = 1;
     float squash = 0;          // 1 right after a bounce, decays
     float fire_t = 0;
+    float blink_t = 0;
     float cam = 0;             // world y at the bottom edge of the screen
     float top_y = 0;           // highest feet position so far
 
@@ -333,6 +191,17 @@ struct Jump::State {
     // ---- menu / input
     Gestures ges;
     bool menu = false, menu_dirty = false;
+
+    // ---- drawing
+    Canvas canvas;
+    Sheet hopper, monster, ledges, spring, shot, clouds_sheet;
+    uint8_t sky0 = 0;          // first of SKY_STEPS gradient entries
+    uint8_t cloud_c = 0, cloud_shade = 0;
+    uint8_t c_white = 0, c_black = 0, c_star = 0, c_star2 = 0, c_dim = 0, c_accent = 0, c_danger = 0;
+    uint8_t c_panel = 0, c_box = 0, c_grass = 0, c_tuft = 0, c_dirt = 0, c_speck = 0, c_orange = 0;
+    uint8_t c_purple = 0, c_stone = 0;
+    uint32_t draw_us = 0, frames = 0;
+    int64_t fps_t0 = 0;
 
     // ------------------------------------------------------------------ persistence
     void load()
@@ -355,6 +224,42 @@ struct Jump::State {
         nvs_close(h);
     }
 
+    // ------------------------------------------------------------------ assets
+    bool loadAssets()
+    {
+        if (!canvas.init(SCALE)) return false;
+        // Fixed colours first so they get stable indices.
+        c_black = canvas.color(rgb(0, 0, 0));
+        c_white = canvas.color(rgb(255, 255, 255));
+        c_star = canvas.color(rgb(200, 205, 230));
+        c_star2 = canvas.color(rgb(255, 240, 200));
+        c_dim = canvas.color(rgb(220, 230, 245));
+        c_accent = canvas.color(colors::yellow);
+        c_danger = canvas.color(colors::red);
+        c_panel = canvas.color(rgb(16, 18, 26));
+        c_box = canvas.color(rgb(90, 90, 100));
+        c_grass = canvas.color(rgb(80, 200, 95));
+        c_tuft = canvas.color(rgb(170, 245, 150));
+        c_dirt = canvas.color(rgb(150, 100, 55));
+        c_speck = canvas.color(rgb(110, 70, 40));
+        c_orange = canvas.color(rgb(255, 185, 40));
+        c_purple = canvas.color(rgb(175, 65, 210));
+        c_stone = canvas.color(rgb(130, 130, 140));
+        sky0 = canvas.reserve(SKY_STEPS);
+
+        bool ok = true;
+        ok &= canvas.loadSheet(hopper, _binary_hopper_png_start, _binary_hopper_png_end - _binary_hopper_png_start, 20, 22);
+        ok &= canvas.loadSheet(monster, _binary_monster_png_start, _binary_monster_png_end - _binary_monster_png_start, 18, 16);
+        ok &= canvas.loadSheet(ledges, _binary_ledges_png_start, _binary_ledges_png_end - _binary_ledges_png_start, 30, 7);
+        ok &= canvas.loadSheet(spring, _binary_spring_png_start, _binary_spring_png_end - _binary_spring_png_start, 12, 7);
+        ok &= canvas.loadSheet(shot, _binary_shot_png_start, _binary_shot_png_end - _binary_shot_png_start, 4, 4);
+        ok &= canvas.loadSheet(clouds_sheet, _binary_clouds_png_start, _binary_clouds_png_end - _binary_clouds_png_start, 20, 8);
+        // The cloud colours are tinted per frame; these are the sheet's own entries.
+        cloud_c = canvas.color(rgb(240, 248, 255));
+        cloud_shade = canvas.color(rgb(200, 215, 240));
+        return ok;
+    }
+
     // ------------------------------------------------------------------ world building
     float difficulty() const { return clampf(top_y / PX_PER_M / 1800.0f, 0.0f, 1.0f); }
 
@@ -363,7 +268,7 @@ struct Jump::State {
     void addPlat(float x, float y, PType type)
     {
         Plat p{};
-        p.x = p.base_x = clampf(x, 60, W - 60);
+        p.x = p.base_x = clampf(x, 20, W - 20);
         p.y = y;
         p.w = PLAT_W;
         p.type = type;
@@ -376,28 +281,28 @@ struct Jump::State {
     void generate()
     {
         const float d = difficulty();
-        while (gen_y < cam + H + 120) {
-            const float gap = lerp(52, 84, frand()) + d * lerp(30, 120, frand());
+        while (gen_y < cam + H + 40) {
+            const float gap = lerp(17, 28, frand()) + d * lerp(10, 40, frand());
             gen_y += gap;
             const float r = frand();
             PType type = NORMAL;
             if (r < 0.06f + 0.02f * d) type = SPRING;
             else if (r < 0.12f + 0.30f * d) type = MOVING;
-            addPlat(60 + frand() * (W - 120), gen_y, type);
+            addPlat(20 + frand() * (W - 40), gen_y, type);
 
             // Crumbling ledges are extras, never the only way up.
             if (frand() < 0.10f + 0.35f * d) {
                 const float cy = gen_y + gap * 0.45f;
-                addPlat(60 + frand() * (W - 120), cy, CRUMBLE);
+                addPlat(20 + frand() * (W - 40), cy, CRUMBLE);
             }
             if (gen_y > next_monster_y && top_y / PX_PER_M > 120) {
                 Monster m{};
-                m.x = m.base_x = 90 + frand() * (W - 180);
-                m.y = gen_y + gap * 0.5f + 24;
+                m.x = m.base_x = 30 + frand() * (W - 60);
+                m.y = gen_y + gap * 0.5f + 8;
                 m.phase = frand() * 2 * PI;
                 m.alive = true;
                 monsters.push_back(m);
-                next_monster_y = gen_y + lerp(1400, 700, d) + frand() * 600;
+                next_monster_y = gen_y + lerp(470, 230, d) + frand() * 200;
             }
         }
     }
@@ -408,21 +313,21 @@ struct Jump::State {
         monsters.clear();
         bullets.clear();
         puffs.clear();
-        px = Gfx::CX;
+        px = W / 2.0f;
         py = 0;
         prev_y = 0;
         vx = vy = 0;
         facing = 1;
         squash = 0;
-        cam = -(H - 380);   // the ground sits at screen y 380
+        cam = -(H - 127);   // the ground sits at canvas y 127
         top_y = 0;
         score = 0;
         got_best = false;
         t = 0;
         // Solid ground to start on, then the tower.
-        plats.push_back(Plat{float(Gfx::CX), 0, float(W) + 200, GROUND, float(Gfx::CX), 0, 0, false, 0});
+        plats.push_back(Plat{W / 2.0f, 0, float(W) + 60, GROUND, W / 2.0f, 0, 0, false, 0});
         gen_y = 0;
-        next_monster_y = 2500;
+        next_monster_y = 830;
         generate();
         for (Cloud &c : clouds) {
             c.x = frand() * W;
@@ -430,9 +335,9 @@ struct Jump::State {
             c.kind = uint8_t(rnd(2));
         }
         for (Star &s : stars) {
-            s.x = int16_t(rnd(W));
-            s.y = int16_t(rnd(H));
-            s.size = uint8_t(2 + (rnd(4) == 0));
+            s.x = uint8_t(rnd(W));
+            s.y = uint8_t(rnd(H));
+            s.size = uint8_t(1 + (rnd(4) == 0));
         }
         phase = READY;
         phase_t = 0;
@@ -448,7 +353,7 @@ struct Jump::State {
     }
 
     // ------------------------------------------------------------------ simulation
-    void spawnPuffs(float x, float y, int n, Color c, float speed)
+    void spawnPuffs(float x, float y, int n, uint8_t c, float speed)
     {
         for (int i = 0; i < n; i++) {
             const float a = frand() * 2 * PI, s = speed * (0.4f + frand() * 0.8f);
@@ -460,9 +365,9 @@ struct Jump::State {
     {
         phase = DEAD;
         phase_t = 0;
-        vy = 500;   // a little hop, then the long fall
+        vy = 170;   // a little hop, then the long fall
         sfx::hurt();
-        spawnPuffs(px, py + PLAYER_H / 2, 10, rgb(255, 185, 40), 260);
+        spawnPuffs(px, py + PLAYER_H / 2, 10, c_orange, 90);
     }
 
     void step(const InputState &in, float dt)
@@ -473,7 +378,7 @@ struct Jump::State {
         const float gain = TILT_GAIN[tilt_sens];
         const float target = clampf(in.tilt.ax / 0.42f, -1.0f, 1.0f) * gain;
         vx += (target - vx) * std::min(1.0f, dt * 14);
-        if (std::fabs(vx) > 60) facing = vx > 0 ? 1 : -1;
+        if (std::fabs(vx) > 20) facing = vx > 0 ? 1 : -1;
         px += vx * dt;
         if (px < -PLAYER_HALF) px += W + 2 * PLAYER_HALF;
         if (px > W + PLAYER_HALF) px -= W + 2 * PLAYER_HALF;
@@ -493,15 +398,15 @@ struct Jump::State {
         // Platforms move, crumbled ones fall away.
         for (Plat &p : plats) {
             if (p.type == MOVING) {
-                p.x = p.base_x + std::sin(p.phase + t * p.speed) * 85;
-                p.x = clampf(p.x, 50, W - 50);
+                p.x = p.base_x + std::sin(p.phase + t * p.speed) * 28;
+                p.x = clampf(p.x, 17, W - 17);
             }
             if (p.broken) {
                 p.fall_t += dt;
-                p.y -= 500 * p.fall_t * dt;
+                p.y -= 170 * p.fall_t * dt;
             }
         }
-        for (Monster &m : monsters) m.x = m.base_x + std::sin(m.phase + t * 1.3f) * 40;
+        for (Monster &m : monsters) m.x = m.base_x + std::sin(m.phase + t * 1.3f) * 13;
 
         // Landing (only when falling, only on the way through a platform's top).
         if (phase == PLAYING && vy < 0) {
@@ -513,7 +418,7 @@ struct Jump::State {
                     p.broken = true;
                     p.fall_t = 0;
                     sfx::crumble();
-                    spawnPuffs(p.x, p.y, 8, rgb(130, 130, 140), 180);
+                    spawnPuffs(p.x, p.y, 8, c_stone, 60);
                     continue;   // no bounce: it gives way
                 }
                 py = p.y;
@@ -521,9 +426,9 @@ struct Jump::State {
                 squash = 1;
                 if (p.type == SPRING) {
                     sfx::spring();
-                    spawnPuffs(p.x, p.y, 6, colors::white, 200);
+                    spawnPuffs(p.x, p.y, 6, c_white, 70);
                 } else {
-                    sfx::boing(clampf((p.y - top_y) / 200.0f + 0.5f, 0, 1));
+                    sfx::boing(clampf((p.y - top_y) / 70.0f + 0.5f, 0, 1));
                 }
                 break;
             }
@@ -532,13 +437,13 @@ struct Jump::State {
                 if (!m.alive) continue;
                 if (std::fabs(px - m.x) > MONSTER_W / 2 + PLAYER_HALF * 0.6f) continue;
                 const float m_top = m.y + MONSTER_H;
-                if (prev_y >= m_top - 10 && py <= m_top && py >= m.y) {
+                if (prev_y >= m_top - 4 && py <= m_top && py >= m.y) {
                     m.alive = false;
                     py = m_top;
                     vy = JUMP_V * 1.15f;
                     squash = 1;
                     sfx::stomp();
-                    spawnPuffs(m.x, m.y + MONSTER_H / 2, 14, rgb(175, 65, 210), 300);
+                    spawnPuffs(m.x, m.y + MONSTER_H / 2, 14, c_purple, 100);
                     break;
                 }
             }
@@ -547,8 +452,8 @@ struct Jump::State {
         if (phase == PLAYING) {
             for (Monster &m : monsters) {
                 if (!m.alive) continue;
-                if (std::fabs(px - m.x) < MONSTER_W / 2 + PLAYER_HALF * 0.7f && py + PLAYER_H * 0.8f > m.y + 8 &&
-                    py < m.y + MONSTER_H - 8) {
+                if (std::fabs(px - m.x) < MONSTER_W / 2 + PLAYER_HALF * 0.7f && py + PLAYER_H * 0.8f > m.y + 3 &&
+                    py < m.y + MONSTER_H - 3) {
                     die();
                     break;
                 }
@@ -559,14 +464,14 @@ struct Jump::State {
         for (size_t i = 0; i < bullets.size();) {
             Bullet &b = bullets[i];
             b.y += BULLET_V * dt;
-            bool gone = screenY(b.y) < -10;
+            bool gone = screenY(b.y) < -4;
             for (Monster &m : monsters) {
                 if (!m.alive) continue;
                 if (std::fabs(b.x - m.x) < MONSTER_W / 2 && b.y > m.y && b.y < m.y + MONSTER_H) {
                     m.alive = false;
                     gone = true;
                     sfx::pop();
-                    spawnPuffs(m.x, m.y + MONSTER_H / 2, 14, rgb(175, 65, 210), 300);
+                    spawnPuffs(m.x, m.y + MONSTER_H / 2, 14, c_purple, 100);
                     break;
                 }
             }
@@ -578,7 +483,7 @@ struct Jump::State {
         for (size_t i = 0; i < puffs.size();) {
             Puff &q = puffs[i];
             q.t += dt;
-            q.vy -= 900 * dt;
+            q.vy -= 300 * dt;
             q.x += q.vx * dt;
             q.y += q.vy * dt;
             if (q.t > 0.6f) puffs.erase(puffs.begin() + i);
@@ -586,6 +491,8 @@ struct Jump::State {
         }
 
         squash = std::max(0.0f, squash - dt * 7);
+        blink_t -= dt;
+        if (blink_t < -3.0f - frand() * 3) blink_t = 0.12f;
 
         // Camera follows Hopper up, never down.
         if (phase == PLAYING) {
@@ -603,14 +510,14 @@ struct Jump::State {
 
         // Tidy up what scrolled off the bottom.
         plats.erase(std::remove_if(plats.begin(), plats.end(),
-                                   [&](const Plat &p) { return p.y < cam - 80 || p.fall_t > 1.0f; }),
+                                   [&](const Plat &p) { return p.y < cam - 30 || p.fall_t > 1.0f; }),
                     plats.end());
         monsters.erase(std::remove_if(monsters.begin(), monsters.end(),
-                                      [&](const Monster &m) { return m.y + MONSTER_H < cam - 40 || !m.alive; }),
+                                      [&](const Monster &m) { return m.y + MONSTER_H < cam - 15 || !m.alive; }),
                        monsters.end());
 
         // Fell off the bottom of the screen.
-        if (py < cam - 80) {
+        if (py < cam - 30) {
             if (phase == PLAYING) sfx::fall();
             phase = GAME_OVER;
             phase_t = 0;
@@ -692,49 +599,19 @@ struct Jump::State {
     }
 
     // ------------------------------------------------------------------ drawing
-    Color cloud_c = colors::white, cloud_shade = rgb(200, 215, 240);
-
-    // Draw a sprite with its bottom-centre at (x, y), each sprite pixel sx by sy
-    // screen pixels (non-integer scales squash and stretch). Runs of one colour
-    // become one fillRect, so this is cheap even at 3x.
-    void drawSprite(Gfx &g, const Sprite &s, float x, float y, float sx, float sy, bool flip = false)
+    void drawSky(Canvas &c)
     {
-        const float x0 = x - s.w * sx / 2, y0 = y - s.h * sy;
-        if (y0 > H || y0 + s.h * sy < 0) return;
-        int py_prev = int(y0 + 0.5f);
-        for (int r = 0; r < s.h; r++) {
-            const int py_next = int(y0 + (r + 1) * sy + 0.5f);
-            const int rh = py_next - py_prev;
-            if (rh > 0) {
-                const char *row = s.rows[r];
-                int c = 0;
-                while (c < s.w) {
-                    const char ch = row[c];
-                    int e = c + 1;
-                    while (e < s.w && row[e] == ch) e++;
-                    if (ch != '.') {
-                        const int cs = flip ? s.w - e : c, ce = flip ? s.w - c : e;
-                        const int xa = int(x0 + cs * sx + 0.5f), xb = int(x0 + ce * sx + 0.5f);
-                        if (xb > xa) g.fillRect(xa, py_prev, xb - xa, rh, palette(ch, cloud_c, cloud_shade));
-                    }
-                    c = e;
-                }
-            }
-            py_prev = py_next;
-        }
-    }
-
-    void drawSky(Gfx &g)
-    {
-        // Morning at the bottom of the tower, deep space at the top.
+        // Morning at the bottom of the tower, deep space at the top. The gradient
+        // is SKY_STEPS palette entries, so it costs nothing to change every frame.
         const float alt = clampf(cam / PX_PER_M / 2600.0f, 0.0f, 1.0f);
-        // Day: light at the horizon, richer up top. Space: near-black with a violet glow low down.
-        for (int y = 0; y < H; y += 2) {
-            const float k = float(y) / H;   // 0 = top of screen
-            const Color c = mix(72 + int(78 * k), 140 + int(75 * k), 235 + int(20 * k),
-                                6 + int(34 * k), 6 + int(18 * k), 24 + int(56 * k), alt);
-            g.fillRect(0, y, W, 2, c);
+        for (int i = 0; i < SKY_STEPS; i++) {
+            const float k = float(i) / (SKY_STEPS - 1);   // 0 = top of screen
+            c.setColor(uint8_t(sky0 + i), mix(72 + int(78 * k), 140 + int(75 * k), 235 + int(20 * k),
+                                              6 + int(34 * k), 6 + int(18 * k), 24 + int(56 * k), alt));
         }
+        uint8_t *row = c.pixels();
+        for (int y = 0; y < H; y++, row += W) std::memset(row, sky0 + y * SKY_STEPS / H, W);
+
         if (alt > 0.35f) {
             const int n = int((alt - 0.35f) / 0.65f * 70);
             const int drift = int(cam * 0.08f);
@@ -742,108 +619,102 @@ struct Jump::State {
                 const Star &s = stars[i];
                 const int y = ((s.y + drift) % H + H) % H;
                 const bool twinkle = ((i * 7 + int(t * 3)) % 11) == 0;
-                g.fillRect(s.x, y, s.size, s.size, twinkle ? rgb(255, 240, 200) : alt > 0.7f ? colors::white : rgb(200, 205, 230));
+                c.fillRect(s.x, y, s.size, s.size, twinkle ? c_star2 : alt > 0.7f ? c_white : c_star);
             }
         }
         if (alt < 0.85f) {
-            cloud_c = mix(255, 255, 255, 150, 130, 200, alt);
-            cloud_shade = mix(200, 215, 240, 110, 90, 160, alt);
-            for (Cloud &c : clouds) {
+            c.setColor(cloud_c, mix(240, 248, 255, 150, 130, 200, alt));
+            c.setColor(cloud_shade, mix(200, 215, 240, 110, 90, 160, alt));
+            for (Cloud &cl : clouds) {
                 // Clouds live in a slower layer, so they drift by as you climb.
-                float sy = H - (c.y - cam * 0.35f);
-                if (sy > H + 60) {
-                    c.y += H + 120;
-                    c.x = frand() * W;
-                    c.kind = uint8_t(rnd(2));
-                    sy = H - (c.y - cam * 0.35f);
+                float sy = H - (cl.y - cam * 0.35f);
+                if (sy > H + 20) {
+                    cl.y += H + 40;
+                    cl.x = frand() * W;
+                    cl.kind = uint8_t(rnd(2));
+                    sy = H - (cl.y - cam * 0.35f);
                 }
-                if (sy < -60) continue;
-                drawSprite(g, c.kind ? kCloudB : kCloudA, c.x, sy, 4, 4);
+                if (sy < -20) continue;
+                c.sprite(clouds_sheet, cl.kind, int(cl.x) - 10, int(sy) - 8);
             }
         }
     }
 
-    void drawGround(Gfx &g, const Plat &p)
+    void drawGround(Canvas &c, const Plat &p)
     {
         const int sy = int(screenY(p.y));
         if (sy > H) return;
         // Grass on top, dirt below, all the way down.
-        g.fillRect(0, sy, W, 4, rgb(170, 245, 150));
-        g.fillRect(0, sy + 4, W, 8, rgb(80, 200, 95));
-        g.fillRect(0, sy + 12, W, std::max(0, H - sy - 12), rgb(150, 100, 55));
-        for (int x = 7; x < W; x += 29) g.fillRect(x, sy + 22 + (x * 13) % 40, 6, 3, rgb(110, 70, 40));
-        for (int x = 3; x < W; x += 23) g.fillRect(x, sy - 5, 3, 5, rgb(170, 245, 150));
+        c.fillRect(0, sy, W, 1, c_tuft);
+        c.fillRect(0, sy + 1, W, 3, c_grass);
+        c.fillRect(0, sy + 4, W, std::max(0, H - sy - 4), c_dirt);
+        for (int x = 2; x < W; x += 10) c.fillRect(x, sy + 7 + (x * 13) % 14, 2, 1, c_speck);
+        for (int x = 1; x < W; x += 8) c.fillRect(x, sy - 2, 1, 2, c_tuft);
     }
 
-    void drawPlat(Gfx &g, const Plat &p)
+    void drawPlat(Canvas &c, const Plat &p)
     {
         if (p.type == GROUND) {
-            drawGround(g, p);
+            drawGround(c, p);
             return;
         }
-        const float sy = screenY(p.y);
-        if (sy < -30 || sy > H + 30) return;
-        const Sprite &s = p.type == MOVING ? kIce : p.type == CRUMBLE ? kStone : kGrass;
-        drawSprite(g, s, p.x, sy + PLAT_H, SCALE, SCALE);
-        if (p.type == SPRING) drawSprite(g, kSpring, p.x, sy + SCALE, SCALE, SCALE);
+        const int sy = int(screenY(p.y) + 0.5f);
+        if (sy < -10 || sy > H + 10) return;
+        const int frame = p.type == MOVING ? 1 : p.type == CRUMBLE ? 2 : 0;
+        const int x = int(p.x + 0.5f) - 15;
+        c.sprite(ledges, frame, x, sy);
+        if (p.type == SPRING) c.sprite(spring, 0, x + 9, sy - 6);
     }
 
-    void drawMonster(Gfx &g, const Monster &m)
+    void drawMonster(Canvas &c, const Monster &m)
     {
         const float bob = std::sin(t * 5 + m.phase);
         const float sy = screenY(m.y);
-        if (sy < -60 || sy > H + 60) return;
-        // Breathes: a little wider as it squats.
-        drawSprite(g, kMonster, m.x, sy, SCALE * (1 + 0.05f * bob), SCALE * (1 - 0.05f * bob), px < m.x);
+        if (sy < -20 || sy > H + 20) return;
+        // Breathes: a little wider as it squats; snaps its mouth now and then.
+        const int frame = std::fmod(t * 2 + m.phase, 4.0f) < 0.5f ? 1 : 0;
+        c.spriteScaled(monster, frame, m.x, sy, 1 + 0.06f * bob, 1 - 0.06f * bob, px < m.x);
     }
 
-    void drawHopper(Gfx &g)
+    void drawHopper(Canvas &c)
     {
         const float sy = screenY(py);
-        if (sy < -80 || sy > H + 100) return;
+        if (sy < -30 || sy > H + 40) return;
         // Squash on landing, stretch when moving fast.
         const float q = squash * squash;
         float sx = 1 + 0.35f * q, sy_ = 1 - 0.30f * q;
-        const float stretch = clampf(std::fabs(vy) / 2600.0f, 0, 0.18f);
+        const float stretch = clampf(std::fabs(vy) / 900.0f, 0, 0.18f);
         sx -= stretch * 0.5f;
         sy_ += stretch;
         const bool dead = phase == DEAD || phase == GAME_OVER;
-        drawSprite(g, kHopper, px, sy, SCALE * sx, SCALE * sy_, facing < 0);
-        if (dead) {
-            // X eyes.
-            const float ex = px, ey = sy - PLAYER_H * 0.66f;
-            for (int i = -1; i <= 1; i += 2) {
-                const int x = int(ex + i * 12 * sx), y = int(ey);
-                g.fillRect(x - 6, y - 6, 12, 12, colors::white);
-                g.line(x - 5, y - 5, x + 5, y + 5, colors::black);
-                g.line(x - 5, y + 5, x + 5, y - 5, colors::black);
-                g.line(x - 4, y - 5, x + 5, y + 4, colors::black);
-                g.line(x - 5, y + 4, x + 4, y - 5, colors::black);
-            }
-        }
+        const int frame = dead ? 2 : blink_t > 0 ? 1 : 0;
+        c.spriteScaled(hopper, frame, px, sy, sx, sy_, facing < 0);
     }
 
-    void drawHud(Gfx &g)
+    void drawHud(Canvas &c)
     {
         char buf[24];
         snprintf(buf, sizeof(buf), "%d M", score);
-        console::ui::shadowText(g, Gfx::CX, 34, buf, colors::white, 3);
+        c.textCentered(W / 2 + 1, 12, buf, c_black, 1, true);
+        c.textCentered(W / 2, 11, buf, c_white, 1, true);
         if (best > 0) {
             snprintf(buf, sizeof(buf), "BEST %d M", best);
-            console::ui::shadowText(g, Gfx::CX, 428, buf, got_best ? console::ui::ACCENT : rgb(220, 230, 245), 2);
+            c.textCentered(W / 2 + 1, 143, buf, c_black, 1, true);
+            c.textCentered(W / 2, 142, buf, got_best ? c_accent : c_dim, 1, true);
         }
     }
 
-    void banner(Gfx &g, const char *top, const char *bottom, Color c)
+    void banner(Canvas &c, const char *top, const char *mid, const char *bottom, uint8_t col)
     {
-        namespace ui = console::ui;
-        g.fillRect(83, 196, 300, bottom ? 78 : 50, ui::PANEL);
-        g.rect(83, 196, 300, bottom ? 78 : 50, ui::BOX);
-        g.textCentered(Gfx::CX, 221, top, c, 3, true);
-        if (bottom) g.textCentered(Gfx::CX, 254, bottom, ui::LABEL, 2, true);
+        const int h = bottom ? 34 : mid ? 26 : 16;
+        c.fillRect(22, 68, W - 44, h, c_panel);
+        c.rect(22, 68, W - 44, h, c_box);
+        c.textCentered(W / 2, 76, top, col, 1, true);
+        if (mid) c.textCentered(W / 2, 86, mid, c_dim, 1, false);
+        if (bottom) c.textCentered(W / 2, 95, bottom, c_dim, 1, false);
     }
 
-    void draw(Gfx &g)
+    void draw(Engine &e, Gfx &g)
     {
         if (menu) {
             if (menu_dirty) {
@@ -852,28 +723,43 @@ struct Jump::State {
             }
             return;
         }
-
-        drawSky(g);
-        for (const Plat &p : plats) drawPlat(g, p);
-        for (const Monster &m : monsters) drawMonster(g, m);
-        for (const Bullet &b : bullets) drawSprite(g, kShot, b.x, screenY(b.y) + 6, SCALE, SCALE);
+        const int64_t t0 = esp_timer_get_time();
+        Canvas &c = canvas;
+        drawSky(c);
+        for (const Plat &p : plats) drawPlat(c, p);
+        for (const Monster &m : monsters) drawMonster(c, m);
+        for (const Bullet &b : bullets) c.sprite(shot, 0, int(b.x) - 2, int(screenY(b.y)) - 2);
         for (const Puff &q : puffs) {
-            const int r = std::max(2, int(6 * (1 - q.t / 0.6f)));
-            g.fillRect(int(q.x) - r / 2, int(screenY(q.y)) - r / 2, r, r, q.c);
+            const int r = std::max(1, int(2.5f * (1 - q.t / 0.6f)));
+            c.fillRect(int(q.x) - r / 2, int(screenY(q.y)) - r / 2, r, r, q.c);
         }
-        drawHopper(g);
-        drawHud(g);
+        drawHopper(c);
+        drawHud(c);
 
         char buf[32];
         switch (phase) {
-        case READY: banner(g, "TAP TO JUMP", "TILT TO STEER - TAP TO SHOOT", colors::white); break;
+        case READY: banner(c, "TAP TO JUMP", "TILT TO STEER", "TAP TO SHOOT", c_white); break;
         case GAME_OVER:
             if (phase_t > 0.5f) {
                 snprintf(buf, sizeof(buf), got_best ? "NEW BEST %d M!" : "%d M", score);
-                banner(g, "GAME OVER", buf, got_best ? console::ui::ACCENT : console::ui::DANGER);
+                banner(c, "GAME OVER", buf, nullptr, got_best ? c_accent : c_danger);
             }
             break;
         default: break;
+        }
+        draw_us += uint32_t(esp_timer_get_time() - t0);
+        c.present(e.presenter());
+
+        frames++;
+        const int64_t now = esp_timer_get_time();
+        if (now - fps_t0 > 5000000) {
+            const PresentStats &ps = e.presenter().stats();
+            ESP_LOGI(TAG, "%.1f fps (draw %.2f ms | wire %.1f, vsync wait %.1f, slot wait %.1f ms)",
+                     frames * 1e6f / float(now - fps_t0), draw_us / 1000.0f / frames, ps.last_xfer_us / 1000.0f,
+                     ps.last_vsync_wait_us / 1000.0f, ps.last_wait_us / 1000.0f);
+            frames = 0;
+            draw_us = 0;
+            fps_t0 = now;
         }
     }
 };
@@ -884,8 +770,9 @@ Jump::~Jump() { delete s_; }
 void Jump::begin(Engine &e)
 {
     s_->load();
+    if (!s_->loadAssets()) ESP_LOGE(TAG, "assets failed to load");
     s_->newGame();
-    ESP_LOGI(TAG, "ready, best %d m", s_->best);
+    ESP_LOGI(TAG, "ready, best %d m, %d palette colours", s_->best, s_->canvas.used());
 }
 
 void Jump::enter(Engine &e)
@@ -896,12 +783,17 @@ void Jump::enter(Engine &e)
         s_->menu_dirty = true;
     }
     s_->menu_dirty = s_->menu;
+    s_->fps_t0 = esp_timer_get_time();
 }
 
 bool Jump::keepAwake() const { return !s_->menu && (s_->phase == PLAYING || s_->phase == DEAD); }
 
 void Jump::update(Engine &e, float dt) { s_->update(e, std::min(dt, 1.0f / 30)); }
 
-void Jump::draw(Engine &e, Gfx &g) { s_->draw(g); }
+void Jump::draw(Engine &e, Gfx &g)
+{
+    if (!s_->canvas.pixels()) return;
+    s_->draw(e, g);
+}
 
 }  // namespace games
