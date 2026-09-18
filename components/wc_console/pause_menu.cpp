@@ -35,7 +35,7 @@ void PauseMenu::draw(wc::Gfx &g, const Row *rows, int count, const char *title)
 {
     if (!dirty_) return;
     dirty_ = false;
-    g.clear(SCRIM);
+    menuBackground(g);
     ui::title(g, title);
     for (int i = 0; i < count && i < 4; i++) row(g, i, rows[i].label, rows[i].value, rows[i].color);
     button(g, buttonRect(0, 2), "RESUME");
