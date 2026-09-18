@@ -366,13 +366,13 @@ std::vector<std::string> Theme::available() const
 {
     std::vector<std::string> names;
     if (!storage_ready()) return names;
-    int damaged = 0;   // directory slots left as 0xFF by an interrupted write
+    int damaged = 0;   // directory slots still 0xFF (erased flash, never written)
     if (DIR *d = opendir(STORAGE_THEMES)) {
         while (dirent *e = readdir(d)) {
             const std::string name = e->d_name;
             if (name.empty() || name[0] == '.' || name == "System Volume Information") continue;
             if (name.compare(0, 6, "FOUND.") == 0) continue;   // chkdsk leftovers
-            // A damaged directory entry comes back as garbage bytes; never offer that.
+            // An unwritten (0xFF) directory slot comes back as garbage bytes; never offer that.
             bool clean = true;
             for (unsigned char ch : name) clean &= ch >= 0x20 && ch < 0x7F;
             if (!clean) {
@@ -388,7 +388,9 @@ std::vector<std::string> Theme::available() const
             names.push_back(name);
         }
         closedir(d);
-        if (damaged) ESP_LOGW(TAG, "%d damaged entries in %s (a computer's disk check can repair the drive)", damaged, STORAGE_THEMES);
+        // Unwritten (0xFF) slots in a directory cluster are normal on erased flash
+        // after Windows adds entries; they're just noise to skip.
+        if (damaged) ESP_LOGD(TAG, "%d unwritten slots in %s", damaged, STORAGE_THEMES);
     } else {
         ESP_LOGW(TAG, "no %s folder on the drive", STORAGE_THEMES);
     }
