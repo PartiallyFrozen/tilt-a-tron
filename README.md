@@ -4,6 +4,10 @@
 (ESP32-S3R8, 32 MB flash, 8 MB PSRAM, 466×466 round CO5300 AMOLED over QSPI,
 CST9217 touch, QMI8658 IMU, ES8311 audio). Built on ESP-IDF 5.5.5, C++.
 
+Open source (MIT) for the Waveshare ESP32-S3-Touch-AMOLED-1.75. Building a game or
+porting it to another board is meant to be easy: see [CONTRIBUTING.md](CONTRIBUTING.md)
+and [docs/GAME_API.md](docs/GAME_API.md).
+
 ## Install (no toolchain needed)
 
 **Easiest: the browser installer at <https://partiallyfrozen.github.io/tilt-a-tron/>.** Plug the
@@ -286,3 +290,8 @@ Hold BOOT as the screen turns on. **Tilt** rolls the ball, **touch** drags the d
 - More games in the carousel
 - Game store (way later): download games over Wi-Fi. Groundwork in place: background
   Wi-Fi, saved network, OTA slots, 23 MB `storage` partition for game data.
+
+## Licence
+
+MIT - see [LICENSE](LICENSE). Use it, change it, sell what you make with it; just keep the
+copyright notice.
