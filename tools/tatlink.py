@@ -95,9 +95,11 @@ class Watch:
     def hello(self):
         b = self.call(HELLO)
         proto, api_major, api_minor = struct.unpack("<HHH", b[:6])
-        firmware, board = b[6:].split(b"\0")[:2]
+        parts = b[6:].split(b"\0")
         return dict(proto=proto, api=(api_major, api_minor),
-                    firmware=firmware.decode(), board=board.decode())
+                    firmware=parts[0].decode() if parts else "",
+                    board=parts[1].decode() if len(parts) > 1 else "",
+                    key=parts[2].decode() if len(parts) > 2 else "")
 
     def info(self):
         total, free, count = struct.unpack("<IIB", self.call(INFO))
@@ -247,6 +249,8 @@ def main():
         print(f"Tilt-a-tron on {port}")
         print(f"  firmware {hi['firmware']}   board {hi['board']}")
         print(f"  link protocol {hi['proto']}, game API {hi['api'][0]}.{hi['api'][1]}")
+        if hi.get("key"):
+            print(f"  wi-fi key {hi['key']}")
         nfo = w.info()
         print(f"  games region: {nfo['free'] // 1024} KB free of {nfo['total'] // 1024} KB")
         print()

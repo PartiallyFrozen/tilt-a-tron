@@ -13,13 +13,61 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "esp_wifi.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
 static const char *TAG = "ota";
 
 static httpd_handle_t s_server;
+
+// ---- the key that guards everything but /status
+static char s_key[NET_KEY_LEN];
+
+const char *net_device_key(void)
+{
+    if (s_key[0]) return s_key;
+    nvs_handle_t h;
+    size_t len = sizeof(s_key);
+    if (nvs_open("net", NVS_READWRITE, &h) == ESP_OK) {
+        if (nvs_get_str(h, "key", s_key, &len) != ESP_OK || !s_key[0]) {
+            // 64 bits of randomness, which is plenty against someone guessing over a LAN.
+            for (int i = 0; i < NET_KEY_LEN - 1; i++) s_key[i] = "0123456789abcdef"[esp_random() & 15];
+            s_key[NET_KEY_LEN - 1] = 0;
+            nvs_set_str(h, "key", s_key);
+            nvs_commit(h);
+            ESP_LOGI(TAG, "made a new device key");
+        }
+        nvs_close(h);
+    }
+    return s_key;
+}
+
+// The key may come as a header (tidier) or in the query string (so a browser can be
+// pointed straight at the watch).
+static bool authed(httpd_req_t *req)
+{
+    const char *key = net_device_key();
+    if (!key[0]) return true;   // no NVS: refusing everything would brick the update path
+    char got[NET_KEY_LEN + 8] = "";
+    if (httpd_req_get_hdr_value_str(req, "X-Tat-Key", got, sizeof(got)) == ESP_OK && !strcmp(got, key))
+        return true;
+    char query[192];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK &&
+        httpd_query_key_value(query, "key", got, sizeof(got)) == ESP_OK && !strcmp(got, key))
+        return true;
+    return false;
+}
+
+static esp_err_t deny(httpd_req_t *req)
+{
+    ESP_LOGW(TAG, "refused an unauthenticated request for %s", req->uri);
+    httpd_resp_set_status(req, "401 Unauthorized");
+    return httpd_resp_sendstr(req, "This watch needs its key. Settings > UPDATE shows it, "
+                                   "or update.ps1 reads it over USB. Add ?key=... to the address.");
+}
 
 // ---- recent log lines, readable over Wi-Fi at /log
 #define LOG_RING_SIZE 16384
@@ -43,6 +91,7 @@ void net_set_control_hook(net_control_fn fn) { s_control_fn = fn; }
 
 static esp_err_t input_get(httpd_req_t *req)
 {
+    if (!authed(req)) return deny(req);
     note_request();
     char q[160] = "";
     httpd_req_get_url_query_str(req, q, sizeof(q));
@@ -55,6 +104,7 @@ void net_set_screen_hook(net_screen_fn fn) { s_screen_fn = fn; }
 
 static esp_err_t screen_get(httpd_req_t *req)
 {
+    if (!authed(req)) return deny(req);
     note_request();
     uint8_t *png = NULL;
     const size_t n = s_screen_fn ? s_screen_fn(&png) : 0;
@@ -122,7 +172,8 @@ static const char PAGE[] =
     "<p><input type=file id=f accept='.bin'> <button onclick=go()>Upload</button></p><p id=s></p>"
     "<script>async function go(){const f=document.getElementById('f').files[0];if(!f)return;"
     "const s=document.getElementById('s');s.textContent='uploading '+(f.size/1024|0)+' KB...';"
-    "try{const r=await fetch('/update',{method:'POST',body:f});s.textContent=await r.text();}"
+    "try{const r=await fetch('/update'+location.search,{method:'POST',body:f});"
+    "s.textContent=await r.text();}"
     "catch(e){s.textContent='failed: '+e;}}</script>";
 
 static void set_status(ota_state_t st, uint32_t rx, uint32_t total, const char *err)
@@ -195,6 +246,7 @@ static void schedule_reboot(uint64_t us)
 
 static esp_err_t log_get(httpd_req_t *req)
 {
+    if (!authed(req)) return deny(req);
     note_request();
     httpd_resp_set_type(req, "text/plain");
     // Oldest part first, then the newest, so it reads in order.
@@ -210,6 +262,7 @@ static esp_err_t log_get(httpd_req_t *req)
 
 static esp_err_t reboot_get(httpd_req_t *req)
 {
+    if (!authed(req)) return deny(req);
     httpd_resp_sendstr(req, "rebooting");
     schedule_reboot(500000);
     return ESP_OK;
@@ -229,6 +282,7 @@ static char s_rx_buf[RX_BUF];   // out of the server task's stack
 
 static esp_err_t update_post_inner(httpd_req_t *req)
 {
+    if (!authed(req)) return deny(req);
     const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);
     if (!part) return fail(req, 0, "no OTA partition");
     if (req->content_len == 0 || req->content_len > part->size) return fail(req, 0, "bad image size");
