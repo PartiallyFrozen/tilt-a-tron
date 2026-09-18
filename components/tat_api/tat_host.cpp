@@ -10,6 +10,7 @@
 #include "console/ui.h"
 #include "engine/canvas.h"
 #include "engine/gestures.h"
+#include "engine/polar.h"
 #include "engine/store.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -252,6 +253,35 @@ const void *api_asset(const char *name, size_t *len)
     return nullptr;
 }
 
+// Built on first use rather than at boot: it is the better part of a megabyte, and a
+// console whose games never ask for it should not be carrying it.
+bool polar_ready()
+{
+    static bool tried = false, ok = false;
+    if (!tried) {
+        tried = true;
+        ok = wc::Polar::init();
+        if (!ok) ESP_LOGE(TAG, "no memory for the polar tables");
+    }
+    return ok;
+}
+
+const uint16_t *api_polar_angles() { return polar_ready() ? wc::Polar::angles() : nullptr; }
+const uint16_t *api_polar_radii() { return polar_ready() ? wc::Polar::radii() : nullptr; }
+
+int api_text_width(const char *s, int scale, bool bold) { return wc::Gfx::textWidth(s, scale, bold); }
+
+const uint8_t *api_sheet_pixels(tat_sheet_t *x) { return sh(x)->px; }
+
+void api_sheet_info(tat_sheet_t *x, int *w, int *h, int *fw, int *fh)
+{
+    const wc::Sheet *s = sh(x);
+    if (w) *w = s->w;
+    if (h) *h = s->h;
+    if (fw) *fw = s->fw;
+    if (fh) *fh = s->fh;
+}
+
 void api_canvas_banner(tat_canvas_t *c, int cx, int y, int w, const tat_banner_t *b)
 {
     console::ui::BannerStyle style{b->panel, b->border, b->mid_color, b->bottom_color};
@@ -278,6 +308,9 @@ tat_api_t s_api = {
     api_save_get, api_save_set,
     api_asset,
     api_canvas_banner,
+    api_polar_angles, api_polar_radii,
+    api_text_width,
+    api_sheet_pixels, api_sheet_info,
 };
 
 // The input the game sees is a copy: it must not be able to reach into the engine's.

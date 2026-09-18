@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 #define TAT_API_MAJOR 1
-#define TAT_API_MINOR 1
+#define TAT_API_MINOR 2
 
 // ---------------------------------------------------------------- basics
 
@@ -200,6 +200,34 @@ typedef struct tat_api {
     // ---- added in 1.1
     // `cx` is the centre, `y` the top edge, `w` the width, all in canvas pixels.
     void (*canvas_banner)(tat_canvas_t *c, int cx, int y, int w, const tat_banner_t *b);
+
+    // ---- added in 1.2: where every screen pixel is, in polar coordinates
+    //
+    // The screen is round, so a lot of what looks good on it is rings, arcs and wedges -
+    // and working out an angle and a distance per pixel with atan2 and sqrt is far too slow
+    // to do every frame. These are two tables of TAT_SCREEN * TAT_SCREEN entries, row major,
+    // indexed y * TAT_SCREEN + x. They are handed over whole rather than a call per pixel,
+    // because a game shading the screen would otherwise make millions of indirect calls a
+    // second to read two array elements.
+    //
+    // angle 0..65535 spans a full turn, measured like atan2(dy, dx) with +y down the screen.
+    // radius is in 1/16 px from the true centre. Both return NULL if the tables could not be
+    // built (they cost about 870 KB), and a game that uses them has to cope with that.
+    //
+    // A canvas pixel (x, y) at scale s is screen pixel (s*x, s*y): index (s*y)*TAT_SCREEN + s*x.
+    const uint16_t *(*polar_angles)(void);
+    const uint16_t *(*polar_radii)(void);
+
+    // How wide a string would be, without drawing it. canvas_text returns where it ended,
+    // which is no help at all when the thing you are deciding is where to start it.
+    int (*text_width)(const char *s, int scale, bool bold);
+
+    // A sheet's own pixels, for a game that has to blit one itself rather than just place
+    // a frame - recolouring it, or shearing it row by row. Palette indices, row major, `w`
+    // wide, 0 transparent. Grand Prix repaints one car into six liveries this way rather
+    // than shipping six PNGs of the same car.
+    const uint8_t *(*sheet_pixels)(tat_sheet_t *s);
+    void (*sheet_info)(tat_sheet_t *s, int *w, int *h, int *fw, int *fh);
 } tat_api_t;
 
 // ---------------------------------------------------------------- what a game exports

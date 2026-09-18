@@ -1,6 +1,6 @@
 idf_component_register(
-    SRCS "breakout.cpp" "maze.cpp" "racer.cpp" "tiltatris.cpp" "clock.cpp" "star.cpp"
-         "pindrop/pindrop.c" "jump/jump.c" "jump/jump_builtin.c"
+    SRCS "breakout.cpp" "maze.cpp" "racer.cpp" "clock.cpp" "star.cpp"
+         "pindrop/pindrop.c" "jump/jump.c" "jump/jump_builtin.c" "tiltatris/tiltatris.c"
     INCLUDE_DIRS "include"
     REQUIRES engine wc_console audio esp_hw_support nvs_flash esp_timer net tat_api
     EMBED_FILES
@@ -26,3 +26,4 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -O2)
 set_source_files_properties("pindrop/pindrop.c" PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_pindrop")
 set_source_files_properties("jump/jump.c" "jump/jump_builtin.c"
     PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_jump;tat_assets=tat_assets_jump")
+set_source_files_properties("tiltatris/tiltatris.c" PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_tiltatris")

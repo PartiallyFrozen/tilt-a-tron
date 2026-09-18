@@ -23,7 +23,6 @@
 #include "games/breakout.h"
 #include "games/maze.h"
 #include "games/racer.h"
-#include "games/tiltatris.h"
 #include "games/clock.h"
 #include "games/star.h"
 #include "tat/tat_host.h"
@@ -38,6 +37,7 @@ static const char *TAG = "main";
 // live in one firmware; a loaded package will simply export "tat_game".
 extern "C" const tat_game_t tat_game_pindrop;
 extern "C" const tat_game_t tat_game_jump;
+extern "C" const tat_game_t tat_game_tiltatris;
 
 static wc::Engine *s_engine;
 static const console::App *s_apps;
@@ -200,12 +200,12 @@ extern "C" void app_main(void)
     static games::Breakout breakout;
     static games::Maze maze;
     static games::Racer racer;
-    static games::Tiltatris tiltatris;
     static games::Clock clock_app;
     static games::Star star;
     // Games written against tat_api.h alone. Compiled in for now, but they talk to the
     // console only through the table, which is what a loaded package will do.
     static tat::HostedGame jump(tat_game_jump);
+    static tat::HostedGame tiltatris(tat_game_tiltatris);
     static tat::HostedGame pindrop(tat_game_pindrop);
     static console::SettingsApp settings;
     static console::WifiApp wifi_setup(&settings);

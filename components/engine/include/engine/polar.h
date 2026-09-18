@@ -15,6 +15,12 @@ public:
     // Distance from center in 1/16 px.
     static uint16_t radius16(int idx) { return rad_[idx]; }
 
+    // The whole tables, for a game reached through tat_api: it shades a pixel at a time
+    // across the screen, so it has to index these itself. A call per pixel per table would
+    // be a few million indirect calls a second for nothing.
+    static const uint16_t *angles() { return ang_; }
+    static const uint16_t *radii() { return rad_; }
+
 private:
     static inline uint16_t *ang_ = nullptr;
     static inline uint16_t *rad_ = nullptr;
