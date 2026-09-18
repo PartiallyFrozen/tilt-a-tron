@@ -1,0 +1,10 @@
+# 32 MB flash: two 4 MB app slots for over-the-air updates (new firmware goes to
+# the idle slot; a build that fails to boot rolls back) and a 16 MB FAT drive that
+# shows up on a computer over USB (themes live there).
+# Name,   Type, SubType, Offset,  Size,  Flags
+nvs,      data, nvs,     ,        0x6000,
+otadata,  data, ota,     ,        0x2000,
+phy_init, data, phy,     ,        0x1000,
+app0,     app,  ota_0,   ,        4M,
+app1,     app,  ota_1,   ,        4M,
+storage,  data, fat,     ,        16M,

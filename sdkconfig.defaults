@@ -1,0 +1,76 @@
+CONFIG_IDF_TARGET="esp32s3"
+
+# Flash / partitions (board has 32MB QIO flash)
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# 8MB octal PSRAM (ESP32-S3R8)
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
+CONFIG_SPIRAM_USE_MALLOC=y
+# Keep small allocations in fast internal RAM; big ones (framebuffer, assets) go to PSRAM
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
+
+# Speed
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+# Keep SPI master hot paths in IRAM so flash cache misses never stall a frame push
+CONFIG_SPI_MASTER_IN_IRAM=y
+CONFIG_SPI_MASTER_ISR_IN_IRAM=y
+CONFIG_GPIO_CTRL_FUNC_IN_IRAM=y
+
+# Console over the native USB-Serial/JTAG port (COM port on the PC)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# OTA: roll back to the previous slot if a new build never marks itself valid
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Wi-Fi (update mode only): keep its buffers in PSRAM so internal RAM stays free
+# for the display DMA buffers
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# Don't park Wi-Fi code in internal RAM just to shave latency off packets; games
+# need that RAM for DMA buffers. Zero-init Wi-Fi/lwIP data goes to PSRAM too.
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+# Wi-Fi shares internal RAM with the display pipeline and the USB drive, so keep
+# its buffer pools modest and dynamic (dynamic ones can live in PSRAM).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=24
+CONFIG_ESP_WIFI_TX_BUFFER_TYPE=1
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=24
+CONFIG_ESP_WIFI_RX_BA_WIN=8
+# Firmware uploads were ~13 KB/s with the default 5.7 KB TCP window.
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=32
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+# USB drive: the storage partition appears as a FAT drive on a computer
+CONFIG_TINYUSB_MSC_ENABLED=y
+# Copying files onto the drive is 4x faster with a big USB buffer than the 512 B
+# default (Espressif measures 0.24 -> 0.93 MB/s on the ESP32-S3).
+CONFIG_TINYUSB_MSC_BUFSIZE=8192
+CONFIG_TINYUSB_DESC_MANUFACTURER_STRING="Tilt-a-tron"
+CONFIG_TINYUSB_DESC_PRODUCT_STRING="Tilt-a-tron"
+CONFIG_TINYUSB_DESC_MSC_STRING="Tilt-a-tron"
+CONFIG_WL_SECTOR_SIZE_512=y
+CONFIG_WL_SECTOR_MODE_PERF=y
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+
+# The start-up task decodes the theme's PNGs; the 3.5 KB default overflows.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# Games don't need the task watchdog yelling at a busy render loop on core 1
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
