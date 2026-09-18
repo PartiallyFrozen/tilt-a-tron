@@ -10,11 +10,13 @@
 #include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
+#include "engine/store.h"
+
+#include "game_ui.h"
 #include "engine/gestures.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
-#include "nvs.h"
 
 using namespace wc;
 
@@ -207,22 +209,15 @@ struct Jump::State {
     // ------------------------------------------------------------------ persistence
     void load()
     {
-        nvs_handle_t h;
-        if (nvs_open("jump", NVS_READONLY, &h) != ESP_OK) return;
-        int32_t v;
-        if (nvs_get_i32(h, "best", &v) == ESP_OK) best = v;
-        uint8_t s;
-        if (nvs_get_u8(h, "tilt", &s) == ESP_OK && s < 3) tilt_sens = s;
-        nvs_close(h);
+        wc::Store s("jump");
+        s.get("best", best);
+        s.get("tilt", tilt_sens, 3);
     }
     void save()
     {
-        nvs_handle_t h;
-        if (nvs_open("jump", NVS_READWRITE, &h) != ESP_OK) return;
-        nvs_set_i32(h, "best", best);
-        nvs_set_u8(h, "tilt", uint8_t(tilt_sens));
-        nvs_commit(h);
-        nvs_close(h);
+        wc::Store s("jump", wc::Store::Write);
+        s.set("best", best);
+        s.set("tilt", tilt_sens);
     }
 
     // ------------------------------------------------------------------ assets
@@ -688,12 +683,8 @@ struct Jump::State {
 
     void banner(Canvas &c, const char *top, const char *mid, const char *bottom, uint8_t col)
     {
-        const int h = bottom ? 34 : mid ? 26 : 16;
-        c.fillRect(22, 68, W - 44, h, c_panel);
-        c.rect(22, 68, W - 44, h, c_box);
-        c.textCentered(W / 2, 76, top, col, 1, true);
-        if (mid) c.textCentered(W / 2, 86, mid, c_dim, 1, false);
-        if (bottom) c.textCentered(W / 2, 95, bottom, c_dim, 1, false);
+        const games::ui::BannerStyle style{c_panel, c_box, c_dim, c_dim};
+        games::ui::banner(c, W / 2, 68, W - 44, top, mid, bottom, col, style);
     }
 
     void draw(Engine &e, Gfx &g)

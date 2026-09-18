@@ -10,12 +10,12 @@
 #include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
+#include "engine/store.h"
 #include "engine/gestures.h"
 #include "engine/polar.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "nvs.h"
 
 using namespace wc;
 
@@ -505,25 +505,21 @@ struct Breakout::State {
 
     void loadSettings()
     {
-        nvs_handle_t h;
-        if (nvs_open("breakout", NVS_READONLY, &h) != ESP_OK) return;
-        uint8_t v;
-        if (nvs_get_u8(h, "mode", &v) == ESP_OK && v < 3) mode = Mode(v);
-        if (nvs_get_u8(h, "invert", &v) == ESP_OK) tilt_invert = v;
-        if (nvs_get_u8(h, "speed", &v) == ESP_OK && v < 3) speed_idx = v;
-        nvs_close(h);
+        wc::Store s("breakout");
+        int m = int(mode);
+        s.get("mode", m, 3);
+        mode = Mode(m);
+        s.get("invert", tilt_invert);
+        s.get("speed", speed_idx, 3);
         base_speed = SPEEDS[speed_idx];
     }
 
     void saveSettings()
     {
-        nvs_handle_t h;
-        if (nvs_open("breakout", NVS_READWRITE, &h) != ESP_OK) return;
-        nvs_set_u8(h, "mode", uint8_t(mode));
-        nvs_set_u8(h, "invert", tilt_invert);
-        nvs_set_u8(h, "speed", uint8_t(speed_idx));
-        nvs_commit(h);
-        nvs_close(h);
+        wc::Store s("breakout", wc::Store::Write);
+        s.set("mode", int(mode));
+        s.set("invert", tilt_invert);
+        s.set("speed", speed_idx);
     }
 
     void setMode(Mode m)
