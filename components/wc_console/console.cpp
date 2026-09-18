@@ -1,12 +1,14 @@
 #include "console/console.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "board/board.h"
 #include "console/ui.h"
 #include "esp_attr.h"
 #include "esp_log.h"
+#include "esp_core_dump.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -86,7 +88,7 @@ const char *firmwareVersion() { return esp_app_get_description()->version; }
 static RTC_NOINIT_ATTR uint32_t s_crumb_magic;
 static RTC_NOINIT_ATTR char s_crumb[48];
 static char s_previous[48];
-static char s_crash_text[96];
+static char s_crash_text[320];
 static bool s_crashed;
 
 void crumb(const char *what)
@@ -128,8 +130,19 @@ int noteBootStarted()
     crumb("boot");
     if (bad) {
         s_crashed = true;
-        std::snprintf(s_crash_text, sizeof(s_crash_text), "%s - %s", resetReasonName(r),
-                      s_previous[0] ? s_previous : "unknown");
+        int n = std::snprintf(s_crash_text, sizeof(s_crash_text), "%s - %s", resetReasonName(r),
+                              s_previous[0] ? s_previous : "unknown");
+        // The core dump (if the coredump partition exists) says where it died:
+        // task, PC and a backtrace. update.ps1 -Crash turns the addresses into lines.
+        auto *sum = static_cast<esp_core_dump_summary_t *>(std::calloc(1, sizeof(esp_core_dump_summary_t)));
+        if (sum && esp_core_dump_image_check() == ESP_OK && esp_core_dump_get_summary(sum) == ESP_OK) {
+            n += std::snprintf(s_crash_text + n, sizeof(s_crash_text) - n, " | %s cause %u pc 0x%08x bt",
+                               sum->exc_task, unsigned(sum->ex_info.exc_cause), unsigned(sum->exc_pc));
+            for (unsigned i = 0; i < sum->exc_bt_info.depth && i < 10 && n < int(sizeof(s_crash_text)) - 12; i++)
+                n += std::snprintf(s_crash_text + n, sizeof(s_crash_text) - n, " %08x", unsigned(sum->exc_bt_info.bt[i]));
+            esp_core_dump_image_erase();
+        }
+        std::free(sum);
     } else {
         s_previous[0] = 0;
     }

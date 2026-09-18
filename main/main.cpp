@@ -75,7 +75,7 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Tilt-a-tron %s", console::firmwareVersion());
 
     {
-        char extra[192];
+        char extra[448];
         snprintf(extra, sizeof(extra), "\"safe\":%s,\"failed_boots\":%d,\"crash\":\"%s\"",
                  safe_mode ? "true" : "false", failed_boots, console::lastCrashText());
         net_status_set_extra(extra);

@@ -196,9 +196,9 @@ void Launcher::draw(Engine &e, Gfx &g)
         battery_dirty_ = true;
     }
     if (battery_dirty_ && battery_pct_ >= 0) {
-        // Battery at the top: a little cell with its charge, the percentage beside it.
-        const int y = 34, bx = Gfx::CX - 34, bw = 28, bh = 14;
-        ui::restoreBg(g, Gfx::CX - 50, y - 12, 100, 26);
+        // Battery at the bottom, under the hint: a little cell with its charge and the percentage.
+        const int y = Gfx::CY + 208, bx = Gfx::CX - 40, bw = 28, bh = 14;
+        ui::restoreBg(g, Gfx::CX - 56, y - 12, 112, 26);
         const Color c = battery_charging_ ? ui::GO : battery_pct_ <= 15 ? ui::DANGER : ui::TEXT;
         g.fillRect(bx + 1, y - bh / 2 + 1, bw, bh, wc::rgb(0, 0, 0));   // shadow
         g.rect(bx, y - bh / 2, bw, bh, c);
@@ -207,7 +207,7 @@ void Launcher::draw(Engine &e, Gfx &g)
         if (fill > 0) g.fillRect(bx + 2, y - bh / 2 + 2, fill, bh - 4, c);
         char buf[8];
         snprintf(buf, sizeof(buf), "%d%%", battery_pct_);
-        ui::shadowText(g, bx + bw + 30, y, buf, c, 2);
+        ui::shadowText(g, bx + bw + 28, y, buf, c, 2);
         battery_dirty_ = false;
     }
     // The home screen is still unless the carousel is sliding: nothing to redraw,

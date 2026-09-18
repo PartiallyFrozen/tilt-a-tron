@@ -6,6 +6,7 @@
 #   .\update.ps1 -Usb       force USB        .\update.ps1 -Wifi   force Wi-Fi
 #   .\update.ps1 -Log       print the watch's recent log (over Wi-Fi)
 #   .\update.ps1 -Status    show what the watch is running
+#   .\update.ps1 -Crash     the last crash, with its backtrace turned into source lines
 #   .\update.ps1 -Bin releases\pre-canvas.bin   install a saved build (roll back)
 #
 # Every build has a unique hash; the script compares the watch's hash with the
@@ -17,6 +18,7 @@ param(
     [switch]$Wifi,
     [switch]$Log,
     [switch]$Status,
+    [switch]$Crash,
     [string]$Bin = ""
 )
 $ErrorActionPreference = "Stop"
@@ -66,10 +68,25 @@ function Get-BinSha($bin) {
     return -join ($buf | ForEach-Object { $_.ToString("x2") })
 }
 
-if ($Log -or $Status) {
+if ($Log -or $Status -or $Crash) {
     $w = Find-Watch
     if (-not $w) { throw "The watch isn't answering on Wi-Fi (is WI-FI ON in Settings, and is it awake?)." }
     if ($Status) { $w.Status | Format-List; return }
+    if ($Crash) {
+        $text = "$($w.Status.crash)"
+        if (-not $text) { Write-Host "No crash recorded since the last boot."; return }
+        Write-Host $text
+        $addrs = [regex]::Matches($text, '\b4[0-9a-f]{7}\b') | ForEach-Object { "0x" + $_.Value }
+        $elf = Join-Path $PSScriptRoot "build\tiltatron.elf"
+        $a2l = Get-ChildItem "C:\Espressif\tools\xtensa-esp-elf\*\xtensa-esp-elf\bin\xtensa-esp32s3-elf-addr2line.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($addrs -and $a2l -and (Test-Path $elf)) {
+            if ($w.Status.sha -ne (Get-BinSha (Join-Path $PSScriptRoot "build\tiltatron.bin"))) {
+                Write-Host "(note: build/ is a different build than the watch runs; lines may be off)" -ForegroundColor Yellow
+            }
+            & $a2l.FullName -pfiaC -e $elf $addrs
+        }
+        return
+    }
     (Invoke-WebRequest -UseBasicParsing "http://$($w.Ip)/log" -TimeoutSec 10).Content
     return
 }
