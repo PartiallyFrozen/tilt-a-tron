@@ -92,14 +92,22 @@ extern "C" void app_main(void)
             en.requestRedraw();
             vTaskDelay(pdMS_TO_TICKS(120));   // a frame or two, so the copy has happened
             const int n = wc::Gfx::W * wc::Gfx::H;
-            uint8_t *rgb = static_cast<uint8_t *>(heap_caps_malloc(n * 3, MALLOC_CAP_SPIRAM));
+            // A full-size PNG needs about 2 MB of working memory. With less than that free
+            // (Doom is resident) the picture is sent at half size, which needs a quarter.
+            const int step = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) > 2200 * 1024 ? 1 : 2;
+            const int ow = wc::Gfx::W / step, oh = wc::Gfx::H / step;
+            uint8_t *rgb = static_cast<uint8_t *>(heap_caps_malloc(ow * oh * 3, MALLOC_CAP_SPIRAM));
             if (!rgb) return 0;
             const wc::Color *px = en.gfx().pixels();
-            for (int i = 0; i < n; i++) {
-                const uint16_t c = uint16_t((px[i] >> 8) | (px[i] << 8));
-                rgb[i * 3] = uint8_t((c >> 11) << 3);
-                rgb[i * 3 + 1] = uint8_t(((c >> 5) & 63) << 2);
-                rgb[i * 3 + 2] = uint8_t((c & 31) << 3);
+            for (int y = 0; y < oh; y++) {
+                for (int x = 0; x < ow; x++) {
+                    const wc::Color p = px[y * step * wc::Gfx::W + x * step];
+                    const uint16_t c = uint16_t((p >> 8) | (p << 8));
+                    uint8_t *o = rgb + (y * ow + x) * 3;
+                    o[0] = uint8_t((c >> 11) << 3);
+                    o[1] = uint8_t(((c >> 5) & 63) << 2);
+                    o[2] = uint8_t((c & 31) << 3);
+                }
             }
             unsigned char *png = nullptr;
             size_t len = 0;
@@ -110,7 +118,7 @@ extern "C" void app_main(void)
             st.encoder.zlibsettings.btype = 2;
             st.encoder.zlibsettings.use_lz77 = 1;
             st.encoder.zlibsettings.windowsize = 2048;   // quick rather than small
-            const unsigned err = lodepng_encode(&png, &len, rgb, wc::Gfx::W, wc::Gfx::H, &st);
+            const unsigned err = lodepng_encode(&png, &len, rgb, ow, oh, &st);
             lodepng_state_cleanup(&st);
             heap_caps_free(rgb);
             if (err) {
@@ -260,8 +268,9 @@ extern "C" void app_main(void)
     engine.setSleepHooks(net_suspend, net_resume);
     // AUTO OFF applies everywhere, charging or not. The one exception: a computer has
     // the USB drive open (Settings > USB DRIVE on), where dozing off would cut a copy short.
-    engine.setKeepAwakeHook(storage_on_computer);
-    engine.setBusyHook(storage_on_computer);
+    // ...and while someone is updating or otherwise talking to it over Wi-Fi.
+    engine.setKeepAwakeHook([] { return storage_on_computer() || net_busy(); });
+    engine.setBusyHook([] { return storage_on_computer() || net_transfer_active(); });
     net_set_reboot_guard(storage_on_computer);
     engine.setAutoOffSeconds(console::autoOffSeconds());
     engine.run(launcher);

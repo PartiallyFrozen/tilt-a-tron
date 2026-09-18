@@ -14,6 +14,7 @@
 #include "engine/canvas.h"
 #include "engine/gestures.h"
 #include "engine/polar.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "nvs.h"
@@ -103,8 +104,8 @@ bool wins(const Level &L, const uint8_t *rot, uint8_t entry_mask)
 
 // ------------------------------------------------------------------ solver / generator (spec section 8)
 constexpr int MAX_STATES = 4096;
-int8_t s_dist[MAX_STATES];    // taps from each ring configuration to the nearest winning one
-uint16_t s_queue[MAX_STATES];
+EXT_RAM_BSS_ATTR int8_t s_dist[MAX_STATES];    // taps from each ring configuration to the nearest winning one
+EXT_RAM_BSS_ATTR uint16_t s_queue[MAX_STATES];
 
 int pack(const uint8_t *rot, int n)
 {
