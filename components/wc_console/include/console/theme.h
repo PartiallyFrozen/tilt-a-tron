@@ -43,6 +43,9 @@ public:
     uint32_t generation() const { return generation_; }
 
     const Image &background() const { return background_; }
+    // The firmware's own icon for an app (the Default theme's PNG), for the
+    // carousel when the active theme doesn't provide one.
+    static bool builtinIcon(const std::string &app_id, Image &out);
     // The icon for an app: icons/<id>.png, or any icon file whose name looks
     // like the app's id or title ("Marble Maze.png", "grand-prix.png", ...).
     const Image *icon(const std::string &app_id, const std::string &title) const;

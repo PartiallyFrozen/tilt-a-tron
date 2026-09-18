@@ -20,6 +20,8 @@ esp_err_t storage_init(bool usb_drive);
 // Default files) that must not run on the USB driver's task.
 void storage_service(void);
 bool storage_ready(void);            // mounted for the app right now
+// The built-in (Default theme) icon PNG for an app id, embedded in the firmware.
+bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len);
 bool storage_on_computer(void);      // a computer currently has the drive open
 uint32_t storage_generation(void);   // bumps every time the drive returns to the app
 
