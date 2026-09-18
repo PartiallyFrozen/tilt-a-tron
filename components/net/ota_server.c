@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <stdarg.h>
 
@@ -150,9 +151,9 @@ static esp_err_t status_get(httpd_req_t *req)
     for (int i = 0; i < 8; i++) snprintf(sha + i * 2, 3, "%02x", app->app_elf_sha256[i]);
     snprintf(buf, sizeof(buf),
              "{\"app\":\"%s\",\"version\":\"%s\",\"sha\":\"%s\",\"built\":\"%s %s\",\"state\":%d,\"received\":%lu,\"total\":%lu,"
-             "\"error\":\"%s\",\"uptime_s\":%lld,\"heap_internal\":%u%s%s}",
+             "\"error\":\"%s\",\"uptime_s\":%lld,\"utc\":%lld,\"heap_internal\":%u%s%s}",
              app->project_name, app->version, sha, app->date, app->time, st.state, (unsigned long)st.received,
-             (unsigned long)st.total, st.error, esp_timer_get_time() / 1000000,
+             (unsigned long)st.total, st.error, esp_timer_get_time() / 1000000, (long long)time(NULL),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), s_status_extra[0] ? "," : "", s_status_extra);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, buf);

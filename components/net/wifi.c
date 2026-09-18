@@ -14,6 +14,8 @@
 #include "freertos/event_groups.h"
 #include "mdns.h"
 #include "esp_sntp.h"
+#include "esp_http_client.h"
+#include <stdlib.h>
 #include "nvs.h"
 
 static const char *TAG = "net";
@@ -25,13 +27,61 @@ static EventGroupHandle_t s_events;
 static bool s_inited, s_started, s_mdns, s_sntp;
 
 // The clock app reads the system time; NTP keeps it right whenever we're online.
+static void on_time_sync(struct timeval *tv)
+{
+    ESP_LOGI(TAG, "time synced from the network (UTC epoch %lld)", (long long)tv->tv_sec);
+}
+
+// The offset from UTC for wherever this network is (daylight saving included),
+// asked once per boot from ip-api.com. The clock uses it unless a zone was set by hand.
+static volatile int s_tz_min;
+static volatile bool s_tz_known;
+
+bool net_tz_offset_min(int *minutes)
+{
+    if (!s_tz_known) return false;
+    *minutes = s_tz_min;
+    return true;
+}
+
+static void tz_task(void *arg)
+{
+    char body[128] = "";
+    for (int attempt = 0; attempt < 3 && !s_tz_known; attempt++) {
+        const esp_http_client_config_t cfg = {.url = "http://ip-api.com/json/?fields=status,offset", .timeout_ms = 6000};
+        esp_http_client_handle_t c = esp_http_client_init(&cfg);
+        if (c && esp_http_client_open(c, 0) == ESP_OK) {
+            esp_http_client_fetch_headers(c);
+            const int n = esp_http_client_read_response(c, body, sizeof(body) - 1);
+            if (n > 0) {
+                body[n] = 0;
+                const char *p = strstr(body, "\"offset\":");
+                if (p && strstr(body, "success")) {
+                    s_tz_min = atoi(p + 9) / 60;
+                    s_tz_known = true;
+                    ESP_LOGI(TAG, "time zone from the network: UTC%+d:%02d", s_tz_min / 60, abs(s_tz_min % 60));
+                }
+            }
+        }
+        if (c) {
+            esp_http_client_close(c);
+            esp_http_client_cleanup(c);
+        }
+        if (!s_tz_known) vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+    if (!s_tz_known) ESP_LOGW(TAG, "couldn't get the time zone from the network");
+    vTaskDelete(NULL);
+}
+
 static void start_sntp(void)
 {
     if (s_sntp) return;
     s_sntp = true;
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_set_time_sync_notification_cb(on_time_sync);
     esp_sntp_init();
+    xTaskCreatePinnedToCore(tz_task, "tz", 4096, NULL, 2, NULL, 0);
 }
 static char s_ip[16];
 static volatile net_state_t s_state = NET_OFF;
