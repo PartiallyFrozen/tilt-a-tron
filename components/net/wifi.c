@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "mdns.h"
+#include "esp_sntp.h"
 #include "nvs.h"
 
 static const char *TAG = "net";
@@ -21,7 +22,17 @@ static const char *TAG = "net";
 #define BIT_DISCONNECTED BIT1
 
 static EventGroupHandle_t s_events;
-static bool s_inited, s_started, s_mdns;
+static bool s_inited, s_started, s_mdns, s_sntp;
+
+// The clock app reads the system time; NTP keeps it right whenever we're online.
+static void start_sntp(void)
+{
+    if (s_sntp) return;
+    s_sntp = true;
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+}
 static char s_ip[16];
 static volatile net_state_t s_state = NET_OFF;
 
@@ -75,6 +86,7 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         s_state = NET_CONNECTED;
         xEventGroupSetBits(s_events, BIT_GOT_IP);
         start_mdns();
+        start_sntp();
         // Accept firmware updates whenever we're on Wi-Fi: with the USB port used as
         // the theme drive, this is the way in.
         ota_server_start();

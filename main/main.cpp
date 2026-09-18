@@ -24,6 +24,7 @@
 #include "games/racer.h"
 #include "games/jump.h"
 #include "games/tiltatris.h"
+#include "games/clock.h"
 #include "net/net.h"
 #include "nvs_flash.h"
 #include "storage/storage.h"
@@ -184,6 +185,7 @@ extern "C" void app_main(void)
     static games::Racer racer;
     static games::Jump jump;
     static games::Tiltatris tiltatris;
+    static games::Clock clock_app;
     static console::SettingsApp settings;
     static console::WifiApp wifi_setup(&settings);
     static console::UpdateApp updater(&settings);
@@ -194,6 +196,7 @@ extern "C" void app_main(void)
         {"racer", "GRAND PRIX", wc::rgb(255, 70, 70), console::icons::racer, &racer},
         {"jump", "SKY JUMP", wc::rgb(255, 190, 50), console::icons::jump, &jump},
         {"tiltatris", "TILT-A-TRIS", wc::rgb(80, 220, 240), console::icons::tiltatris, &tiltatris},
+        {"clock", "CLOCK", wc::rgb(214, 170, 60), console::icons::clock, &clock_app},
         {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings},
     };
     static console::Launcher launcher(apps, sizeof(apps) / sizeof(apps[0]));

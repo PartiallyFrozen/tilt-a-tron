@@ -179,6 +179,28 @@ void tiltatris(Color *buf, int r)
     });
 }
 
+void clock(Color *buf, int r)
+{
+    // Fallback only (the real icon is a PNG): a gold pocket watch with a cream dial.
+    static constexpr Color EDGE = rgb(70, 74, 92), GOLD = rgb(214, 170, 60), GOLD_D = rgb(140, 100, 30),
+                           CREAM = rgb(244, 234, 205), INK = rgb(40, 30, 24), RED = rgb(220, 40, 40);
+    forEach(buf, r, [&](float nd, float a, float x, float y) -> Color {
+        if (nd > 0.955f) return EDGE;
+        if (nd > 0.86f) return GOLD;
+        if (nd > 0.80f) return GOLD_D;
+        // Hands: hour at 10 o'clock, minute at 2 o'clock.
+        const float ah = -TAU / 6, am = TAU / 6;
+        const float hx = std::sin(ah), hy = -std::cos(ah), mx = std::sin(am), my = -std::cos(am);
+        const float ph = x * hx + y * hy, dh = std::fabs(x * hy - y * hx);
+        const float pm = x * mx + y * my, dm = std::fabs(x * my - y * mx);
+        if (ph > -0.08f && ph < 0.45f && dh < 0.045f) return INK;
+        if (pm > -0.08f && pm < 0.62f && dm < 0.03f) return INK;
+        if (nd < 0.05f) return RED;
+        if (nd > 0.70f && std::fmod(a + 0.02f, TAU / 12) < 0.05f) return INK;
+        return CREAM;
+    });
+}
+
 void settings(Color *buf, int r)
 {
     static constexpr Color BG = rgb(26, 30, 40), EDGE = rgb(70, 74, 92), GEAR = rgb(205, 210, 222),

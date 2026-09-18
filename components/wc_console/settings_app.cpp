@@ -92,6 +92,11 @@ void SettingsApp::update(wc::Engine &e, float dt)
         activate(e, picked);
         return;
     }
+    // PWR (the big button) also leaves Settings, like on the games' menus.
+    if (e.input().clicked & wc::BTN_B) {
+        e.goHome();
+        return;
+    }
     if (ges_.swipe_right && !list_.dragging()) {
         e.goHome();
         return;
