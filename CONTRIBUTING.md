@@ -43,6 +43,7 @@ builds for everyone.
 | `components/games` | The games |
 | `components/link` | USB protocol the manager app speaks, and how files get onto a watch |
 | `components/net` | Wi-Fi, over-the-air updates, the web endpoints |
+| `app/` | The desktop manager app (C#, Avalonia) - see [app/README.md](app/README.md) |
 | `docs/GAME_API.md` | Where this is going: an OS plus games as installable files |
 
 ## House style

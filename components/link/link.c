@@ -6,6 +6,7 @@
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_rom_crc.h"
 #include "esp_system.h"
 #include "storage/storage.h"
@@ -39,6 +40,8 @@ static void note_changed(void)
 }
 
 // An upload in progress. Only one at a time: there is one app and one wire.
+#define PUT_BUF (32 * 1024)
+static uint8_t *s_put_buf;
 static FILE *s_put;
 static uint32_t s_put_left, s_put_crc, s_put_want;
 static char s_put_path[160];
@@ -140,7 +143,7 @@ static void send(uint8_t seq, uint8_t cmd, const void *payload, size_t len)
         // Never offer more than the driver's buffer at once: a bigger ask can come back
         // short or time out, and a truncated frame just fails its CRC at the far end.
         size_t take = len - off;
-        if (take > 1024) take = 1024;
+        if (take > LINK_MAX_PAYLOAD) take = LINK_MAX_PAYLOAD;
         const int n = usb_serial_jtag_write_bytes((const uint8_t *)payload + off, take, pdMS_TO_TICKS(1000));
         if (n <= 0) return;
         off += n;
@@ -251,6 +254,11 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
             fail(seq, "can't write there (is the folder missing?)");
             break;
         }
+        // Batch the writes. Wear-levelled FAT turns every small write into a
+        // read-modify-write of a whole sector, and that - not USB - is what limits a
+        // transfer: with 4 KB writes a theme crawled in at 8 KB/s.
+        if (!s_put_buf) s_put_buf = heap_caps_malloc(PUT_BUF, MALLOC_CAP_SPIRAM);
+        if (s_put_buf) setvbuf(s_put, (char *)s_put_buf, _IOFBF, PUT_BUF);
         s_put_crc = 0;
         ESP_LOGI(TAG, "receiving %s, %u bytes", s_put_path, (unsigned)s_put_left);
         send(seq, cmd | 0x80, NULL, 0);
@@ -359,17 +367,41 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
 static void link_task(void *arg)
 {
     static uint8_t body[LINK_MAX_PAYLOAD];
+    static uint8_t in[512];
     enum { SYNC0, SYNC1, HEAD, BODY, CRC } state = SYNC0;
     uint8_t head[4];   // len lo, len hi, seq, cmd
     uint16_t want = 0, got = 0;
     uint8_t crc_in[2];
+    int have = 0, pos = 0;
 
     for (;;) {
-        uint8_t b;
-        if (usb_serial_jtag_read_bytes(&b, 1, pdMS_TO_TICKS(200)) != 1) {
-            if (state != SYNC0 && esp_timer_get_time() - s_last_frame_us > 2000000LL) state = SYNC0;
+        if (pos >= have) {
+            // A frame is up to 4 KB. Asking the driver for one byte at a time meant four
+            // thousand calls per frame and cost most of the transfer rate; read in blocks.
+            have = usb_serial_jtag_read_bytes(in, sizeof(in), pdMS_TO_TICKS(200));
+            pos = 0;
+            if (have <= 0) {
+                have = 0;
+                if (state != SYNC0 && esp_timer_get_time() - s_last_frame_us > 2000000LL) state = SYNC0;
+                continue;
+            }
+        }
+
+        // The body is the bulk of a frame and needs no inspection: take it in one go.
+        if (state == BODY) {
+            int n = have - pos;
+            if (n > want - got) n = want - got;
+            memcpy(body + got, in + pos, n);
+            got += n;
+            pos += n;
+            if (got == want) {
+                got = 0;
+                state = CRC;
+            }
             continue;
         }
+
+        const uint8_t b = in[pos++];
         switch (state) {
         case SYNC0: state = (b == 0xA5) ? SYNC1 : SYNC0; break;
         case SYNC1:
@@ -388,13 +420,6 @@ static void link_task(void *arg)
                 state = want ? BODY : CRC;
             }
             break;
-        case BODY:
-            body[got++] = b;
-            if (got == want) {
-                got = 0;
-                state = CRC;
-            }
-            break;
         case CRC:
             crc_in[got++] = b;
             if (got == 2) {
@@ -405,6 +430,7 @@ static void link_task(void *arg)
                 got = 0;
             }
             break;
+        default: break;   // BODY is handled above
         }
     }
 }
@@ -419,8 +445,12 @@ void link_start(void)
     // pointing the VFS at it lets us read as well, without the two fighting over the
     // peripheral. Logging carries on as before.
     usb_serial_jtag_driver_config_t cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
-    cfg.rx_buffer_size = 1024;
-    cfg.tx_buffer_size = 2048;   // replies bigger than this are split by send()
+    // Room for a whole frame each way. With a small buffer the host can only push a
+    // fraction of a frame before it has to stop and wait for the watch to drain it, and
+    // a transfer runs at a few KB/s - the same lesson the USB drive taught, where an
+    // 8 KB buffer beat the 512 byte default four times over.
+    cfg.rx_buffer_size = LINK_MAX_PAYLOAD + 512;
+    cfg.tx_buffer_size = LINK_MAX_PAYLOAD + 512;
     if (usb_serial_jtag_driver_install(&cfg) != ESP_OK) {
         ESP_LOGE(TAG, "can't open the USB port for the manager app");
         return;

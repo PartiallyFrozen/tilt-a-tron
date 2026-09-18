@@ -1,0 +1,42 @@
+# Builds the manager app for all three desktops from one source, so nobody has to own a
+# Mac or a Linux box to ship for them. Each is a single self-contained file.
+name: Manager app
+
+on:
+  push:
+    branches: [master]
+    paths: ["app/**", ".github/workflows/manager.yml"]
+  pull_request:
+    paths: ["app/**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish
+        working-directory: app/Tiltatron.Manager
+        run: dotnet publish -c Release -r ${{ matrix.rid }} -o out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tiltatron-manager-${{ matrix.rid }}
+          path: |
+            app/Tiltatron.Manager/out/tiltatron-manager
+            app/Tiltatron.Manager/out/tiltatron-manager.exe
+          if-no-files-found: error

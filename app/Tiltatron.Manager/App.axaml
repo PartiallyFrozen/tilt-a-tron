@@ -1,0 +1,38 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Tiltatron.Manager.App"
+             RequestedThemeVariant="Dark">
+  <Application.Styles>
+    <FluentTheme />
+
+    <!-- The console's own palette, so the app looks like it belongs to the watch. -->
+    <Style Selector="Window">
+      <Setter Property="Background" Value="#14161E" />
+      <Setter Property="FontFamily" Value="Consolas, Menlo, monospace" />
+    </Style>
+    <Style Selector="TextBlock.title">
+      <Setter Property="FontSize" Value="22" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="#FFD93D" />
+    </Style>
+    <Style Selector="TextBlock.dim">
+      <Setter Property="Foreground" Value="#8A97C0" />
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="#1E2029" />
+      <Setter Property="BorderBrush" Value="#3A4260" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="12" />
+    </Style>
+    <Style Selector="Button">
+      <Setter Property="Background" Value="#2E3550" />
+      <Setter Property="Foreground" Value="#EAF0FF" />
+      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="CornerRadius" Value="3" />
+    </Style>
+    <Style Selector="Button:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+  </Application.Styles>
+</Application>
