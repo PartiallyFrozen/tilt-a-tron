@@ -57,7 +57,7 @@ void AppsApp::update(wc::Engine &e, float dt)
 void AppsApp::draw(wc::Engine &e, wc::Gfx &g)
 {
     if (full_) {
-        ui::clearScreen(g);
+        ui::menuBackground(g);
         ui::title(g, "GAMES");
         ui::outlineButton(g, ui::buttonRect(0, 1), "BACK");
         list_.invalidate();
@@ -189,7 +189,7 @@ void SettingsApp::drawRow(wc::Gfx &g, int item, int y)
 void SettingsApp::draw(wc::Engine &e, wc::Gfx &g)
 {
     if (full_) {
-        ui::clearScreen(g);
+        ui::menuBackground(g);
         ui::title(g, "SETTINGS");
         ui::outlineButton(g, ui::buttonRect(0, 1), "HOME");
         list_.invalidate();

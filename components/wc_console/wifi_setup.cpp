@@ -214,7 +214,7 @@ void WifiSetup::draw(Gfx &g)
         return;
     }
     dirty_ = false;
-    ui::clearScreen(g);
+    ui::menuBackground(g);
     switch (st_) {
     case St::Scanning:
         g.textCentered(C, C, "SCANNING", ui::TEXT, 4, true);

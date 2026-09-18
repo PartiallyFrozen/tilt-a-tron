@@ -138,7 +138,7 @@ void UpdateApp::drawReady(Gfx &g)
 void UpdateApp::drawProgress(Gfx &g, bool full)
 {
     if (full) {
-        ui::clearScreen(g);
+        ui::menuBackground(g);
         for (uint32_t i : ring_px_) g.pixels()[i] = wc::rgb(40, 44, 54);
         g.markAllDirty();
         g.textCentered(C, C - 40, "UPDATING", ui::TEXT, 3, true);
@@ -167,7 +167,7 @@ void UpdateApp::drawProgress(Gfx &g, bool full)
 
     char buf[8];
     snprintf(buf, sizeof(buf), "%d%%", pct);
-    ui::restoreBg(g, C - 90, C, 180, 50);
+    ui::restoreMenuBg(g, C - 90, C, 180, 50);
     g.textCentered(C, C + 24, buf, ui::GO, 6, true);
     drawn_pct_ = pct;
 }
@@ -188,7 +188,7 @@ void UpdateApp::draw(Engine &e, Gfx &g)
         return;
     }
     dirty_ = false;
-    ui::clearScreen(g);
+    ui::menuBackground(g);
 
     switch (st_) {
     case St::JoinSaved:

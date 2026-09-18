@@ -30,6 +30,10 @@ inline Color DANGER = wc::colors::red;
 // Theme background (image or color). Defined in theme.cpp.
 // dx/dy shift the picture for a parallax effect on the home screen.
 void clearScreen(Gfx &g, int dx = 0, int dy = 0);
+// Menus sit on a solid backdrop, not the theme picture: a title over a busy background
+// is unreadable, and every menu on the console should feel like the same screen.
+inline void menuBackground(Gfx &g) { g.clear(SCRIM); }
+inline void restoreMenuBg(Gfx &g, int x, int y, int w, int h) { g.fillRect(x, y, w, h, SCRIM); }
 void restoreBg(Gfx &g, int x, int y, int w, int h, int dx = 0, int dy = 0);
 
 struct Rect {

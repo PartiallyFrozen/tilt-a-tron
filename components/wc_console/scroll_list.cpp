@@ -58,7 +58,7 @@ void ScrollList::draw(Gfx &g, const std::function<void(Gfx &, int, int)> &drawRo
     if (off == drawn_offset_) return;
     drawn_offset_ = off;
 
-    restoreBg(g, 0, TOP, Gfx::W, BOTTOM - TOP);
+    restoreMenuBg(g, 0, TOP, Gfx::W, BOTTOM - TOP);
     g.setClip(0, TOP, Gfx::W, BOTTOM - TOP);
     for (int i = 0; i < count_; i++) {
         const int y = TOP + i * PITCH - off;

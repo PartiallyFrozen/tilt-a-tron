@@ -195,7 +195,7 @@ void CalibrateApp::draw(wc::Engine &e, wc::Gfx &g)
 {
     if (msg_ != drawn_msg_) full_ = true;
     if (full_) {
-        ui::clearScreen(g);
+        ui::menuBackground(g);
         ui::title(g, "CALIBRATE");
         drawn_msg_ = msg_;
         const char *l1 = LINES[msg_][0];
@@ -232,7 +232,7 @@ void CalibrateApp::draw(wc::Engine &e, wc::Gfx &g)
         full_ = false;
     } else {
         const int r = RING_R + 8;
-        ui::restoreBg(g, DISH_X - r, DISH_Y - r, r * 2, r * 2);
+        ui::restoreMenuBg(g, DISH_X - r, DISH_Y - r, r * 2, r * 2);
     }
 
     // The live part: a bubble level in a dish, with a progress ring around it.
