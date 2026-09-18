@@ -8,6 +8,10 @@ Then on the Tilt-a-tron pick it in Settings > THEME.
 Anything you leave out falls back to the Default look, so a theme can be as
 small as a theme.json with one color changed.
 
+You can also edit Default directly: a file you change or replace there is yours
+and is left alone. Files you haven't touched are refreshed when a new firmware
+ships new ones (for example a new game's icon).
+
   Theme/
     Default/
       theme.json          colors (see below)
