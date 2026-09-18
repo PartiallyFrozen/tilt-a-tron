@@ -56,6 +56,7 @@ struct Clock::State {
     // ---- settings
     int face = POCKET;
     int tz_min = 0;            // minutes east of UTC
+    bool tz_auto = true;       // take the zone from the network when it's known
     bool h24 = false;
 
     // ---- ui
@@ -101,6 +102,7 @@ struct Clock::State {
         if (nvs_get_u8(h, "face", &f) == ESP_OK && f < FACE_COUNT) face = f;
         if (nvs_get_u8(h, "h24", &v) == ESP_OK) h24 = v;
         if (nvs_get_i32(h, "tz", &tz) == ESP_OK) tz_min = tz;
+        if (nvs_get_u8(h, "tz_auto", &v) == ESP_OK) tz_auto = v;
         nvs_close(h);
     }
     void save()
@@ -110,6 +112,7 @@ struct Clock::State {
         nvs_set_u8(h, "face", uint8_t(face));
         nvs_set_u8(h, "h24", h24);
         nvs_set_i32(h, "tz", tz_min);
+        nvs_set_u8(h, "tz_auto", tz_auto);
         nvs_commit(h);
         nvs_close(h);
     }
@@ -455,8 +458,8 @@ struct Clock::State {
         namespace ui = console::ui;
         ui::clearScreen(g);
         ui::title(g, "CLOCK");
-        char tz[16];
-        snprintf(tz, sizeof(tz), "%+d:%02d", tz_min / 60, std::abs(tz_min % 60));
+        char tz[24];
+        snprintf(tz, sizeof(tz), "%s%+d:%02d", tz_auto ? "AUTO " : "", tz_min / 60, std::abs(tz_min % 60));
         ui::row(g, 0, "FACE", FACE_NAMES[face]);
         ui::row(g, 1, "CLOCK", h24 ? "24H" : "12H");
         ui::row(g, 2, "TIME ZONE", tz);
@@ -477,8 +480,17 @@ struct Clock::State {
             save();
             menu_dirty = true;
         } else if (ui::rowRect(2).hit(x, y)) {
-            // Whole hours, -12 .. +14, then round again.
-            tz_min = tz_min >= 14 * 60 ? -12 * 60 : tz_min + 60;
+            // AUTO (from the network), then whole hours -12 .. +14 by hand, then AUTO again.
+            if (tz_auto) {
+                tz_auto = false;
+                tz_min = -12 * 60;
+            } else if (tz_min >= 14 * 60) {
+                tz_auto = true;
+                int m;
+                tz_min = net_tz_offset_min(&m) ? m : 0;
+            } else {
+                tz_min = (tz_min / 60 + 1) * 60;
+            }
             save();
             menu_dirty = true;
         } else if (ui::rowRect(3).hit(x, y)) {
@@ -549,6 +561,13 @@ struct Clock::State {
         const InputState &in = e.input();
         ges.update(in.touch);
         t += dt;
+        // The network knows where we are: follow it (and remember it for offline days).
+        int net_tz;
+        if (tz_auto && net_tz_offset_min(&net_tz) && net_tz != tz_min) {
+            tz_min = net_tz;
+            save();
+            menu_dirty = true;
+        }
         if (setting) {
             if (ges.tap) setTimeTap(ges.x, ges.y);
             if (ges.swipe_right || (in.clicked & BTN_B)) setting = false;

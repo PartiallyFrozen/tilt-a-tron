@@ -39,6 +39,9 @@ void net_start(void);
 // Safe mode: bring Wi-Fi up with the saved network even if the user switched it off.
 void net_start_forced(void);
 net_state_t net_state(void);
+// Minutes east of UTC for this network's location (from ip-api.com, once per boot,
+// daylight saving included). False until it's known.
+bool net_tz_offset_min(int *minutes);
 // Around console sleep: radio off, then back on and reconnecting if it was enabled.
 void net_suspend(void);
 void net_resume(void);
