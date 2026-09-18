@@ -337,22 +337,28 @@ bool storage_ready(void) { return s_ready; }
 bool storage_on_computer(void) { return s_on_computer; }
 uint32_t storage_generation(void) { return s_generation; }
 
-bool storage_debug_mode(void)
+// Settings > USB DRIVE. Off (the default) keeps the USB port as the flashing/log
+// port and never starts the USB drive; on, plugging in shows the theme drive.
+// (Replaces the old inverted DEBUG MODE switch; its saved value is ignored.)
+bool storage_usb_drive_enabled(void)
 {
     nvs_handle_t h;
-    uint8_t v = 1;
+    uint8_t v = 0;
     if (nvs_open("console", NVS_READONLY, &h) == ESP_OK) {
-        nvs_get_u8(h, "debug", &v);
+        nvs_get_u8(h, "usb_drive", &v);
         nvs_close(h);
     }
     return v;
 }
 
-void storage_set_debug_mode(bool on)
+void storage_set_usb_drive_enabled(bool on)
 {
     nvs_handle_t h;
     if (nvs_open("console", NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u8(h, "debug", on);
+    nvs_set_u8(h, "usb_drive", on);
     nvs_commit(h);
     nvs_close(h);
 }
+
+bool storage_debug_mode(void) { return !storage_usb_drive_enabled(); }
+void storage_set_debug_mode(bool on) { storage_set_usb_drive_enabled(!on); }

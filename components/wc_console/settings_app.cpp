@@ -45,7 +45,7 @@ void SettingsApp::activate(wc::Engine &e, int item)
     case DEBUG_MODE:
         // Switches what the USB port is (flashing/logs vs. the theme drive): needs a restart.
         if (storage_on_computer()) return;   // eject the drive first; restarting now would corrupt it
-        storage_set_debug_mode(!storage_debug_mode());
+        storage_set_usb_drive_enabled(!storage_usb_drive_enabled());
         esp_restart();
         return;
     case WIFI: {
@@ -111,8 +111,8 @@ void SettingsApp::drawRow(wc::Gfx &g, int item, int y)
         break;
     }
     case DEBUG_MODE:
-        ui::rowAt(g, y, "DEBUG MODE", storage_debug_mode() ? "ON" : "OFF",
-                  storage_debug_mode() ? ui::ACCENT : ui::DIM);
+        ui::rowAt(g, y, "USB DRIVE", storage_usb_drive_enabled() ? "ON" : "OFF",
+                  storage_usb_drive_enabled() ? ui::ACCENT : ui::DIM);
         break;
     case WIFI: {
         const char *value = "OFF";

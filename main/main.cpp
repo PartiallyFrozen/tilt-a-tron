@@ -160,12 +160,12 @@ extern "C" void app_main(void)
         return;
     }
 
-    // The Tilt-a-tron drive (themes). With DEBUG MODE off it's also a USB drive on a
-    // computer; with it on, the USB port stays free for flashing and logs.
-    const bool debug = storage_debug_mode();
+    // The Tilt-a-tron drive (themes). With Settings > USB DRIVE on it's also a USB
+    // drive on a computer; off (default), the USB port stays free for flashing and logs.
+    const bool usb_drive = storage_usb_drive_enabled();
     console::crumb("storage");
-    if (storage_init(!debug) != ESP_OK) ESP_LOGE(TAG, "storage unavailable, using the built-in look");
-    ESP_LOGI(TAG, "debug mode %s, usb power %s", debug ? "on (USB = flashing/logs)" : "off (USB = drive)",
+    if (storage_init(usb_drive) != ESP_OK) ESP_LOGE(TAG, "storage unavailable, using the built-in look");
+    ESP_LOGI(TAG, "usb drive %s, usb power %s", usb_drive ? "on (USB = drive)" : "off (USB = flashing/logs)",
              pmu_usb_power() ? "yes" : "no");
 
     // If the last run ended badly, say so on screen and leave a note on the drive.

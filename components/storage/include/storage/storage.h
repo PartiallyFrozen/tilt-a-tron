@@ -27,7 +27,9 @@ uint32_t storage_generation(void);   // bumps every time the drive returns to th
 
 // DEBUG MODE (persisted, default on for now): the USB port stays the flashing /
 // log port. Off: the USB port is the Tilt-a-tron drive. Takes effect after restart.
-bool storage_debug_mode(void);
+bool storage_debug_mode(void);           // = !storage_usb_drive_enabled()
+bool storage_usb_drive_enabled(void);    // Settings > USB DRIVE (default off)
+void storage_set_usb_drive_enabled(bool on);
 void storage_set_debug_mode(bool on);
 
 #ifdef __cplusplus
