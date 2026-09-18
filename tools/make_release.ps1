@@ -35,5 +35,24 @@ $manifest = [ordered]@{
     files = $files
 }
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $out "manifest.json")
+# The browser installer (site/) gets its own copy plus an ESP Web Tools manifest.
+$site = Join-Path $root "site"
+$siteFw = Join-Path $site "firmware"
+New-Item -ItemType Directory -Force $siteFw | Out-Null
+$parts = @()
+foreach ($f in $files) {
+    Copy-Item (Join-Path $out $f.file) (Join-Path $siteFw $f.file) -Force
+    $parts += [ordered]@{ path = "firmware/$($f.file)"; offset = [Convert]::ToInt32($f.offset, 16) }
+}
+$web = [ordered]@{
+    name = "Tilt-a-tron"
+    version = $version
+    build = $sha
+    new_install_prompt_erase = $true
+    builds = @([ordered]@{ chipFamily = "ESP32-S3"; parts = $parts })
+}
+$json = $web | ConvertTo-Json -Depth 6
+[IO.File]::WriteAllText((Join-Path $site "manifest.json"), $json, (New-Object Text.UTF8Encoding($false)))
+
 Write-Host "firmware/ updated: $version build $sha"
 Get-ChildItem $out | ForEach-Object { Write-Host ("  {0,-22} {1,9} bytes" -f $_.Name, $_.Length) }

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tilt-a-tron installer</title>
+<meta name="description" content="Install Tilt-a-tron, a pocket-watch game console, on a Waveshare ESP32-S3-Touch-AMOLED-1.75 straight from your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root {
+    --void: #0e0e1c; --disc: #16162a; --plate: #2e3550; --edge: #3a4260;
+    --text: #eaf0ff; --dim: #8a97c0; --gold: #ffd93d; --pink: #ff4dd2; --cyan: #7fe8ff; --go: #28c86e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--void); color: var(--text); font-family: Silkscreen, "Courier New", monospace;
+         font-size: 16px; line-height: 1.5; image-rendering: pixelated; }
+  main { max-width: 980px; margin: 0 auto; padding: 0 16px 64px; }
+  h1, h2, h3, .px { font-family: "Press Start 2P", monospace; font-weight: 400; letter-spacing: 1px; }
+  a { color: var(--cyan); } a:hover { color: var(--text); }
+
+  header { text-align: center; padding: 56px 0 24px; }
+  h1 { font-size: clamp(22px, 6vw, 44px); margin: 0 0 16px; color: var(--gold); text-shadow: 4px 4px 0 #8a5a00; }
+  .tag { color: var(--dim); max-width: 640px; margin: 0 auto; }
+
+  .install { margin: 32px auto 0; max-width: 640px; padding: 28px 20px; background: var(--disc);
+             border: 4px solid var(--pink); text-align: center; }
+  .install .px { font-size: 12px; color: var(--pink); margin-bottom: 18px; }
+  .btn { font-family: "Press Start 2P", monospace; font-size: 14px; padding: 18px 22px; cursor: pointer;
+         color: #07200f; background: var(--go); border: 0; box-shadow: 0 6px 0 #14703a; }
+  .btn:hover { filter: brightness(1.1); } .btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #14703a; }
+  .build { margin-top: 18px; color: var(--dim); font-size: 14px; }
+  .warn { margin-top: 14px; color: var(--gold); font-size: 14px; }
+  esp-web-install-button[install-unsupported] .btn { display: none; }
+
+  section { margin-top: 56px; }
+  h2 { font-size: 16px; color: var(--cyan); margin: 0 0 18px; }
+  ol.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  ol.steps li { display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start;
+                padding: 14px; background: var(--disc); border-left: 4px solid var(--edge); }
+  ol.steps .n { font-family: "Press Start 2P", monospace; font-size: 16px; color: var(--gold); padding-top: 3px; }
+  ol.steps b { color: var(--text); } ol.steps span { color: var(--dim); }
+
+  .games { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 22px; }
+  .game { text-align: center; }
+  .game img { width: 100%; max-width: 233px; aspect-ratio: 1; border-radius: 50%; border: 4px solid var(--edge);
+              background: #000; display: block; margin: 0 auto 12px; }
+  .game h3 { font-size: 11px; color: var(--gold); margin: 0 0 6px; }
+  .game p { margin: 0; color: var(--dim); font-size: 14px; }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card { padding: 16px; background: var(--disc); border-top: 4px solid var(--edge); }
+  .card h3 { font-size: 11px; color: var(--pink); margin: 0 0 10px; }
+  .card p { margin: 0; color: var(--dim); font-size: 15px; }
+  footer { margin-top: 64px; text-align: center; color: var(--dim); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>TILT-A-TRON</h1>
+    <p class="tag">A pocket-watch game console for the Waveshare ESP32-S3-Touch-AMOLED-1.75 round display.
+      Tilt it, turn it, tap it. Install it from this page in about a minute.</p>
+
+    <div class="install">
+      <div class="px">INSTALL FROM YOUR BROWSER</div>
+      <esp-web-install-button manifest="manifest.json">
+        <button slot="activate" class="btn">FLASH TILT-A-TRON</button>
+        <div slot="unsupported" class="warn">This browser can't talk to USB devices. Use Chrome or Edge on a desktop computer.</div>
+        <div slot="not-allowed" class="warn">This page has to be served over HTTPS to flash a board.</div>
+      </esp-web-install-button>
+      <div class="build" id="build">firmware: loading&hellip;</div>
+    </div>
+  </header>
+
+  <section>
+    <h2>HOW TO INSTALL</h2>
+    <ol class="steps">
+      <li><div class="n">1</div><div><b>Use Chrome or Edge on a desktop computer.</b><br><span>Flashing uses Web Serial, which phones, Safari and older Firefox don't have.</span></div></li>
+      <li><div class="n">2</div><div><b>Plug the watch in with a USB-C cable that carries data.</b><br><span>Many charging cables are power-only. If no device shows up in the list, try another cable.</span></div></li>
+      <li><div class="n">3</div><div><b>Press FLASH TILT-A-TRON and pick the port</b> (it shows as "USB JTAG/serial debug unit" or a COM port).<br><span>It writes the bootloader, partition table and firmware. About a minute.</span></div></li>
+      <li><div class="n">4</div><div><b>If it can't connect:</b> unplug, hold the small <b>BOOT</b> button by the USB port, plug back in, let go after 2 seconds, and try again.<br><span>That forces install mode and always works, whatever is on the board.</span></div></li>
+      <li><div class="n">5</div><div><b>Done.</b> The watch restarts into the home carousel.<br><span>Swipe to pick a game, tap to play, BOOT goes home, double-click PWR to sleep. Turn Wi-Fi on in Settings for clock sync and over-the-air updates.</span></div></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>WHAT'S ON IT</h2>
+    <div class="games">
+      <div class="game"><img src="img/breakout.png" alt="Round Breakout: rings of bricks around a core"><h3>BREAKOUT</h3><p>Rings of bricks. Turn the watch like a wheel; the paddle stays at the bottom.</p></div>
+      <div class="game"><img src="img/maze.png" alt="Marble Maze: a steel ball in a wooden labyrinth"><h3>MARBLE MAZE</h3><p>Tilt a steel ball through generated mazes. Mind the holes.</p></div>
+      <div class="game"><img src="img/racer.png" alt="Grand Prix: an F1 car seen from behind on a road"><h3>GRAND PRIX</h3><p>The whole watch is the steering wheel. Tip forward for throttle.</p></div>
+      <div class="game"><img src="img/jump.png" alt="Sky Jump: a round character bouncing up platforms"><h3>SKY JUMP</h3><p>Tilt Hopper up an endless tower, from morning sky to the stars.</p></div>
+      <div class="game"><img src="img/tiltatris.png" alt="Tilt-a-tris: wedge pieces falling onto a round pile"><h3>TILT-A-TRIS</h3><p>Radial block-stacking. The piece hangs from "up"; you turn the pile under it.</p></div>
+      <div class="game"><img src="img/star.png" alt="Sleepy Star: a laser and rings of walls around a star"><h3>SLEEPY STAR</h3><p>A laser falls straight down. Turn rings of gaps and mirrors to wake the star.</p></div>
+      <div class="game"><img src="img/clock.png" alt="Pocket Watch: a retro LCD clock face"><h3>POCKET WATCH</h3><p>Five faces, network time, automatic time zone.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>GOOD TO KNOW</h2>
+    <div class="grid2">
+      <div class="card"><h3>WHICH BOARD</h3><p>Waveshare ESP32-S3-Touch-AMOLED-1.75 (466&times;466 round AMOLED, CO5300 display, CST9217 touch, QMI8658 IMU, 32&nbsp;MB flash). Other boards won't work with this firmware.</p></div>
+      <div class="card"><h3>YOUR DATA</h3><p>Installing keeps the watch's settings, Wi-Fi and themes. Choose "erase" in the install dialog only if you want a factory-fresh start.</p></div>
+      <div class="card"><h3>THEMES</h3><p>Turn on Settings &gt; USB DRIVE and the watch appears as a drive. Drop a folder with a 466&times;466 background.png into Theme and pick it in Settings.</p></div>
+      <div class="card"><h3>UPDATES</h3><p>Come back to this page any time to install the latest build, or update over Wi-Fi from the source repository.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Tilt-a-tron is open firmware for a hobby board. Not affiliated with Waveshare or Espressif.<br>
+      Flashing is powered by <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a>.</p>
+  </footer>
+</main>
+<script>
+  fetch("manifest.json").then(r => r.json()).then(m => {
+    document.getElementById("build").textContent = "firmware " + m.version + (m.build ? " (build " + m.build + ")" : "");
+  }).catch(() => { document.getElementById("build").textContent = ""; });
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+    "name":  "Tilt-a-tron",
+    "version":  "0.4.1",
+    "build":  "75aa73cbe99123f4",
+    "new_install_prompt_erase":  true,
+    "builds":  [
+                   {
+                       "chipFamily":  "ESP32-S3",
+                       "parts":  [
+                                     {
+                                         "path":  "firmware/bootloader.bin",
+                                         "offset":  0
+                                     },
+                                     {
+                                         "path":  "firmware/partition-table.bin",
+                                         "offset":  32768
+                                     },
+                                     {
+                                         "path":  "firmware/ota_data_initial.bin",
+                                         "offset":  61440
+                                     },
+                                     {
+                                         "path":  "firmware/tiltatron.bin",
+                                         "offset":  131072
+                                     }
+                                 ]
+                   }
+               ]
+}
