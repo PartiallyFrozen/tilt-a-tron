@@ -1,0 +1,37 @@
+# Builds the firmware on every push and pull request, from a clean checkout with nothing
+# but this repository - which is the only way to know a contributor can build it too.
+name: Firmware
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: ["site/**", "docs/**", "themes/**", "**/*.md"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with ESP-IDF
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.5
+          target: esp32s3
+
+      - name: Report size
+        run: |
+          ls -l build/tiltatron.bin
+          echo "firmware: $(stat -c%s build/tiltatron.bin) bytes"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tiltatron-firmware
+          path: |
+            build/tiltatron.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flasher_args.json
+          if-no-files-found: error
