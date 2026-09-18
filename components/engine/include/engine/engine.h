@@ -78,6 +78,13 @@ public:
         after_wake_ = std::move(after);
     }
 
+    // Debug remote control (driven by the /input endpoint): fake a touch that moves
+    // from (x0, y0) to (x1, y1) over `ms`, hold buttons, or override the tilt
+    // (pass NAN to go back to the real sensor). Applied on top of the real input.
+    void injectTouch(int x0, int y0, int x1, int y1, int ms);
+    void injectButton(uint32_t mask, int ms);
+    void injectTilt(float ax, float ay, float az);
+
     Gfx &gfx() { return gfx_; }
     Presenter &presenter() { return presenter_; }
     const InputState &input() const { return input_state_; }
@@ -95,9 +102,21 @@ private:
     [[noreturn]] void powerOff();
     bool sawActivity() const;
 
+    void applyInjected(int64_t now);
+
     Gfx gfx_;
     Presenter presenter_;
     Input input_;
+    struct {
+        int64_t touch_t0 = 0, touch_t1 = 0;
+        int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+        bool touch_was = false;
+        int64_t btn_until = 0;
+        uint32_t btn_mask = 0;
+        bool btn_was = false;
+        bool tilt = false;
+        float ax = 0, ay = 0, az = 1;
+    } inj_;
     InputState input_state_;
     FrameStats stats_;
     Game *game_ = nullptr;

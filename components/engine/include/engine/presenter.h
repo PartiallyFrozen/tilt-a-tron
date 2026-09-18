@@ -37,6 +37,9 @@ public:
     const PresentStats &stats() const { return stats_; }
     // Block until everything queued has hit the panel.
     void flush();
+    // Debug: copy the next presentBands() frame into `gfx` as well, so a screenshot
+    // of a game that bypasses the framebuffer can be taken from it.
+    void snapshotInto(Gfx *gfx) { snap_ = gfx; }
 
 private:
     static void taskEntry(void *arg);
@@ -46,6 +49,7 @@ private:
     PresentStats stats_;
     bool vsync_ = true;
     bool streamed_ = false;   // presentBands() ran this frame
+    Gfx *snap_ = nullptr;
     int buf_pixels_ = 0;
     void *free_q_ = nullptr;   // QueueHandle_t of Item*
     void *work_q_ = nullptr;   // QueueHandle_t of Item*

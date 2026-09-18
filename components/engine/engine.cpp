@@ -151,6 +151,51 @@ void Engine::doSleep()
     last_frame_us_ = last_activity_us_ = esp_timer_get_time();
 }
 
+void Engine::injectTouch(int x0, int y0, int x1, int y1, int ms)
+{
+    inj_.x0 = x0, inj_.y0 = y0, inj_.x1 = x1, inj_.y1 = y1;
+    inj_.touch_t0 = esp_timer_get_time();
+    inj_.touch_t1 = inj_.touch_t0 + int64_t(std::max(ms, 40)) * 1000;
+}
+
+void Engine::injectButton(uint32_t mask, int ms)
+{
+    inj_.btn_mask = mask;
+    inj_.btn_until = esp_timer_get_time() + int64_t(std::max(ms, 40)) * 1000;
+}
+
+void Engine::injectTilt(float ax, float ay, float az)
+{
+    inj_.tilt = !std::isnan(ax);
+    inj_.ax = ax, inj_.ay = ay, inj_.az = az;
+}
+
+void Engine::applyInjected(int64_t now)
+{
+    InputState &in = input_state_;
+    const bool touching = now < inj_.touch_t1;
+    if (touching || inj_.touch_was) {
+        const float t = std::min(1.0f, float(now - inj_.touch_t0) / float(std::max<int64_t>(1, inj_.touch_t1 - inj_.touch_t0)));
+        in.touch.x = int(inj_.x0 + (inj_.x1 - inj_.x0) * t);
+        in.touch.y = int(inj_.y0 + (inj_.y1 - inj_.y0) * t);
+        in.touch.t_us = now;
+        in.touch.pressed = touching && !inj_.touch_was;
+        in.touch.released = !touching && inj_.touch_was;
+        in.touch.down = touching;
+        inj_.touch_was = touching;
+    }
+    const bool holding = now < inj_.btn_until;
+    if (holding || inj_.btn_was) {
+        if (holding) in.held |= inj_.btn_mask;
+        if (holding && !inj_.btn_was) in.pressed |= inj_.btn_mask;
+        if (!holding && inj_.btn_was) in.released |= inj_.btn_mask, in.clicked |= inj_.btn_mask;
+        inj_.btn_was = holding;
+    }
+    if (inj_.tilt) {
+        in.tilt.ax = inj_.ax, in.tilt.ay = inj_.ay, in.tilt.az = inj_.az;
+    }
+}
+
 bool Engine::sawActivity() const
 {
     const InputState &in = input_state_;
@@ -176,6 +221,7 @@ void Engine::loop()
         last_frame_us_ = t0;
 
         input_.snapshot(input_state_);
+        applyInjected(t0);
 
         // Auto off when nobody's using it: dim for the last 10 s, then power down.
         const bool busy = game_->keepAwake() || (keep_awake_ && keep_awake_());

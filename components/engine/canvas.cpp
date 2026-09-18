@@ -23,10 +23,10 @@ void Sheet::release()
     w = h = fw = fh = 0;
 }
 
-bool Canvas::init(int scale)
+bool Canvas::init(int scale, int size)
 {
     scale_ = std::max(2, std::min(3, scale));
-    w_ = h_ = (Gfx::W + scale_ - 1) / scale_;
+    w_ = h_ = size > 0 ? size : (Gfx::W + scale_ - 1) / scale_;
     // Internal RAM is scarce (Wi-Fi needs it); the canvas is small enough that
     // reading it from PSRAM is cheap because the scaler walks it in order.
     px_ = static_cast<uint8_t *>(heap_caps_malloc(w_ * h_, MALLOC_CAP_SPIRAM));
@@ -61,6 +61,13 @@ uint8_t Canvas::color(Color c)
         if (d < best_d) best_d = d, best = i;
     }
     return uint8_t(best);
+}
+
+void Canvas::setPalette(const Color *pal, int n)
+{
+    n = std::min(n, 256);
+    for (int i = 1; i < n; i++) pal_[i] = pal[i];
+    used_ = std::max(1, n);
 }
 
 uint8_t Canvas::reserve(int n)
@@ -247,12 +254,13 @@ void Canvas::present(Presenter &p)
         Color pal[256];   // on the stack: internal RAM, fast
         std::memcpy(pal, pal_, sizeof(pal));
         const int s = scale_;
+        const int off = (w_ * s - Gfx::W) / 2;   // a canvas bigger than the screen is centred
         for (int r = 0; r < rows; r++) {
-            const int sy = (y + r) / s;
-            const uint8_t *src = px_ + std::min(sy, h_ - 1) * w_;
+            const int sy = (y + r + off) / s;
+            const uint8_t *src = px_ + std::min(std::max(sy, 0), h_ - 1) * w_;
             Color *out = dst + r * w;
             // Walk canvas pixels, repeating each one `s` times; the first may be partial.
-            int i = x0 / s, k = x0 - i * s;
+            int i = (x0 + off) / s, k = (x0 + off) - i * s;
             int x = 0;
             while (x < w) {
                 const Color c = pal[src[i < w_ ? i : w_ - 1]];
@@ -263,6 +271,36 @@ void Canvas::present(Presenter &p)
                 k = 0;
                 i++;
             }
+        }
+    });
+}
+
+void Canvas::presentRotated(Presenter &p, float angle)
+{
+    p.presentBands([this, angle](int y0, int rows, int x0, int w, Color *dst) {
+        Color pal[256];
+        std::memcpy(pal, pal_, sizeof(pal));
+        // Screen -> canvas is the inverse rotation, shrunk by the scale.
+        const float inv = 1.0f / scale_;
+        const float c = std::cos(angle) * inv, s = std::sin(angle) * inv;
+        const float sc = Gfx::W / 2.0f - 0.5f;          // screen centre
+        const float cc = w_ / 2.0f;                      // canvas centre
+        const int32_t du = int32_t(c * 2 * 65536), dv = int32_t(s * 2 * 65536);
+        const uint32_t uw = uint32_t(w_), uh = uint32_t(h_);
+        for (int r = 0; r < rows; r++) {
+            const float dx = x0 + 0.5f - sc, dy = (y0 + r) - sc;
+            uint32_t u = uint32_t(int32_t((cc + c * dx - s * dy) * 65536));
+            uint32_t v = uint32_t(int32_t((cc + s * dx + c * dy) * 65536));
+            Color *out = dst + r * w;
+            for (int x = 0; x + 1 < w; x += 2) {
+                const uint32_t ui = u >> 16, vi = v >> 16;
+                const Color px = (ui < uw && vi < uh) ? pal[px_[vi * uw + ui]] : pal[0];
+                out[x] = px;
+                out[x + 1] = px;
+                u += du;
+                v += dv;
+            }
+            if (w & 1) out[w - 1] = out[w - 2];
         }
     });
 }

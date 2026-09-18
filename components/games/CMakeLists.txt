@@ -9,5 +9,10 @@ idf_component_register(
         "assets/jump/spring.png"
         "assets/jump/shot.png"
         "assets/jump/clouds.png"
+        "assets/racer/car.png"
+        "assets/racer/trees.png"
+        "assets/racer/sign.png"
+        "assets/racer/stand.png"
+        "assets/racer/bush.png"
 )
 target_compile_options(${COMPONENT_LIB} PRIVATE -O2)

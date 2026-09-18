@@ -8,6 +8,7 @@
 
 #include "audio/audio.h"
 #include "console/ui.h"
+#include "engine/canvas.h"
 #include "engine/gestures.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -17,6 +18,15 @@
 
 namespace wc {
 extern const uint8_t kFont5x7[][5];
+}
+
+// Sprite sheets, embedded from components/games/assets/racer/ (see tools/make_sprites.py).
+extern "C" {
+extern const uint8_t _binary_car_png_start[], _binary_car_png_end[];
+extern const uint8_t _binary_trees_png_start[], _binary_trees_png_end[];
+extern const uint8_t _binary_sign_png_start[], _binary_sign_png_end[];
+extern const uint8_t _binary_stand_png_start[], _binary_stand_png_end[];
+extern const uint8_t _binary_bush_png_start[], _binary_bush_png_end[];
 }
 
 using namespace wc;
@@ -29,11 +39,10 @@ const char *TAG = "racer";
 
 // The scene is drawn upright into a small 8-bit picture, then rotated (to cancel
 // the watch's roll) and doubled onto the round screen.
-// 256 wide so the rotate loop can wrap coordinates with a mask (no bounds checks);
-// only the middle ~233 px circle is ever visible.
+// 256 wide: a little bigger than the 233 px circle so the rotated corners have
+// something to show.
 constexpr int VW = 256, VH = 256, VC = 128;
 constexpr int HORIZON = 108;
-constexpr float SCREEN_C = 232.5f;
 
 // Road model (after the classic pseudo-3D racers).
 constexpr float SEG_LEN = 200.0f;
@@ -81,26 +90,9 @@ constexpr Color kPalette[P_COUNT] = {
     rgb(22, 72, 170), rgb(190, 146, 14), rgb(22, 128, 56), rgb(112, 46, 152), rgb(186, 86, 12), rgb(150, 16, 26),
 };
 
-// The car, seen from behind: fat tyres, big rear wing, rain light, exhaust.
-//   T/t tyre + tread highlight   W wing   N wing name plate   B/b body + shade
-//   H helmet   G suspension and diffuser   K black   R rain light   F flame
-constexpr int CAR_W = 31, CAR_H = 14;
-constexpr const char *kCarArt[CAR_H] = {
-    "....WWWWWWWWWWWWWWWWWWWWWWW....",
-    "....WNNNNNNNNNNNNNNNNNNNNNW....",
-    "....WBBBBBBBBBBBBBBBBBBBBBW....",
-    "....W.........HHH.........W....",
-    "....W........BHHHB........W....",
-    ".TTTTT......BBBBBBB......TTTTT.",
-    "TTtTTTT....BBBBBBBBB....TTTTtTT",
-    "TTtTTTTGGGBBBbbbbbBBBGGGTTTTtTT",
-    "TTtTTTTGGBBBbbKKKbbBBBGGTTTTtTT",
-    "TTtTTTT..BBBbKRRRKbBBB..TTTTtTT",
-    "TTtTTTT..GGGGKKKKKGGGG..TTTTtTT",
-    "TTtTTTT...GGGGGFGGGGG...TTTTtTT",
-    "TTtTTTT....GGG.F.GGG....TTTTtTT",
-    ".TTTTT.........F.........TTTTT.",
-};
+// The car sprite is 32 x 16 in the sheet; its blue livery colours (P_CAR0 and
+// P_CAR0_D) are swapped for each car's own at draw time.
+constexpr int CAR_W = 32, CAR_H = 16;
 
 float frand() { return esp_random() / 4294967296.0f; }
 float clampf(float v, float a, float b) { return std::max(a, std::min(b, v)); }
@@ -122,7 +114,7 @@ struct Projected {
 };
 
 // Things beside the track. offset is in road half-widths (beyond +-1 is off the road).
-enum PropKind : uint8_t { PROP_TREE, PROP_SIGN, PROP_GANTRY, PROP_STAND };
+enum PropKind : uint8_t { PROP_TREE, PROP_SIGN, PROP_GANTRY, PROP_STAND, PROP_BUSH };
 struct Prop {
     int seg;
     float offset;
@@ -189,10 +181,10 @@ struct Racer::State {
     // when the race started; 0 = off (always flat out), 1..3 = low/med/high sensitivity.
     float grav_z = 0, pitch = 0, pitch_neutral = 0, throttle = 1;
     int pitch_sens = 2;
-    uint32_t rotate_us = 0;
-
     // ---- rendering
-    uint8_t *view = nullptr;        // VW x VH palette indices
+    Canvas canvas;                  // VW x VH palette picture, rotated onto the screen
+    Sheet car_sheet, trees, sign, stand, bush;
+    uint8_t *view = nullptr;        // canvas pixels
     Projected proj_near[DRAW_DIST], proj_far[DRAW_DIST];
     bool proj_ok[DRAW_DIST];
     int64_t fps_t0 = 0;
@@ -244,6 +236,8 @@ struct Racer::State {
             const float side = frand() < 0.5f ? -1.0f : 1.0f;
             if (std::fabs(segs[i].curve) > 2.5f && frand() < 0.5f)
                 props.push_back({i, (segs[i].curve > 0 ? -1.0f : 1.0f) * 1.45f, PROP_SIGN});
+            else if (frand() < 0.3f)
+                props.push_back({i, side * (1.3f + frand() * 0.8f), PROP_BUSH});
             else
                 props.push_back({i, side * (1.5f + frand() * 1.6f), PROP_TREE});
         }
@@ -612,13 +606,14 @@ struct Racer::State {
         }
     }
 
-    // The pixel-art car, scaled to `w` pixels wide with its wheels sitting on `bottom`.
+    // The car sprite, scaled to `w` pixels wide with its wheels sitting on `bottom`.
     void drawCar(float cx, float bottom, float w, uint8_t body, float lean, bool flame)
     {
         if (w < 5) {   // a dot in the distance
             rect(int(cx) - 1, int(bottom) - 2, 3, 2, body);
             return;
         }
+        if (!car_sheet.valid()) return;
         const int dw = int(w), dh = std::max(3, int(w * CAR_H / CAR_W));
         const int x0 = int(cx - w / 2), y0 = int(bottom) - dh;
         const uint8_t shade = uint8_t(body + CAR_SHADE);
@@ -626,54 +621,60 @@ struct Racer::State {
         for (int dy = 0; dy < dh; dy++) {
             const int y = y0 + dy;
             if (y < 0 || y >= VH) continue;
-            const char *row = kCarArt[dy * CAR_H / dh];
+            const uint8_t *row = car_sheet.px + (dy * CAR_H / dh) * car_sheet.w;
             // The body leans into the corner a little; the tyres stay planted.
             const int shift = int(lean * w * 0.05f * (1.0f - float(dy) / dh));
             uint8_t *out = view + y * VW;
             for (int dx = 0; dx < dw; dx++) {
                 const int x = x0 + dx;
                 if (x < 0 || x >= VW) continue;
-                const char ch = row[dx * CAR_W / dw];
-                uint8_t c;
-                switch (ch) {
-                case 'T': c = P_TIRE; break;
-                case 't': c = P_TIRE_LIT; break;
-                case 'W': c = P_WING; break;
-                case 'N': c = P_WHITE; break;
-                case 'B': c = body; break;
-                case 'b': c = shade; break;
-                case 'H': c = P_HELMET; break;
-                case 'G': c = P_GREY; break;
-                case 'K': c = P_BLACK; break;
-                case 'R': c = P_RED; break;
-                case 'F':
+                uint8_t c = row[dx * CAR_W / dw];
+                if (!c) continue;
+                if (c == P_CAR0) c = body;
+                else if (c == P_CAR0_D) c = shade;
+                else if (c == P_FLAME_A) {
                     if (!flame) continue;
                     c = fire;
-                    break;
-                default: continue;
                 }
-                const bool planted = ch == 'T' || ch == 't';
+                const bool planted = c == P_TIRE || c == P_TIRE_LIT;
                 const int xs = planted ? x : x + shift;
                 if (xs >= 0 && xs < VW) out[xs] = c;
             }
         }
     }
 
-    void drawTree(float cx, float bottom, float scale)
+    // A sprite frame scaled to `h` pixels tall (width follows), feet on `bottom`.
+    void blitScaled(const Sheet &sh, int frame, float cx, float bottom, float h, bool flip = false)
     {
-        const float h = scale * 2600.0f * VC;
-        if (h < 3) return;
-        const int trunk_w = std::max(1, int(h * 0.10f)), trunk_h = std::max(1, int(h * 0.30f));
-        rect(int(cx) - trunk_w / 2, int(bottom) - trunk_h, trunk_w, trunk_h, P_TRUNK);
-        // A rounded crown: stacked slices, lit on one side.
-        const int crown_h = std::max(2, int(h * 0.75f)), r = std::max(2, int(h * 0.32f));
-        const int top = int(bottom) - trunk_h - crown_h + 1;
-        for (int dy = 0; dy < crown_h; dy++) {
-            const float t = (dy + 0.5f) / crown_h * 2 - 1;
-            const int half = std::max(1, int(r * std::sqrt(std::max(0.0f, 1 - t * t * 0.9f))));
-            hspan(top + dy, int(cx) - half, int(cx) + half, P_LEAF_DARK);
-            hspan(top + dy, int(cx) - half, int(cx) + half / 3, P_LEAF);
+        if (!sh.valid() || h < 2) return;
+        const int dh = int(h), dw = std::max(1, int(h * sh.fw / sh.fh));
+        const int x0 = int(cx - dw / 2.0f), y0 = int(bottom) - dh;
+        if (y0 >= VH || y0 + dh <= 0 || x0 >= VW || x0 + dw <= 0) return;
+        const int fx = (frame % sh.cols()) * sh.fw, fy = (frame / sh.cols()) * sh.fh;
+        for (int dy = 0; dy < dh; dy++) {
+            const int y = y0 + dy;
+            if (y < 0 || y >= VH) continue;
+            const uint8_t *row = sh.px + (fy + dy * sh.fh / dh) * sh.w + fx;
+            uint8_t *out = view + y * VW;
+            for (int dx = 0; dx < dw; dx++) {
+                const int x = x0 + dx;
+                if (x < 0 || x >= VW) continue;
+                int sx = dx * sh.fw / dw;
+                if (flip) sx = sh.fw - 1 - sx;
+                const uint8_t c = row[sx];
+                if (c) out[x] = c;
+            }
         }
+    }
+
+    void drawTree(float cx, float bottom, float scale, int kind)
+    {
+        blitScaled(trees, kind & 1, cx, bottom, scale * 2600.0f * VC);
+    }
+
+    void drawBush(float cx, float bottom, float scale)
+    {
+        blitScaled(bush, 0, cx, bottom, scale * 700.0f * VC);
     }
 
     // The start/finish gantry: two towers and a beam across the road with the lights on it.
@@ -696,42 +697,14 @@ struct Racer::State {
             rect(int(cx) + k * lamp * 2 - lamp / 2, top + beam, lamp, lamp, phase == COUNTDOWN ? P_RED : P_GREEN);
     }
 
-    // A grandstand: grey steps packed with a speckled crowd under a dark roof.
     void drawStand(float cx, float bottom, float scale)
     {
-        const int w = int(scale * 2400.0f * VC), h = int(scale * 1500.0f * VC);
-        if (h < 4 || w < 4) return;
-        const int x0 = int(cx) - w / 2, y0 = int(bottom) - h;
-        rect(x0, y0, w, std::max(1, h / 6), P_WING);
-        static constexpr uint8_t crowd[6] = {P_WHITE, P_RED, P_YELLOW, P_CAR0, P_GREY, P_CAR4};
-        const int dot = std::max(1, h / 12);
-        for (int y = y0 + h / 6; y < int(bottom) - h / 6; y += dot) {
-            for (int x = x0; x < x0 + w; x += dot) {
-                const unsigned hsh = unsigned(x * 73856093) ^ unsigned((y - y0) * 19349663);
-                rect(x, y, dot, dot, crowd[(hsh >> 4) % 6]);
-            }
-        }
-        rect(x0, int(bottom) - h / 6, w, h / 6 + 1, P_GREY);
+        blitScaled(stand, 0, cx, bottom, scale * 1500.0f * VC);
     }
 
     void drawSign(float cx, float bottom, float scale, bool points_right)
     {
-        const float h = scale * 1500.0f * VC;
-        if (h < 4) return;
-        const int w = std::max(3, int(h * 1.3f)), board_h = std::max(2, int(h * 0.55f));
-        const int x0 = int(cx) - w / 2, y0 = int(bottom) - int(h);
-        rect(x0 + w / 6, y0 + board_h, std::max(1, w / 12), int(h) - board_h, P_GREY);
-        rect(x0 + w - w / 4, y0 + board_h, std::max(1, w / 12), int(h) - board_h, P_GREY);
-        rect(x0, y0, w, board_h, P_SIGN);
-        // Chevrons pointing the way the corner goes.
-        for (int k = 0; k < 3; k++) {
-            const int sx = x0 + w / 8 + k * w / 3;
-            for (int dy = 0; dy < board_h; dy++) {
-                const int d = std::abs(dy - board_h / 2) * (w / 6) / std::max(1, board_h / 2);
-                const int px = points_right ? sx + (w / 6 - d) : sx + d;
-                hspan(y0 + dy, px, px + std::max(1, w / 12), P_SIGN_STRIPE);
-            }
-        }
+        blitScaled(sign, 0, cx, bottom, scale * 1500.0f * VC, !points_right);
     }
 
     void drawRoad()
@@ -766,7 +739,8 @@ struct Racer::State {
                 const Projected &a = proj_near[n];
                 const float sx = a.x + a.scale * props[k].offset * ROAD_W * VC;
                 switch (props[k].kind) {
-                case PROP_TREE: drawTree(sx, a.y, a.scale); break;
+                case PROP_TREE: drawTree(sx, a.y, a.scale, seg_i + k); break;
+                case PROP_BUSH: drawBush(sx, a.y, a.scale); break;
                 case PROP_SIGN: drawSign(sx, a.y, a.scale, segs[seg_i].curve > 0); break;
                 case PROP_GANTRY: drawGantry(a.x, a.y, a.scale); break;
                 case PROP_STAND: drawStand(sx, a.y, a.scale); break;
@@ -848,40 +822,6 @@ struct Racer::State {
         }
     }
 
-    // ================================================================= to the screen
-    // Rotate the upright scene by the roll of the watch and double it onto the panel,
-    // writing straight into the display transfer buffers one band at a time.
-    void rotateBand(int y0, int rows, int x0, int w, Color *dst) const
-    {
-        Color pal[P_COUNT];   // on the stack (fast internal RAM); the constant sits in slow memory
-        std::memcpy(pal, kPalette, sizeof(pal));
-        // The scene "down" has to land where gravity points on the screen, i.e. the
-        // screen shows scene * M with M = [[c, s], [-s, c]]. Sampling goes the other
-        // way (screen -> scene), so it uses the transpose. The 0.5 is the 2x zoom.
-        const float c = std::cos(roll) * 0.5f, s = std::sin(roll) * 0.5f;
-        // Each step covers two screen pixels: the scene is drawn at half size, so
-        // neighbouring screen pixels land on the same scene pixel most of the time
-        // anyway, and this halves the (slow, external-memory) reads.
-        const int32_t du = int32_t(c * 2 * 65536), dv = int32_t(s * 2 * 65536);
-        const uint8_t *src = view;
-        const int64_t t0 = esp_timer_get_time();
-        for (int r = 0; r < rows; r++) {
-            const float dx = x0 + 0.5f - SCREEN_C, dy = (y0 + r) - SCREEN_C;
-            uint32_t u = uint32_t(int32_t((VC + c * dx - s * dy) * 65536));
-            uint32_t v = uint32_t(int32_t((VC + s * dx + c * dy) * 65536));
-            Color *out = dst + r * w;
-            for (int x = 0; x + 1 < w; x += 2) {
-                // VW and VH are 256, so keeping 8 bits wraps instead of reading out of bounds.
-                const Color px = pal[src[((v >> 16) & 255) * VW + ((u >> 16) & 255)]];
-                out[x] = px;
-                out[x + 1] = px;
-                u += du;
-                v += dv;
-            }
-        }
-        const_cast<State *>(this)->rotate_us += uint32_t(esp_timer_get_time() - t0);
-    }
-
     void draw(Engine &e, Gfx &g)
     {
         if (menu) {
@@ -900,8 +840,8 @@ struct Racer::State {
         drawHud();
         drawOverlay();
         const int64_t t_scene = esp_timer_get_time();
-        e.presenter().presentBands(
-            [this](int y, int rows, int x0, int w, Color *dst) { rotateBand(y, rows, x0, w, dst); });
+        // Rotate the upright scene by the roll of the watch onto the round screen.
+        canvas.presentRotated(e.presenter(), roll);
 
         fps_frames++;
         const int64_t now = esp_timer_get_time();
@@ -910,11 +850,10 @@ struct Racer::State {
         if (now - fps_t0 > 5000000) {
             fps = fps_frames * 1e6f / float(now - fps_t0);
             const PresentStats &ps = e.presenter().stats();
-            ESP_LOGI(TAG, "%.1f fps (scene %.1f, rotate %.1f, present %.1f ms | wire %.1f, vsync wait %.1f, slot wait %.1f ms) thr %.2f",
-                     fps, scene_us / 1000.0f / fps_frames, rotate_us / 1000.0f / fps_frames,
-                     present_us / 1000.0f / fps_frames, ps.last_xfer_us / 1000.0f, ps.last_vsync_wait_us / 1000.0f,
-                     ps.last_wait_us / 1000.0f, throttle);
-            scene_us = present_us = rotate_us = 0;
+            ESP_LOGI(TAG, "%.1f fps (scene %.1f, present %.1f ms | wire %.1f, vsync wait %.1f, slot wait %.1f ms) thr %.2f",
+                     fps, scene_us / 1000.0f / fps_frames, present_us / 1000.0f / fps_frames,
+                     ps.last_xfer_us / 1000.0f, ps.last_vsync_wait_us / 1000.0f, ps.last_wait_us / 1000.0f, throttle);
+            scene_us = present_us = 0;
             fps_frames = 0;
             fps_t0 = now;
         }
@@ -926,8 +865,20 @@ Racer::~Racer() { delete s_; }
 
 void Racer::begin(Engine &e)
 {
-    s_->view = static_cast<uint8_t *>(heap_caps_malloc(VW * VH, MALLOC_CAP_SPIRAM));
-    if (!s_->view) ESP_LOGE(TAG, "no memory for the view");
+    if (s_->canvas.init(2, VW)) {
+        s_->view = s_->canvas.pixels();
+        s_->canvas.setPalette(kPalette, P_COUNT);
+        auto load = [&](Sheet &sh, const uint8_t *a, const uint8_t *b, int fw, int fh) {
+            if (!s_->canvas.loadSheet(sh, a, b - a, fw, fh)) ESP_LOGE(TAG, "sheet failed");
+        };
+        load(s_->car_sheet, _binary_car_png_start, _binary_car_png_end, CAR_W, CAR_H);
+        load(s_->trees, _binary_trees_png_start, _binary_trees_png_end, 24, 32);
+        load(s_->sign, _binary_sign_png_start, _binary_sign_png_end, 24, 18);
+        load(s_->stand, _binary_stand_png_start, _binary_stand_png_end, 48, 30);
+        load(s_->bush, _binary_bush_png_start, _binary_bush_png_end, 16, 10);
+    } else {
+        ESP_LOGE(TAG, "no memory for the view");
+    }
     s_->load();
     s_->newRace();
 }
