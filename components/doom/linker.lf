@@ -1,5 +1,10 @@
-# Doom's zero-initialised globals (visplanes, drawsegs, lookup tables: several hundred
-# KB) go in PSRAM; internal RAM is for Wi-Fi, DMA buffers and task stacks.
+# Doom's globals stay out of internal RAM, which is for Wi-Fi, DMA buffers and stacks.
+#  - zero-initialised ones (visplanes, drawsegs, lookup tables: several hundred KB) go
+#    in the PSRAM BSS segment;
+#  - initialised ones (sound table, config lists, animation tables: 20 KB) go with the
+#    read-only data. That works because CONFIG_SPIRAM_RODATA copies rodata into PSRAM
+#    at boot, where it is ordinary writable memory. Without that option they would sit
+#    in flash and the first write would fault, so keep the two together.
 [sections:doom_bss]
 entries:
     .bss+
@@ -12,6 +17,7 @@ entries:
 entries:
     doom_bss -> extern_ram
     doom_common -> extern_ram
+    data -> flash_rodata
 
 [mapping:doom]
 archive: libdoom.a

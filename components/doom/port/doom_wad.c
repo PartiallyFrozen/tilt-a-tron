@@ -5,7 +5,7 @@
 //   +0x0000  header: "TATWAD1", length, original file name   (written last)
 //   +0x1000  the WAD file, byte for byte
 //
-// Doom reads it through a memory mapping (doom_wad_map), so lumps are used in place.
+// Doom reads lumps from it on demand (doom_wad_read) and caches them in its zone.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +14,9 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_partition.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
 #define WAD_OFFSET 0x1900000
 #define WAD_SIZE 0x600000
@@ -29,8 +32,6 @@ typedef struct {
 } wad_header_t;
 
 static const esp_partition_t *s_part;
-static const uint8_t *s_map;
-static esp_partition_mmap_handle_t s_map_handle;
 static uint32_t s_write_len, s_written, s_erased;
 static char s_write_name[32];
 
@@ -73,30 +74,62 @@ bool doom_wad_info(doom_wad_info_t *out)
     return true;
 }
 
-// For the engine (doom_port.c): the mapped WAD, or NULL.
-const uint8_t *doom_wad_map(uint32_t *length, const char **name)
+// ---- reading, for the engine (doom_port.c)
+//
+// The flash can only be memory-mapped inside its first 16 MB (without a special
+// bootloader), and this region is past that, so lumps are read on demand and cached in
+// Doom's zone. The engine task can't call the flash driver itself - its stack is in
+// PSRAM, which is unreachable while the flash is busy - so a small task with an
+// ordinary stack does the reads for it.
+typedef struct {
+    uint32_t offset;
+    void *buf;
+    size_t len;
+    TaskHandle_t who;
+    volatile bool ok;
+} io_req_t;
+
+static QueueHandle_t s_io_q;
+static doom_wad_info_t s_open;
+
+static void io_task(void *arg)
 {
-    static doom_wad_info_t info;
-    if (!s_map) {
-        if (!doom_wad_info(&info)) return NULL;
-        const void *ptr = NULL;
-        esp_err_t err = esp_partition_mmap(region(), 0, WAD_DATA + info.length, ESP_PARTITION_MMAP_DATA, &ptr, &s_map_handle);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "mmap failed: %s", esp_err_to_name(err));
-            return NULL;
-        }
-        s_map = (const uint8_t *)ptr + WAD_DATA;
-        ESP_LOGI(TAG, "%s: %u bytes mapped at %p", info.name, (unsigned)info.length, s_map);
+    for (;;) {
+        io_req_t *r;
+        if (xQueueReceive(s_io_q, &r, portMAX_DELAY) != pdTRUE) continue;
+        r->ok = esp_partition_read(region(), WAD_DATA + r->offset, r->buf, r->len) == ESP_OK;
+        xTaskNotifyGive(r->who);
     }
-    if (length) *length = info.length;
-    if (name) *name = info.name;
-    return s_map;
+}
+
+// Call from a task with a normal stack, before the engine starts.
+bool doom_wad_open(uint32_t *length, const char **name)
+{
+    if (!s_io_q) {
+        if (!doom_wad_info(&s_open)) return false;
+        s_io_q = xQueueCreate(2, sizeof(io_req_t *));
+        if (!s_io_q || xTaskCreatePinnedToCore(io_task, "doom_io", 3584, NULL, 6, NULL, 0) != pdPASS) return false;
+        ESP_LOGI(TAG, "%s: %u bytes", s_open.name, (unsigned)s_open.length);
+    }
+    if (length) *length = s_open.length;
+    if (name) *name = s_open.name;
+    return true;
+}
+
+bool doom_wad_read(uint32_t offset, void *buf, size_t len)
+{
+    if (!s_io_q || offset + len > s_open.length) return false;
+    io_req_t r = {.offset = offset, .buf = buf, .len = len, .who = xTaskGetCurrentTaskHandle(), .ok = false};
+    io_req_t *p = &r;
+    xQueueSend(s_io_q, &p, portMAX_DELAY);
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    return r.ok;
 }
 
 bool doom_wad_write_begin(const char *name, uint32_t length)
 {
     const esp_partition_t *p = region();
-    if (!p || s_map) return false;   // in use: the engine reads straight from it
+    if (!p || s_io_q) return false;   // in use: the engine is reading from it
     if (length < 12 || length > p->size - WAD_DATA) return false;
     // Wipe the header first, so a half-written WAD is never mistaken for a whole one.
     if (esp_partition_erase_range(p, 0, WAD_DATA) != ESP_OK) return false;

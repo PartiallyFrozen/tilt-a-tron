@@ -42,7 +42,8 @@ static const char *TAG = "doom";
 void D_DoomMain(void);
 void doomgeneric_Tick(void);
 void M_FindResponseFile(void);
-const uint8_t *doom_wad_map(uint32_t *length, const char **name);
+bool doom_wad_open(uint32_t *length, const char **name);
+bool doom_wad_read(uint32_t offset, void *buf, size_t len);
 void wc_audio_pcm_start(int channel, const uint8_t *data, int len, int rate, float volume);
 void wc_audio_pcm_volume(int channel, float volume);
 void wc_audio_pcm_stop(int channel);
@@ -112,18 +113,24 @@ void I_PrintStartupBanner(char *gamedescription) { ESP_LOGI(TAG, "%s", gamedescr
 
 byte *I_ZoneBase(int *size)
 {
-    // Lumps are used straight from flash, so the zone only holds level data and caches.
-    static const int kSizes[] = {3 * 1024 * 1024, 2560 * 1024, 2 * 1024 * 1024, 1536 * 1024};
-    for (unsigned i = 0; i < sizeof(kSizes) / sizeof(kSizes[0]); i++) {
-        byte *zone = heap_caps_malloc(kSizes[i], MALLOC_CAP_SPIRAM);
+    // As much as can be spared, up to 4 MB: lumps are cached here as they're read from
+    // flash. About 1.6 MB of PSRAM stays free: Doom stays in memory once started, and the other
+    // games (canvases, polar tables), themes and screenshots still have to fit beside it.
+    const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    size_t want = largest > 1650 * 1024 ? largest - 1650 * 1024 : 0;
+    if (want > 4 * 1024 * 1024) want = 4 * 1024 * 1024;
+    ESP_LOGI(TAG, "PSRAM: %u KB free, largest block %u KB", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+             (unsigned)(largest / 1024));
+    if (want >= 1792 * 1024) {
+        byte *zone = heap_caps_malloc(want, MALLOC_CAP_SPIRAM);
         if (zone) {
-            *size = kSizes[i];
-            ESP_LOGI(TAG, "zone: %d KB (PSRAM free now %u KB)", kSizes[i] / 1024,
+            *size = (int)want;
+            ESP_LOGI(TAG, "zone: %u KB (PSRAM free now %u KB)", (unsigned)(want / 1024),
                      (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
             return zone;
         }
     }
-    I_Error("NOT ENOUGH MEMORY FOR DOOM");
+    I_Error("NOT ENOUGH MEMORY. RESTART THE WATCH AND OPEN DOOM FIRST.");
     return NULL;
 }
 
@@ -308,7 +315,7 @@ void I_GetEvent(void)
 
 void I_StartTic(void) { I_GetEvent(); }
 
-// ------------------------------------------------------------------ WAD access: memory-mapped flash
+// ------------------------------------------------------------------ WAD access: the flash store (doom_wad.c)
 
 typedef struct {
     wad_file_t wad;
@@ -320,11 +327,10 @@ static wad_file_t *tat_open(char *path)
 {
     if (strncmp(path, "/wad/", 5) != 0) return NULL;
     uint32_t length = 0;
-    const uint8_t *map = doom_wad_map(&length, NULL);
-    if (!map) return NULL;
+    if (!doom_wad_open(&length, NULL)) return NULL;
     tat_wad_file_t *f = Z_Malloc(sizeof(*f), PU_STATIC, 0);
     f->wad.file_class = &tat_wad_file;
-    f->wad.mapped = (byte *)map;
+    f->wad.mapped = NULL;
     f->wad.length = length;
     return &f->wad;
 }
@@ -335,8 +341,7 @@ static size_t tat_read(wad_file_t *wad, unsigned int offset, void *buffer, size_
 {
     if (offset >= wad->length) return 0;
     if (offset + len > wad->length) len = wad->length - offset;
-    memcpy(buffer, wad->mapped + offset, len);
-    return len;
+    return doom_wad_read(offset, buffer, len) ? len : 0;
 }
 
 wad_file_class_t tat_wad_file = {tat_open, tat_close, tat_read};
@@ -369,11 +374,28 @@ static int snd_lump(sfxinfo_t *sfx)
 static void snd_update(void) {}
 static void snd_params(int channel, int vol, int sep) { wc_audio_pcm_volume(channel, vol / 127.0f * s_sfx_gain); }
 
+static int s_chan_lump[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+
+// The mixer reads a sound's samples while it plays, so its lump stays pinned in the
+// zone until no channel is using it; after that it's ordinary purgeable cache.
+static void snd_unpin(int channel)
+{
+    const int lump = s_chan_lump[channel];
+    if (lump < 0) return;
+    wc_audio_pcm_stop(channel);
+    s_chan_lump[channel] = -1;
+    for (int i = 0; i < 8; i++)
+        if (s_chan_lump[i] == lump) return;
+    W_ReleaseLumpNum(lump);
+}
+
 static int snd_start(sfxinfo_t *sfx, int channel, int vol, int sep)
 {
     if (channel < 0 || channel >= 8 || sfx->lumpnum < 0) return -1;
+    snd_unpin(channel);
     const int size = W_LumpLength(sfx->lumpnum);
-    const byte *d = W_CacheLumpNum(sfx->lumpnum, PU_STATIC);   // mapped flash: stays put
+    const byte *d = W_CacheLumpNum(sfx->lumpnum, PU_STATIC);
+    s_chan_lump[channel] = sfx->lumpnum;
     // DMX: u16 format (3), u16 rate, u32 count, then 8-bit samples with 16 pad bytes each end.
     if (size < 8 + 32 || d[0] != 3 || d[1] != 0) return -1;
     const int rate = d[2] | (d[3] << 8);
@@ -384,7 +406,10 @@ static int snd_start(sfxinfo_t *sfx, int channel, int vol, int sep)
     return channel;
 }
 
-static void snd_stop(int channel) { wc_audio_pcm_stop(channel); }
+static void snd_stop(int channel)
+{
+    if (channel >= 0 && channel < 8) snd_unpin(channel);
+}
 static boolean snd_playing(int channel) { return wc_audio_pcm_playing(channel) != 0; }
 static void snd_cache(sfxinfo_t *sounds, int num_sounds) {}
 
@@ -415,7 +440,7 @@ static void doom_task(void *arg)
     static char *argv[] = {"doom", "-iwad", NULL, "-warp", "1", "1", "-skill", skill, "-nomusic", NULL};
     static char iwad[48];
     const char *name = "doom1.wad";
-    doom_wad_map(NULL, &name);
+    doom_wad_open(NULL, &name);
     snprintf(iwad, sizeof(iwad), "/wad/%s", name);
     snprintf(skill, sizeof(skill), "%d", s_skill + 1);
     argv[2] = iwad;
@@ -445,9 +470,9 @@ bool doom_port_start(int skill)
     s_front[1] = heap_caps_calloc(1, DOOM_W * DOOM_H, MALLOC_CAP_SPIRAM);
     if (!s_front[0] || !s_front[1]) return false;
     s_skill = skill < 0 ? 0 : skill > 4 ? 4 : skill;
-    // Map the WAD from here: reading the flash isn't allowed from a task whose stack is
-    // in PSRAM, and the engine task's is. After this it only ever touches mapped memory.
-    if (!doom_wad_map(NULL, NULL)) return false;
+    // Open the WAD from here: the flash driver can't be called from a task whose stack is
+    // in PSRAM, and the engine task's is. Its reads go through doom_wad.c's helper task.
+    if (!doom_wad_open(NULL, NULL)) return false;
     // The stack lives in PSRAM too: fine, because this task never touches the flash
     // driver (the WAD is memory-mapped and nothing is ever saved from here).
     if (xTaskCreatePinnedToCoreWithCaps(doom_task, "doom", 64 * 1024, NULL, 3, NULL, 0, MALLOC_CAP_SPIRAM) != pdPASS)

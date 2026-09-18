@@ -30,12 +30,20 @@ static portMUX_TYPE s_log_mux = portMUX_INITIALIZER_UNLOCKED;
 static vprintf_like_t s_prev_vprintf;
 static char s_status_extra[448];
 static net_screen_fn s_screen_fn;
+
+// Someone is working with the watch over Wi-Fi: it mustn't doze off under them.
+static volatile int64_t s_last_request_us = -1000000000;
+static volatile bool s_transfer;
+static void note_request(void) { s_last_request_us = esp_timer_get_time(); }
+bool net_transfer_active(void) { return s_transfer; }
+bool net_busy(void) { return s_transfer || esp_timer_get_time() - s_last_request_us < 120 * 1000000LL; }
 static net_control_fn s_control_fn;
 
 void net_set_control_hook(net_control_fn fn) { s_control_fn = fn; }
 
 static esp_err_t input_get(httpd_req_t *req)
 {
+    note_request();
     char q[160] = "";
     httpd_req_get_url_query_str(req, q, sizeof(q));
     const bool ok = s_control_fn && s_control_fn(q);
@@ -57,6 +65,7 @@ void net_set_wad_hooks(net_blob_begin_fn begin, net_blob_write_fn write, net_blo
 
 static esp_err_t screen_get(httpd_req_t *req)
 {
+    note_request();
     uint8_t *png = NULL;
     const size_t n = s_screen_fn ? s_screen_fn(&png) : 0;
     if (!n || !png) {
@@ -64,7 +73,7 @@ static esp_err_t screen_get(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no screenshot");
         return ESP_FAIL;
     }
-    httpd_resp_set_type(req, "image/png");
+    httpd_resp_set_type(req, png[0] == 'B' ? "image/bmp" : "image/png");   // BMP when memory is short
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     const esp_err_t err = httpd_resp_send(req, (const char *)png, n);
     free(png);
@@ -151,22 +160,27 @@ static esp_err_t page_get(httpd_req_t *req)
 
 static esp_err_t status_get(httpd_req_t *req)
 {
+    note_request();
     ota_status_t st;
     ota_get_status(&st);
-    char buf[768];
+    char *buf = heap_caps_malloc(1024, MALLOC_CAP_SPIRAM);
+    if (!buf) return httpd_resp_send_500(req);
     const esp_app_desc_t *app = esp_app_get_description();
     // The ELF hash is unique to every build (the compile time isn't: it only
     // changes when that one file is recompiled), so it's how updates are verified.
     char sha[17];
     for (int i = 0; i < 8; i++) snprintf(sha + i * 2, 3, "%02x", app->app_elf_sha256[i]);
-    snprintf(buf, sizeof(buf),
+    snprintf(buf, 1024,
              "{\"app\":\"%s\",\"version\":\"%s\",\"sha\":\"%s\",\"built\":\"%s %s\",\"state\":%d,\"received\":%lu,\"total\":%lu,"
-             "\"error\":\"%s\",\"uptime_s\":%lld,\"utc\":%lld,\"heap_internal\":%u%s%s}",
+             "\"error\":\"%s\",\"uptime_s\":%lld,\"utc\":%lld,\"heap_internal\":%u,\"psram_free\":%u,\"psram_largest\":%u%s%s}",
              app->project_name, app->version, sha, app->date, app->time, st.state, (unsigned long)st.received,
              (unsigned long)st.total, st.error, esp_timer_get_time() / 1000000, (long long)time(NULL),
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), s_status_extra[0] ? "," : "", s_status_extra);
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM), s_status_extra[0] ? "," : "", s_status_extra);
     httpd_resp_set_type(req, "application/json");
-    return httpd_resp_sendstr(req, buf);
+    const esp_err_t err = httpd_resp_sendstr(req, buf);
+    free(buf);
+    return err;
 }
 
 static net_busy_fn s_reboot_guard;
@@ -200,6 +214,7 @@ static void schedule_reboot(uint64_t us)
 
 static esp_err_t log_get(httpd_req_t *req)
 {
+    note_request();
     httpd_resp_set_type(req, "text/plain");
     // Oldest part first, then the newest, so it reads in order.
     portENTER_CRITICAL(&s_log_mux);
@@ -228,7 +243,10 @@ static esp_err_t fail(httpd_req_t *req, esp_ota_handle_t h, const char *msg)
     return httpd_resp_sendstr(req, msg);
 }
 
-static esp_err_t update_post(httpd_req_t *req)
+#define RX_BUF 8192
+static char s_rx_buf[RX_BUF];   // shared by /update and /wad: the server handles one request at a time
+
+static esp_err_t update_post_inner(httpd_req_t *req)
 {
     const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);
     if (!part) return fail(req, 0, "no OTA partition");
@@ -240,10 +258,10 @@ static esp_err_t update_post(httpd_req_t *req)
     esp_wifi_set_ps(WIFI_PS_NONE);   // full radio speed for the download
     set_status(OTA_RECEIVING, 0, req->content_len, "");
 
-    static char buf[8192];
+    char *buf = s_rx_buf;
     size_t remaining = req->content_len, received = 0;
     while (remaining > 0) {
-        int n = httpd_req_recv(req, buf, remaining < sizeof(buf) ? remaining : sizeof(buf));
+        int n = httpd_req_recv(req, buf, remaining < RX_BUF ? remaining : RX_BUF);
         if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
         if (n <= 0) return fail(req, h, "connection lost");
         if (esp_ota_write(h, buf, n) != ESP_OK) return fail(req, h, "flash write failed");
@@ -266,7 +284,7 @@ static esp_err_t update_post(httpd_req_t *req)
 }
 
 // POST /wad?name=doom1.wad : game data for Doom, stored in its own region of the flash.
-static esp_err_t wad_post(httpd_req_t *req)
+static esp_err_t wad_post_inner(httpd_req_t *req)
 {
     char query[64] = "", name[32] = "doom1.wad";
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK)
@@ -277,11 +295,11 @@ static esp_err_t wad_post(httpd_req_t *req)
     }
     ESP_LOGI(TAG, "receiving %s, %u bytes", name, (unsigned)req->content_len);
     esp_wifi_set_ps(WIFI_PS_NONE);
-    static char buf[8192];
+    char *buf = s_rx_buf;
     size_t remaining = req->content_len;
     bool ok = true;
     while (remaining > 0 && ok) {
-        int n = httpd_req_recv(req, buf, remaining < sizeof(buf) ? remaining : sizeof(buf));
+        int n = httpd_req_recv(req, buf, remaining < RX_BUF ? remaining : RX_BUF);
         if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
         if (n <= 0) ok = false;
         else ok = s_blob_write(buf, n), remaining -= n;
@@ -289,6 +307,25 @@ static esp_err_t wad_post(httpd_req_t *req)
     ok = s_blob_end() && ok;
     if (!ok) httpd_resp_set_status(req, "500 Internal Server Error");
     return httpd_resp_sendstr(req, ok ? "OK" : "failed");
+}
+
+// Uploads hold the watch awake from the first byte to the last (see net_busy).
+static esp_err_t update_post(httpd_req_t *req)
+{
+    s_transfer = true;
+    const esp_err_t err = update_post_inner(req);
+    s_transfer = false;
+    note_request();
+    return err;
+}
+
+static esp_err_t wad_post(httpd_req_t *req)
+{
+    s_transfer = true;
+    const esp_err_t err = wad_post_inner(req);
+    s_transfer = false;
+    note_request();
+    return err;
 }
 
 esp_err_t ota_server_start(void)
