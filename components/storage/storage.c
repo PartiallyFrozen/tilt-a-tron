@@ -339,6 +339,15 @@ void storage_service(void)
     seed_defaults();
 }
 
+bool storage_free_bytes(uint32_t *total, uint32_t *free_bytes)
+{
+    uint64_t t = 0, f = 0;
+    if (esp_vfs_fat_info(STORAGE_ROOT, &t, &f) != ESP_OK) return false;
+    *total = (uint32_t)t;
+    *free_bytes = (uint32_t)f;
+    return true;
+}
+
 bool storage_ready(void) { return s_ready; }
 bool storage_on_computer(void) { return s_on_computer; }
 uint32_t storage_generation(void) { return s_generation; }

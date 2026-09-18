@@ -28,6 +28,7 @@
 #include "games/clock.h"
 #include "games/star.h"
 #include "net/net.h"
+#include "link/link.h"
 #include "nvs_flash.h"
 #include "storage/storage.h"
 
@@ -260,12 +261,40 @@ extern "C" void app_main(void)
         }
         return any;
     });
+    // The USB link: what the manager app on a computer talks to. Every app is built in
+    // for now, so it can look but not install (docs/GAME_API.md).
+    link_set_info_hook([](uint32_t *total, uint32_t *free_bytes, uint8_t *count) {
+        *total = 0;   // no games region yet
+        *free_bytes = 0;
+        *count = uint8_t(s_app_count);
+    });
+    link_set_list_hook([](link_game_t *out, int max) -> int {
+        int n = 0;
+        for (int i = 0; i < s_app_count && n < max; i++) {
+            if (std::strcmp(s_apps[i].id, "settings") == 0) continue;
+            link_game_t &g = out[n++];
+            memset(&g, 0, sizeof(g));
+            snprintf(g.id, sizeof(g.id), "%s", s_apps[i].id);
+            snprintf(g.name, sizeof(g.name), "%s", s_apps[i].name);
+            g.accent = s_apps[i].accent;
+            g.flags = LINK_GAME_BUILTIN | (console::appHidden(s_apps[i].id) ? LINK_GAME_HIDDEN : 0);
+        }
+        return n;
+    });
+    link_set_icon_hook([](const char *id, const uint8_t **png, size_t *len) -> bool {
+        return storage_builtin_icon(id, png, len);
+    });
+    link_set_fs_root(STORAGE_ROOT);
+    link_start();
+
     engine.setHome(launcher);
     engine.setSleepHooks(net_suspend, net_resume);
-    // AUTO OFF applies everywhere, charging or not. The one exception: a computer has
-    // the USB drive open (Settings > USB DRIVE on), where dozing off would cut a copy short.
-    // ...and while someone is updating or otherwise talking to it over Wi-Fi.
-    engine.setKeepAwakeHook([] { return storage_on_computer() || net_busy(); });
+    // Plugged in means awake. AUTO OFF is for saving the battery, and there is no battery
+    // to save on USB power - meanwhile sleeping drops the USB port, which cuts off the
+    // manager app and anyone flashing it. Also stays awake for a Wi-Fi update or an open
+    // app session. Double-clicking PWR still sleeps it deliberately.
+    engine.setKeepAwakeHook(
+        [] { return pmu_usb_power() || storage_on_computer() || net_busy() || link_session_active(); });
     engine.setBusyHook([] { return storage_on_computer() || net_transfer_active(); });
     net_set_reboot_guard(storage_on_computer);
     engine.setAutoOffSeconds(console::autoOffSeconds());

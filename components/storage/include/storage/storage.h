@@ -23,6 +23,7 @@ bool storage_ready(void);            // mounted for the app right now
 // The built-in (Default theme) icon PNG for an app id, embedded in the firmware.
 bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len);
 bool storage_on_computer(void);      // a computer currently has the drive open
+bool storage_free_bytes(uint32_t *total, uint32_t *free_bytes);   // of the storage area
 uint32_t storage_generation(void);   // bumps every time the drive returns to the app
 
 // DEBUG MODE (persisted, default on for now): the USB port stays the flashing /
