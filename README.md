@@ -37,7 +37,7 @@ Needs ESP-IDF 5.5.5 (`C:\Espressif`, installed with EIM). One command:
 ```
 
 It installs over **Wi-Fi** if the watch answers (about 5 s; needs Settings > WI-FI ON),
-otherwise over **USB** if it's plugged in with DEBUG MODE on. It pauses the Pal
+otherwise over **USB** if it's plugged in (Settings > USB DRIVE off, the default). It pauses the Pal
 engine's USB poller automatically, and says what to do if it can't reach the watch.
 
 **Verification uses the build's unique hash** (`sha` in `/status`, the ELF SHA-256),
@@ -101,20 +101,20 @@ Menu rows and buttons are filled with the theme's `panel` color and text on the
 background gets a drop shadow, so busy artwork stays readable. Oversized images
 are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the templates.
 
-- **Settings → DEBUG MODE OFF** (restarts): plugging into a computer shows the
+- **Settings → USB DRIVE ON** (restarts): plugging into a computer shows the
   Tilt-a-tron drive. Copy `Default`, rename it, edit PNGs/colors, eject. The console
   reloads the theme as soon as the drive is ejected.
 - **Settings → THEME** cycles through the folders.
 - Missing files fall back to the built-in look. PNGs are decoded once at load
   (~300 ms) into RGB565 + alpha; drawing is straight copies.
-- **DEBUG MODE ON** (default for now): the USB port is the flashing/log port instead
-  of a drive; themes still load from the drive. Recovery flashing always works with
-  BOOT held while tapping reset.
+- **USB DRIVE OFF** (the default): the USB port is the flashing/log port instead of
+  a drive; themes still load from the drive. Recovery flashing always works with
+  BOOT held while plugging in.
 - The drive's `README.txt` (from `themes/README.txt`) documents sizes for theme makers.
 
 ## Console navigation
 
-- **Home** is a carousel: swipe or click PWR to browse, tap the icon to launch.
+- **Home** is a carousel: swipe (or tap beside the icon) to browse, tap the icon to launch; PWR does nothing on its own here.
 - **Double-click PWR** on home = sleep (iris-out, light sleep, PWR wakes instantly where
   you left off). Still asleep after **AUTO OFF** (default 2 min) → powers down (deep
   sleep); PWR then cold-boots into the carousel.
@@ -123,7 +123,7 @@ are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the tem
   download) → the screen dims for 10 s, then powers down. Any touch cancels.
 - **BOOT** (the small key by the USB port) returns home from any app (handled by the engine).
 - **Settings** (scrollable): brightness · theme · Wi-Fi on/off · network (scan + on-screen
-  keyboard) · auto off (1/2/5/10 min/never) · debug mode · update · version.
+  keyboard) · auto off (1/2/5/10 min/never) · USB drive · update · version.
 - Wi-Fi is **off by default**. When on, it connects in the background at boot with
   modem power-save and reconnects with backoff; games keep running on core 1.
 
