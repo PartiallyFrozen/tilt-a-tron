@@ -14,5 +14,7 @@ idf_component_register(
         "assets/racer/sign.png"
         "assets/racer/stand.png"
         "assets/racer/bush.png"
+        "assets/maze/ball.png"
+        "assets/maze/flag.png"
 )
 target_compile_options(${COMPONENT_LIB} PRIVATE -O2)
