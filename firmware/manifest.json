@@ -1,7 +1,7 @@
 ﻿{
     "name":  "Tilt-a-tron",
     "version":  "0.4.1",
-    "sha":  "79c115e1611e82bc",
+    "sha":  "ebc425172ee78db2",
     "chip":  "esp32s3",
     "flash":  {
                   "mode":  "dio",
