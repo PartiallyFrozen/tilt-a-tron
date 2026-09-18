@@ -151,6 +151,7 @@ public sealed class Watch : IDisposable
                 Consume(end);
                 at = 0;
                 if (got != Crc16(body, Crc16(new[] { seq, replyCmd }))) continue;
+                if (seq != _seq) continue;   // a late reply to something already given up on
                 if (replyCmd == ERR) throw new WatchException(Encoding.UTF8.GetString(body));
                 if (replyCmd == (cmd | 0x80)) return body;
             }
@@ -258,7 +259,7 @@ public sealed class Watch : IDisposable
     }
 
     public void WriteFile(string path, byte[] data, Action<long, long>? progress = null) =>
-        WriteFileChunked(path, data, MaxPayload, progress);
+        WriteFileChunked(path, data, MaxPayload - 4, progress);
 
     public void WriteFileChunked(string path, byte[] data, int chunk, Action<long, long>? progress = null)
     {
@@ -270,7 +271,11 @@ public sealed class Watch : IDisposable
         for (var off = 0; off < data.Length; off += chunk)
         {
             var n = Math.Min(chunk, data.Length - off);
-            Call(FS_DATA, data.AsSpan(off, n));
+            // The offset goes in front so the watch can tell a resent chunk from a new one.
+            var frame = new byte[4 + n];
+            BitConverter.GetBytes((uint)off).CopyTo(frame, 0);
+            data.AsSpan(off, n).CopyTo(frame.AsSpan(4));
+            Call(FS_DATA, frame);
             progress?.Invoke(off + n, data.Length);
         }
         Call(FS_END);

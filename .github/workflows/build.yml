@@ -5,13 +5,22 @@ name: Firmware
 on:
   push:
     branches: [master]
-    paths-ignore: ["site/**", "docs/**", "themes/**", "**/*.md"]
+    paths-ignore: ["site/**", "themes/**", "**/*.md"]
   pull_request:
   workflow_dispatch:
 
 jobs:
+  # The logic that has no hardware in it, checked before anything is built for a watch.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pyserial
+      - run: ./tests/run.sh
+
   build:
     runs-on: ubuntu-latest
+    needs: tests
     steps:
       - uses: actions/checkout@v4
 

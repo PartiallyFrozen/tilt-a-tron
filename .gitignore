@@ -12,3 +12,4 @@ app/**/bin/
 app/**/obj/
 app/**/publish/
 __pycache__/
+tests/out/
