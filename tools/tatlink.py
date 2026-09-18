@@ -24,6 +24,7 @@ except ImportError:
 PROTO = 1
 HELLO, INFO, LIST, ICON, ERR = 0x01, 0x02, 0x03, 0x04, 0xFF
 FS_FREE, FS_LIST, FS_PUT, FS_DATA, FS_END, FS_GET, FS_DELETE, FS_MKDIR = range(0x10, 0x18)
+FS_FORMAT = 0x18
 GAME_BUILTIN, GAME_HIDDEN = 1, 2
 
 
@@ -44,14 +45,22 @@ class Watch:
     def close(self):
         self.ser.close()
 
-    def call(self, cmd, payload=b""):
-        # Anything still unread is log noise from before this request.
-        self.ser.reset_input_buffer() if cmd == HELLO else None
-        self.seq = (self.seq + 1) & 0xFF
-        head = struct.pack("<HBB", len(payload), self.seq, cmd)
-        frame = b"\xa5\x5a" + head + payload + struct.pack(">H", crc16(payload, crc16(head[2:])))
-        self.ser.write(frame)
-        return self._read_reply(cmd)
+    def call(self, cmd, payload=b"", tries=3):
+        # A reply can be lost to a burst of log output, or to the watch being busy just
+        # after a restart. Every command here is safe to repeat, so just ask again.
+        for attempt in range(tries):
+            if attempt or cmd == HELLO:
+                self.ser.reset_input_buffer()
+            self.seq = (self.seq + 1) & 0xFF
+            head = struct.pack("<HBB", len(payload), self.seq, cmd)
+            frame = b"\xa5\x5a" + head + payload + struct.pack(">H", crc16(payload, crc16(head[2:])))
+            self.ser.write(frame)
+            try:
+                return self._read_reply(cmd)
+            except TimeoutError:
+                if attempt == tries - 1:
+                    raise
+                time.sleep(0.2)
 
     def _read_reply(self, cmd):
         # Log lines share this port, so hunt for the sync word and check the CRC.
@@ -129,8 +138,37 @@ class Watch:
     def fs_delete(self, path):
         self.call(FS_DELETE, path.encode())
 
-    def fs_get(self, path):
-        return self.call(FS_GET, path.encode())
+    def fs_get(self, path, offset=0):
+        return self.call(FS_GET, struct.pack("<I", offset) + path.encode())
+
+    def fs_read_all(self, path, size=None):
+        """The whole file, 4 KB at a time."""
+        out = b""
+        while True:
+            part = self.fs_get(path, len(out))
+            out += part
+            if len(part) < 4096 or (size is not None and len(out) >= size):
+                return out
+
+    def backup(self, local_dir, remote=""):
+        """Copy everything off the watch, so a format can be undone."""
+        import os
+        os.makedirs(local_dir, exist_ok=True)
+        for e in self.fs_list(remote):
+            rpath = f"{remote}/{e['name']}" if remote else e["name"]
+            if e["dir"]:
+                if e["name"] == "System Volume Information":
+                    continue
+                self.backup(os.path.join(local_dir, e["name"]), rpath)
+            else:
+                data = self.fs_read_all(rpath, e["size"])
+                open(os.path.join(local_dir, e["name"]), "wb").write(data)
+                ok = "ok" if len(data) == e["size"] else f"SHORT {len(data)}/{e['size']}"
+                print(f"    {rpath}  {e['size']} bytes  {ok}")
+
+    def format_storage(self):
+        """Wipe the storage area. The watch restarts and seeds itself again."""
+        self.call(FS_FORMAT, b"ERASE EVERYTHING")
 
     def fs_put(self, path, data, progress=None):
         crc = zlib.crc32(data) & 0xFFFFFFFF
@@ -189,6 +227,9 @@ def main():
     ap.add_argument("--send", nargs=2, metavar=("LOCAL_DIR", "REMOTE_DIR"),
                     help="copy a folder to the watch, e.g. themes/CPU Theme/CPU")
     ap.add_argument("--rm", metavar="PATH", help="delete a file or folder on the watch")
+    ap.add_argument("--backup", metavar="DIR", help="copy everything off the watch into DIR")
+    ap.add_argument("--format", action="store_true",
+                    help="wipe the watch's storage and start it clean (back up first!)")
     args = ap.parse_args()
 
     ports = [args.port] if args.port else find_watch()
@@ -219,6 +260,14 @@ def main():
             for e in w.fs_list(args.ls):
                 print(f"    {'[dir] ' if e['dir'] else '      '}{e['name']}"
                       + ("" if e["dir"] else f"  {e['size']} bytes"))
+        if args.backup:
+            print(f"\nbacking up to {args.backup}")
+            w.backup(args.backup)
+            print("done")
+        if args.format:
+            print("\nformatting the storage area ...")
+            w.format_storage()
+            print("done - the watch is restarting and will lay down its Default theme again")
         if args.rm:
             w.fs_delete(args.rm)
             print(f"\ndeleted {args.rm}")

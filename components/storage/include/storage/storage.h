@@ -24,6 +24,9 @@ bool storage_ready(void);            // mounted for the app right now
 bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len);
 bool storage_on_computer(void);      // a computer currently has the drive open
 bool storage_free_bytes(uint32_t *total, uint32_t *free_bytes);   // of the storage area
+// Wipes the storage area and lays down a fresh, empty filesystem. Everything on it is
+// lost; the caller restarts so the Default theme and Guide are seeded again.
+esp_err_t storage_format(void);
 uint32_t storage_generation(void);   // bumps every time the drive returns to the app
 
 // DEBUG MODE (persisted, default on for now): the USB port stays the flashing /

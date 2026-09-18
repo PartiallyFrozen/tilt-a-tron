@@ -35,9 +35,10 @@ enum {
     LINK_FS_PUT = 0x12,     // -> size u32, crc32 u32, path;  then FS_DATA frames, then FS_END
     LINK_FS_DATA = 0x13,    // -> chunk
     LINK_FS_END = 0x14,     // -> nothing;              <- ok once the CRC matches
-    LINK_FS_GET = 0x15,     // -> path;                 <- the file, in one frame
+    LINK_FS_GET = 0x15,     // -> offset u32, path;     <- up to 4 KB of it from there
     LINK_FS_DELETE = 0x16,  // -> path (a file, or a directory and everything under it)
     LINK_FS_MKDIR = 0x17,   // -> path
+    LINK_FS_FORMAT = 0x18,  // -> "ERASE EVERYTHING";   wipes storage and rebuilds it empty
 
     LINK_ERR = 0xFF,
 };

@@ -7,6 +7,7 @@
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_rom_crc.h"
+#include "esp_system.h"
 #include "storage/storage.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -279,7 +280,13 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
     }
     case LINK_FS_GET: {
         char path[200];
-        if (!safe_path((const char *)body, len, path, sizeof(path))) {
+        uint32_t offset = 0;
+        if (len < 5) {
+            fail(seq, "bad request");
+            break;
+        }
+        memcpy(&offset, body, 4);
+        if (!safe_path((const char *)body + 4, len - 4, path, sizeof(path))) {
             fail(seq, "bad path");
             break;
         }
@@ -289,9 +296,26 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
             break;
         }
         static uint8_t out[LINK_MAX_PAYLOAD];
+        fseek(f, (long)offset, SEEK_SET);
         const size_t n = fread(out, 1, sizeof(out), f);
         fclose(f);
         send(seq, cmd | 0x80, out, n);
+        break;
+    }
+    case LINK_FS_FORMAT: {
+        // Wipes the whole storage area. Only ever on purpose: the app has to spell it out,
+        // and the watch restarts afterwards so everything it seeds is written fresh.
+        static const char kPhrase[] = "ERASE EVERYTHING";
+        if (len != sizeof(kPhrase) - 1 || memcmp(body, kPhrase, len) != 0) {
+            fail(seq, "that isn't how you ask to erase the storage");
+            break;
+        }
+        put_abort();
+        ESP_LOGW(TAG, "formatting the storage area on request");
+        send(seq, cmd | 0x80, NULL, 0);
+        vTaskDelay(pdMS_TO_TICKS(200));   // let the reply reach the app before the port drops
+        storage_format();
+        esp_restart();
         break;
     }
     case LINK_FS_DELETE: {
