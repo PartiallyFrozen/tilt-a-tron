@@ -8,11 +8,17 @@
 
 #include "audio/audio.h"
 #include "console/ui.h"
+#include "engine/canvas.h"
 #include "engine/gestures.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "nvs.h"
+
+extern "C" {
+extern const uint8_t _binary_ball_png_start[], _binary_ball_png_end[];
+extern const uint8_t _binary_flag_png_start[], _binary_flag_png_end[];
+}
 
 using namespace wc;
 
@@ -22,23 +28,16 @@ namespace {
 
 const char *TAG = "maze";
 
-constexpr int W = Gfx::W, H = Gfx::H;
-constexpr float CXf = 233.0f, CYf = 233.0f;
-constexpr float BOARD_R = 200.0f;   // the maze lives inside this circle; HUD sits outside it
+// The board lives on a 233 x 233 pixel canvas that the presenter doubles onto
+// the screen, so all positions and speeds below are canvas pixels.
+constexpr int SCALE = 2;
+constexpr int W = (Gfx::W + SCALE - 1) / SCALE, H = W;
+constexpr float CXf = W / 2.0f, CYf = H / 2.0f;
+constexpr float BOARD_R = 100.0f;   // the maze lives inside this circle; HUD sits outside it
 
-// Board look: a wooden labyrinth, like the real toy.
-constexpr Color FLOOR = rgb(201, 158, 98);
-constexpr Color FLOOR_DARK = rgb(188, 145, 86);
-constexpr Color WALL = rgb(104, 68, 34);
-constexpr Color WALL_TOP = rgb(150, 104, 58);
-constexpr Color WALL_SHADE = rgb(70, 44, 20);
-constexpr Color HOLE = rgb(0, 0, 0);
-constexpr Color HOLE_RIM = rgb(96, 66, 36);
-constexpr Color START = rgb(60, 170, 90);
-
-constexpr float GRAVITY = 1500.0f;     // px/s^2 per g of tilt
+constexpr float GRAVITY = 750.0f;      // px/s^2 per g of tilt
 constexpr float FRICTION = 1.1f;       // 1/s
-constexpr float MAX_SPEED = 430.0f;
+constexpr float MAX_SPEED = 215.0f;
 constexpr float RESTITUTION = 0.28f;
 
 uint32_t rnd(uint32_t n) { return esp_random() % n; }
@@ -127,11 +126,13 @@ struct Maze::State {
     float still_t = 0;                // seconds since the ball last really moved
 
     // ---- drawing
-    Color *board = nullptr;           // the static scene, to restore under the ball
+    Canvas canvas;
+    Sheet ball_sheet, flag_sheet;
+    uint8_t *board = nullptr;         // the static scene, copied in under the ball each frame
     bool redraw = true;
-    IRect ball_rect{0, 0, 0, 0};
-    int drawn_lives = -1;
-    Phase drawn_phase = GAME_OVER;
+    uint8_t c_floor = 0, c_floor2 = 0, c_plank = 0, c_grain = 0, c_wall = 0, c_wall_lit = 0, c_wall_dark = 0;
+    uint8_t c_shadow = 0, c_hole = 0, c_rim = 0, c_rim_lit = 0, c_start = 0, c_white = 0, c_black = 0;
+    uint8_t c_dim = 0, c_panel = 0, c_box = 0, c_go = 0, c_danger = 0, c_label = 0, c_steel = 0;
 
     // ---- menu / input
     Gestures ges;
@@ -191,7 +192,7 @@ struct Maze::State {
         cs = std::floor(2 * BOARD_R / n);
         ox = CXf - n * cs / 2;
         oy = CYf - n * cs / 2;
-        wall_t = std::max(4.0f, std::floor(cs / 8));
+        wall_t = std::max(2.0f, std::floor(cs / 8));
         br = cs * 0.26f;
         hole_r = cs * 0.30f;
 
@@ -353,7 +354,7 @@ struct Maze::State {
             if (vn < 0) {
                 vx -= (1 + RESTITUTION) * vn * nx;
                 vy -= (1 + RESTITUTION) * vn * ny;
-                if (-vn > 70) sfx::thunk(clampf(-vn / MAX_SPEED, 0, 1));
+                if (-vn > 35) sfx::thunk(clampf(-vn / MAX_SPEED, 0, 1));
             }
             hit = true;
         }
@@ -370,7 +371,7 @@ struct Maze::State {
         for (const Hole &h : holes) {
             const float dx = h.x - bx, dy = h.y - by, d = std::sqrt(dx * dx + dy * dy);
             if (d < hole_r * 1.5f && d > 0.5f) {
-                const float pull = 900.0f * (1.0f - d / (hole_r * 1.5f));
+                const float pull = 450.0f * (1.0f - d / (hole_r * 1.5f));
                 vx += dx / d * pull * dt;
                 vy += dy / d * pull * dt;
             }
@@ -395,9 +396,9 @@ struct Maze::State {
         }
 
         // Rolling rumble, faster ticks the faster it goes.
-        still_t = speed > 12 ? 0 : still_t + dt;
+        still_t = speed > 6 ? 0 : still_t + dt;
         roll_t -= dt;
-        if (speed > 45 && roll_t <= 0) {
+        if (speed > 22 && roll_t <= 0) {
             sfx::roll(clampf(speed / MAX_SPEED, 0, 1));
             roll_t = 0.16f - 0.10f * clampf(speed / MAX_SPEED, 0, 1);
         }
@@ -483,11 +484,7 @@ struct Maze::State {
     }
 
     // ------------------------------------------------------------------ menu
-    void closeMenu()
-    {
-        menu = false;
-        redraw = true;
-    }
+    void closeMenu() { menu = false; }
 
     void menuTap(Engine &e, int x, int y)
     {
@@ -529,7 +526,38 @@ struct Maze::State {
     }
 
     // ------------------------------------------------------------------ drawing
-    void fillDisc(Gfx &g, float cx, float cy, float r, Color c)
+    bool loadAssets()
+    {
+        if (!canvas.init(SCALE)) return false;
+        board = static_cast<uint8_t *>(heap_caps_malloc(W * H, MALLOC_CAP_SPIRAM));
+        if (!board) return false;
+        c_black = canvas.color(rgb(0, 0, 0));
+        c_white = canvas.color(rgb(255, 255, 255));
+        c_floor = canvas.color(rgb(201, 158, 98));
+        c_floor2 = canvas.color(rgb(188, 145, 86));
+        c_plank = canvas.color(rgb(170, 128, 72));
+        c_grain = canvas.color(rgb(212, 172, 112));
+        c_wall = canvas.color(rgb(104, 68, 34));
+        c_wall_lit = canvas.color(rgb(150, 104, 58));
+        c_wall_dark = canvas.color(rgb(70, 44, 20));
+        c_shadow = canvas.color(rgb(120, 90, 50));
+        c_hole = canvas.color(rgb(8, 6, 4));
+        c_rim = canvas.color(rgb(60, 40, 22));
+        c_rim_lit = canvas.color(rgb(226, 190, 130));
+        c_start = canvas.color(rgb(60, 170, 90));
+        c_dim = canvas.color(rgb(150, 150, 150));
+        c_panel = canvas.color(rgb(16, 18, 26));
+        c_box = canvas.color(rgb(90, 90, 100));
+        c_go = canvas.color(rgb(40, 200, 110));
+        c_danger = canvas.color(colors::red);
+        c_label = canvas.color(rgb(225, 225, 225));
+        c_steel = canvas.color(rgb(206, 211, 219));
+        bool ok = canvas.loadSheet(ball_sheet, _binary_ball_png_start, _binary_ball_png_end - _binary_ball_png_start, 16, 16);
+        ok &= canvas.loadSheet(flag_sheet, _binary_flag_png_start, _binary_flag_png_end - _binary_flag_png_start, 12, 12);
+        return ok;
+    }
+
+    void fillDisc(Canvas &c, float cx, float cy, float r, uint8_t col)
     {
         const int y0 = int(std::floor(cy - r)), y1 = int(std::ceil(cy + r));
         for (int y = y0; y <= y1; y++) {
@@ -537,101 +565,94 @@ struct Maze::State {
             if (dy * dy > r * r) continue;
             const float half = std::sqrt(r * r - dy * dy);
             const int xa = int(std::ceil(cx - half - 0.5f)), xb = int(std::floor(cx + half - 0.5f));
-            if (xb >= xa) g.fillRect(xa, y, xb - xa + 1, 1, c);
+            if (xb >= xa) c.fillRect(xa, y, xb - xa + 1, 1, col);
         }
     }
 
-    void drawBoard(Gfx &g)
+    void drawBoard()
     {
-        g.clear(colors::black);
+        Canvas &c = canvas;
+        c.clear(c_black);
 
-        // Floor, with a faint plank pattern so it reads as wood.
+        // Wooden floor: planks with a seam every few rows and a little grain.
         for (int i = 0; i < n * n; i++) {
             if (!valid[i]) continue;
-            const int x = int(ox + (i % n) * cs), y = int(oy + (i / n) * cs);
-            g.fillRect(x, y, int(cs) + 1, int(cs) + 1, ((i % n) + (i / n)) % 2 ? FLOOR : FLOOR_DARK);
+            const int x = int(ox + (i % n) * cs), y = int(oy + (i / n) * cs), w = int(cs) + 1;
+            c.fillRect(x, y, w, w, ((i % n) + (i / n)) % 2 ? c_floor : c_floor2);
+        }
+        for (int y = int(oy); y < int(oy + n * cs); y++) {
+            const bool seam = (y / 7) % 1 == 0 && y % 7 == 3;
+            for (int x = int(ox); x < int(ox + n * cs); x++) {
+                const int ci = idx(std::min(n - 1, int((x - ox) / cs)), std::min(n - 1, int((y - oy) / cs)));
+                if (!valid[ci]) continue;
+                const unsigned h = unsigned(x * 2654435761u) ^ unsigned(y * 40503u);
+                if (seam) c.pixel(x, y, c_plank);
+                else if ((h >> 7) % 23 == 0) c.pixel(x, y, c_grain);
+            }
         }
 
-        // Finish: a checkered flag square. Start: a green ring.
+        // Start: a green ring. Finish: the checkered flag.
+        fillDisc(c, cellX(start_cell), cellY(start_cell), cs * 0.34f, c_start);
+        fillDisc(c, cellX(start_cell), cellY(start_cell), cs * 0.22f,
+                 ((start_cell % n) + (start_cell / n)) % 2 ? c_floor : c_floor2);
         {
-            const float fx = cellX(finish_cell), fy = cellY(finish_cell), half = cs * 0.32f;
-            const int q = std::max(3, int(half * 2 / 4));
-            for (int r = 0; r < 4; r++)
-                for (int c = 0; c < 4; c++)
-                    g.fillRect(int(fx - half) + c * q, int(fy - half) + r * q, q, q,
-                               (r + c) % 2 ? colors::white : colors::black);
-            fillDisc(g, cellX(start_cell), cellY(start_cell), cs * 0.34f, START);
-            fillDisc(g, cellX(start_cell), cellY(start_cell), cs * 0.24f, ((start_cell % n) + (start_cell / n)) % 2 ? FLOOR : FLOOR_DARK);
+            const float fs = std::max(6.0f, cs * 0.6f);
+            c.spriteScaled(flag_sheet, 0, cellX(finish_cell), cellY(finish_cell) + fs / 2, fs / 12, fs / 12);
         }
 
+        // Holes: a dark pit with a lit far edge, so it reads as a dip in the wood.
         for (const Hole &h : holes) {
-            fillDisc(g, h.x, h.y, hole_r + 2, HOLE_RIM);
-            fillDisc(g, h.x, h.y, hole_r, HOLE);
+            fillDisc(c, h.x, h.y, hole_r + 1.5f, c_rim);
+            fillDisc(c, h.x + 0.8f, h.y + 0.8f, hole_r + 0.5f, c_rim_lit);
+            fillDisc(c, h.x, h.y, hole_r, c_hole);
         }
 
-        // Walls with a lit top edge and a shadow underneath, for a little depth.
+        // Walls: a drop shadow, then the wall with a lit top/left and dark bottom/right.
         for (const RectF &w : walls)
-            g.fillRect(int(w.x0) + 2, int(w.y0) + 3, int(w.x1 - w.x0), int(w.y1 - w.y0), WALL_SHADE);
+            c.fillRect(int(w.x0) + 1, int(w.y0) + 2, int(w.x1 - w.x0), int(w.y1 - w.y0), c_shadow);
         for (const RectF &w : walls) {
             const int x = int(w.x0), y = int(w.y0), ww = int(w.x1 - w.x0), hh = int(w.y1 - w.y0);
-            g.fillRect(x, y, ww, hh, WALL);
-            g.fillRect(x, y, ww, 1, WALL_TOP);
-            g.fillRect(x, y, 1, hh, WALL_TOP);
+            c.fillRect(x, y, ww, hh, c_wall);
+            c.fillRect(x, y, ww, 1, c_wall_lit);
+            c.fillRect(x, y, 1, hh, c_wall_lit);
+            c.fillRect(x, y + hh - 1, ww, 1, c_wall_dark);
+            c.fillRect(x + ww - 1, y, 1, hh, c_wall_dark);
         }
 
         // HUD lives outside the board: level at the top, best at the bottom.
         char buf[24];
         snprintf(buf, sizeof(buf), "LEVEL %d", level);
-        g.textCentered(Gfx::CX, 17, buf, colors::white, 2, true);
+        c.textCentered(W / 2, 9, buf, c_white, 1, true);
         snprintf(buf, sizeof(buf), "BEST %d", best);
-        g.textCentered(Gfx::CX, 450, buf, console::ui::DIM, 2, true);
+        c.textCentered(W / 2, 224, buf, c_dim, 1, true);
 
-        std::memcpy(board, g.pixels(), W * H * sizeof(Color));
-        ball_rect = {0, 0, 0, 0};
-        drawn_lives = -1;
+        std::memcpy(board, c.pixels(), W * H);
     }
 
-    void restore(Gfx &g, const IRect &r)
-    {
-        if (r.w <= 0 || r.h <= 0) return;
-        g.setClip(r.x, r.y, r.w, r.h);
-        g.blit(board, W, H, 0, 0);
-        g.clearClip();
-    }
-
-    void drawLives(Gfx &g)
+    void drawLives(Canvas &c)
     {
         // Spare balls, tucked beside the level label.
-        restore(g, {Gfx::CX + 62, 8, 60, 20});
-        for (int i = 0; i < lives; i++) fillDisc(g, Gfx::CX + 72 + i * 17, 17, 6, rgb(210, 214, 222));
-        drawn_lives = lives;
+        for (int i = 0; i < lives; i++) c.spriteScaled(ball_sheet, 0, W / 2 + 34 + i * 8, 12, 0.4f, 0.4f);
     }
 
-    void drawBall(Gfx &g, float scale)
+    void drawBall(Canvas &c, float scale)
     {
         const float r = br * scale;
-        if (r < 1) {
-            ball_rect = {0, 0, 0, 0};
-            return;
-        }
-        fillDisc(g, bx + 2, by + 3, r, rgb(90, 62, 30));          // shadow on the wood
-        fillDisc(g, bx, by, r, rgb(168, 174, 184));                // steel
-        fillDisc(g, bx - r * 0.12f, by - r * 0.12f, r * 0.78f, rgb(206, 211, 219));
-        fillDisc(g, bx - r * 0.34f, by - r * 0.36f, r * 0.30f, colors::white);
-        const int pad = int(r) + 5;
-        ball_rect = {int(bx) - pad, int(by) - pad, 2 * pad + 4, 2 * pad + 5};
+        if (r < 0.5f) return;
+        fillDisc(c, bx + 1.2f, by + 1.6f, r, c_wall_dark);            // shadow on the wood
+        c.spriteScaled(ball_sheet, 0, bx, by + r, r / 8, r / 8);
     }
 
-    void banner(Gfx &g, const char *top, const char *bottom, Color c)
+    void banner(Canvas &c, const char *top, const char *bottom, uint8_t col)
     {
-        namespace ui = console::ui;
-        g.fillRect(83, 196, 300, bottom ? 78 : 50, ui::PANEL);
-        g.rect(83, 196, 300, bottom ? 78 : 50, ui::BOX);
-        g.textCentered(Gfx::CX, 221, top, c, 3, true);
-        if (bottom) g.textCentered(Gfx::CX, 254, bottom, ui::LABEL, 2, true);
+        const int h = bottom ? 30 : 18;
+        c.fillRect(42, 100, W - 84, h, c_panel);
+        c.rect(42, 100, W - 84, h, c_box);
+        c.textCentered(W / 2, 109, top, col, 1, true);
+        if (bottom) c.textCentered(W / 2, 121, bottom, c_label, 1, false);
     }
 
-    void draw(Gfx &g)
+    void draw(Engine &e, Gfx &g)
     {
         if (menu) {
             if (menu_dirty) {
@@ -640,31 +661,26 @@ struct Maze::State {
             }
             return;
         }
-
-        if (redraw || phase != drawn_phase) {
-            drawBoard(g);
+        Canvas &c = canvas;
+        if (redraw) {
+            drawBoard();
             redraw = false;
-            drawn_phase = phase;
-            drawLives(g);
-            drawBall(g, 1.0f);
-            char buf[32];
-            switch (phase) {
-            case READY: banner(g, "TAP TO START", "TILT TO ROLL", colors::white); break;
-            case CLEARED: banner(g, "LEVEL CLEAR!", nullptr, console::ui::GO); break;
-            case GAME_OVER:
-                snprintf(buf, sizeof(buf), "REACHED LEVEL %d", level);
-                banner(g, "GAME OVER", buf, console::ui::DANGER);
-                break;
-            default: break;
-            }
-            return;
         }
+        std::memcpy(c.pixels(), board, W * H);
+        drawLives(c);
+        drawBall(c, phase == FALLING ? std::max(0.0f, 1.0f - phase_t / 0.45f) : 1.0f);
 
-        if (phase == PLAYING || phase == FALLING) {
-            restore(g, ball_rect);
-            drawBall(g, phase == FALLING ? std::max(0.0f, 1.0f - phase_t / 0.45f) : 1.0f);
+        char buf[32];
+        switch (phase) {
+        case READY: banner(c, "TAP TO START", "TILT TO ROLL", c_white); break;
+        case CLEARED: banner(c, "LEVEL CLEAR!", nullptr, c_go); break;
+        case GAME_OVER:
+            snprintf(buf, sizeof(buf), "REACHED LEVEL %d", level);
+            banner(c, "GAME OVER", buf, c_danger);
+            break;
+        default: break;
         }
-        if (lives != drawn_lives) drawLives(g);
+        c.present(e.presenter());
     }
 };
 
@@ -673,8 +689,10 @@ Maze::~Maze() { delete s_; }
 
 void Maze::begin(Engine &e)
 {
-    s_->board = static_cast<Color *>(heap_caps_malloc(W * H * sizeof(Color), MALLOC_CAP_SPIRAM));
-    if (!s_->board) ESP_LOGE(TAG, "no memory for the board");
+    if (!s_->loadAssets()) {
+        ESP_LOGE(TAG, "no memory for the board");
+        s_->board = nullptr;
+    }
     s_->loadBest();
     s_->newGame();
 }
@@ -705,7 +723,7 @@ void Maze::update(Engine &e, float dt)
 void Maze::draw(Engine &e, Gfx &g)
 {
     if (!s_->board) return;
-    s_->draw(g);
+    s_->draw(e, g);
 }
 
 }  // namespace games

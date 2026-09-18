@@ -381,6 +381,55 @@ def racer_sheets(root):
         print(f"racer/{n}.png {Image.open(p).size} {os.path.getsize(p)} bytes")
 
 
+# ---------------------------------------------------------------- Marble Maze
+def paint_ball(px, w):
+    """A steel ball: dark rim, mid grey body, soft light from the top-left, a hot spot."""
+    rim, body, light, spot, dark = (90, 96, 108), (168, 174, 184), (206, 211, 219), (255, 255, 255), (120, 126, 138)
+    r = w / 2
+    for y in range(w):
+        for x in range(w):
+            dx, dy = x + 0.5 - r, y + 0.5 - r
+            d = (dx * dx + dy * dy) ** 0.5 / r
+            if d > 1:
+                continue
+            c = body
+            if d > 0.86:
+                c = rim
+            elif d > 0.62 and dx + dy > 0:
+                c = dark
+            lx, ly = dx + r * 0.35, dy + r * 0.38
+            if (lx * lx + ly * ly) ** 0.5 / r < 0.42 and d <= 0.86:
+                c = light
+            if (lx * lx + ly * ly) ** 0.5 / r < 0.18:
+                c = spot
+            px[x, y] = c + (255,)
+
+
+def paint_flag(px, w):
+    black, white, edge = (0, 0, 0), (255, 255, 255), (60, 40, 22)
+    q = w // 4
+    for y in range(w):
+        for x in range(w):
+            c = white if ((x // q) + (y // q)) % 2 else black
+            if x == 0 or y == 0 or x == w - 1 or y == w - 1:
+                c = edge
+            px[x, y] = c + (255,)
+
+
+def maze_sheets(root):
+    out = os.path.join(root, "maze")
+    os.makedirs(out, exist_ok=True)
+    img, px = new_rgba(16, 16)
+    paint_ball(px, 16)
+    img.save(os.path.join(out, "ball.png"), optimize=True)
+    img, px = new_rgba(12, 12)
+    paint_flag(px, 12)
+    img.save(os.path.join(out, "flag.png"), optimize=True)
+    for n in ("ball", "flag"):
+        p = os.path.join(out, n + ".png")
+        print(f"maze/{n}.png {Image.open(p).size} {os.path.getsize(p)} bytes")
+
+
 def sheet(frames, path):
     """Frames side by side, all the same size, saved as RGBA."""
     fw, fh = len(frames[0][0]), len(frames[0])
@@ -407,6 +456,7 @@ def main():
     sheet([SHOT], os.path.join(jump, "shot.png"))
     sheet([CLOUD_A, CLOUD_B], os.path.join(jump, "clouds.png"))
     racer_sheets(ROOT)
+    maze_sheets(ROOT)
 
 
 if __name__ == "__main__":
