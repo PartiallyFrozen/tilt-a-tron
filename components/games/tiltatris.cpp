@@ -1,4 +1,4 @@
-#include "games/ringdrop.h"
+#include "games/tiltatris.h"
 
 #include <algorithm>
 #include <cmath>
@@ -20,7 +20,7 @@ namespace games {
 
 namespace {
 
-const char *TAG = "ringdrop";
+const char *TAG = "tiltatris";
 
 constexpr float PI = 3.14159265f, TAU = 2 * PI;
 constexpr int SCALE = 2, CW = (Gfx::W + SCALE - 1) / SCALE;
@@ -90,7 +90,7 @@ void gameOver()
 
 }  // namespace
 
-struct RingDrop::State {
+struct Tiltatris::State {
     // ---- game
     Phase phase = READY;
     float phase_t = 0;
@@ -102,6 +102,11 @@ struct RingDrop::State {
     float fall_t = 0, lock_t = 0;
     bool soft = false;
     bool clearing[RINGS] = {};
+    // Some levels flip gravity: pieces rise from the core and the pile builds
+    // against the rim. The board is kept floor-first either way; only the
+    // drawing mirrors the rings.
+    bool outward = false;
+    float flip_t = 0;
 
     // ---- tilt: the pile is locked to the real world
     float grav_x = 0, grav_y = 1;
@@ -125,7 +130,7 @@ struct RingDrop::State {
     void load()
     {
         nvs_handle_t h;
-        if (nvs_open("ringdrop", NVS_READONLY, &h) != ESP_OK) return;
+        if (nvs_open("tiltatris", NVS_READONLY, &h) != ESP_OK) return;
         int32_t v;
         if (nvs_get_i32(h, "best", &v) == ESP_OK) best = v;
         nvs_close(h);
@@ -133,7 +138,7 @@ struct RingDrop::State {
     void save()
     {
         nvs_handle_t h;
-        if (nvs_open("ringdrop", NVS_READWRITE, &h) != ESP_OK) return;
+        if (nvs_open("tiltatris", NVS_READWRITE, &h) != ESP_OK) return;
         nvs_set_i32(h, "best", best);
         nvs_commit(h);
         nvs_close(h);
@@ -226,6 +231,8 @@ struct RingDrop::State {
         score = 0;
         rings_cleared = 0;
         level = 1;
+        outward = false;
+        flip_t = 0;
         got_best = false;
         next = int(rnd(7));
         phase = READY;
@@ -290,6 +297,10 @@ struct RingDrop::State {
         if (new_level > level) {
             level = new_level;
             sfx::levelUp();
+            if (rnd(2)) {   // half the levels turn the well inside out
+                outward = !outward;
+                flip_t = 1.5f;
+            }
         }
         spawn();
     }
@@ -479,15 +490,16 @@ struct RingDrop::State {
                 if (r < CORE_R) {
                     c = r > CORE_R - 2 ? c_core_edge : c_core;
                 } else {
-                    const int ring = std::min(RINGS + 3, int((r - CORE_R) / RING_H));
+                    const int pring = std::min(RINGS + 3, int((r - CORE_R) / RING_H));
+                    const int ring = outward ? RINGS - 1 - pring : pring;   // floor-first index
                     const float rf = r - CORE_R - ring * RING_H;
                     const uint32_t rel = uint32_t(uint16_t(Polar::angle(i) - off16)) * N;
                     const int col = rel >> 16;
                     const uint32_t frac = rel & 0xFFFF;
                     // One screen pixel of gap between wedges, scaled to this radius.
                     const uint32_t gap = uint32_t(65536.0f / (TAU * r / N));
-                    uint8_t v = merged[ring][col];
-                    if (ring >= RINGS && v >= 8) v = 0;   // only the falling piece shows outside the rim
+                    uint8_t v = ring >= 0 ? merged[ring][col] : 0;
+                    if (pring >= RINGS && v >= 8) v = 0;   // only the falling piece shows outside the rim
                     if (r >= RIM_R && v == 0) {
                         c = r < RIM_R + 1.5f ? c_rim : c_bg;
                     } else if (v == 0) {
@@ -554,6 +566,13 @@ struct RingDrop::State {
 
         switch (phase) {
         case READY: banner(c, "TAP TO DROP", "TURN WATCH: SPIN PILE", "TAP: TURN  HOLD: DROP", c_white); break;
+        case PLAYING:
+            if (flip_t > 0) {
+                flip_t -= 1.0f / 60;
+                banner(c, "GRAVITY FLIP!", outward ? "PIECES RISE FROM THE CORE" : "PIECES FALL FROM THE RIM", nullptr,
+                       c_yellow);
+            }
+            break;
         case GAME_OVER:
             if (phase_t > 0.5f) {
                 snprintf(buf, sizeof(buf), got_best ? "NEW BEST %d!" : "SCORE %d", score);
@@ -566,10 +585,10 @@ struct RingDrop::State {
     }
 };
 
-RingDrop::RingDrop() : s_(new State) {}
-RingDrop::~RingDrop() { delete s_; }
+Tiltatris::Tiltatris() : s_(new State) {}
+Tiltatris::~Tiltatris() { delete s_; }
 
-void RingDrop::begin(Engine &e)
+void Tiltatris::begin(Engine &e)
 {
     if (!Polar::init()) ESP_LOGE(TAG, "polar tables alloc failed");
     if (!s_->loadAssets()) ESP_LOGE(TAG, "no memory for the canvas");
@@ -578,7 +597,7 @@ void RingDrop::begin(Engine &e)
     ESP_LOGI(TAG, "ready, best %d", s_->best);
 }
 
-void RingDrop::enter(Engine &e)
+void Tiltatris::enter(Engine &e)
 {
     if (s_->phase == PLAYING) {
         s_->menu = true;
@@ -587,11 +606,11 @@ void RingDrop::enter(Engine &e)
     s_->menu_dirty = s_->menu;
 }
 
-bool RingDrop::keepAwake() const { return !s_->menu && (s_->phase == PLAYING || s_->phase == CLEARING); }
+bool Tiltatris::keepAwake() const { return !s_->menu && (s_->phase == PLAYING || s_->phase == CLEARING); }
 
-void RingDrop::update(Engine &e, float dt) { s_->update(e, std::min(dt, 1.0f / 30)); }
+void Tiltatris::update(Engine &e, float dt) { s_->update(e, std::min(dt, 1.0f / 30)); }
 
-void RingDrop::draw(Engine &e, Gfx &g)
+void Tiltatris::draw(Engine &e, Gfx &g)
 {
     if (!s_->canvas.pixels()) return;
     s_->draw(e, g);

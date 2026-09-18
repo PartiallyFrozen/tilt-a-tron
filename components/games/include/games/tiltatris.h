@@ -1,4 +1,4 @@
-// Ring Drop: radial Tetris. Wedge-shaped pieces fall inward from the rim; fill a
+// Tilt-a-tris: radial Tetris. Wedge-shaped pieces fall inward from the rim; fill a
 // whole ring and it clears. The pile is locked to the real world, so turning the
 // watch spins the pile under the falling piece.
 //
@@ -14,10 +14,10 @@
 
 namespace games {
 
-class RingDrop : public wc::Game {
+class Tiltatris : public wc::Game {
 public:
-    RingDrop();
-    ~RingDrop() override;
+    Tiltatris();
+    ~Tiltatris() override;
     void begin(wc::Engine &e) override;
     void enter(wc::Engine &e) override;
     void update(wc::Engine &e, float dt) override;
