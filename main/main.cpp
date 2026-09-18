@@ -243,9 +243,9 @@ extern "C" void app_main(void)
     });
     engine.setHome(launcher);
     engine.setSleepHooks(net_suspend, net_resume);
-    // Don't sleep while plugged in: a computer may be copying theme files, and on the
-    // bench (debug mode) sleeping drops the serial/flashing connection.
-    engine.setKeepAwakeHook([] { return storage_on_computer() || pmu_usb_power(); });
+    // AUTO OFF applies everywhere, charging or not. The one exception: a computer has
+    // the USB drive open (Settings > USB DRIVE on), where dozing off would cut a copy short.
+    engine.setKeepAwakeHook(storage_on_computer);
     engine.setBusyHook(storage_on_computer);
     net_set_reboot_guard(storage_on_computer);
     engine.setAutoOffSeconds(console::autoOffSeconds());
