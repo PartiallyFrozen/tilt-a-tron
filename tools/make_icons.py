@@ -314,6 +314,45 @@ def clock_icon():
     finish(img, "clock")
 
 
+def star_icon():
+    img = canvas((14, 14, 28))
+    c = 26
+    px = img.load()
+    disc_c, plate, plate2, lip = (22, 22, 42), (46, 53, 80), (58, 67, 104), (74, 85, 128)
+    beam, glow, star, face, door = (255, 77, 210), (92, 36, 88), (255, 217, 61), (138, 90, 0), (255, 243, 160)
+    for yy in range(L):
+        for xx in range(L):
+            dx, dy = xx + 0.5 - c, yy + 0.5 - c
+            d = math.hypot(dx, dy)
+            if d > 25:
+                continue
+            col = disc_c if d < 22 else (14, 14, 28)
+            for (r0, r1, p, holes) in ((15, 20, plate, (0, 3, 5)), (8.5, 13, plate2, (0, 2, 6))):
+                if r0 <= d < r1:
+                    a = (math.degrees(math.atan2(dy, dx)) + 90 + 22.5) % 360
+                    spoke, off = int(a // 45), (a % 45) - 22.5
+                    tang = math.radians(off) * d
+                    col = p
+                    if spoke in holes and abs(tang) < 2.6:
+                        col = lip if abs(tang) > 1.8 else disc_c
+            px[xx, yy] = col + (255,)
+    # The beam, straight down from the rim through both gaps to the star.
+    rect(img, c - 2, 2, 4, c - 8, glow)
+    rect(img, c - 1, 2, 2, c - 8, beam)
+    rect(img, c - 3, 1, 6, 4, (58, 66, 96))
+    # The star: an octagon with a sleepy face and its door at the bottom.
+    for yy in range(L):
+        for xx in range(L):
+            dx, dy = abs(xx + 0.5 - c), abs(yy + 0.5 - c)
+            if dx <= 6.5 and dy <= 6.5 and dx + dy <= 9.2:
+                px[xx, yy] = star + (255,)
+    rect(img, c - 4, c - 1, 3, 1, face)
+    rect(img, c + 1, c - 1, 3, 1, face)
+    rect(img, c - 1, c + 2, 2, 1, face)
+    rect(img, c - 2, c + 5, 4, 2, door)
+    finish(img, "star")
+
+
 def main():
     jump_icon()
     racer_icon()
@@ -322,6 +361,7 @@ def main():
     settings_icon()
     tiltatris_icon()
     clock_icon()
+    star_icon()
 
 
 if __name__ == "__main__":
