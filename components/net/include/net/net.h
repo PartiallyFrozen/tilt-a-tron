@@ -78,6 +78,10 @@ void net_set_screen_hook(net_screen_fn fn);
 // GET /input?<query>: remote control for testing; the hook gets the raw query string.
 typedef bool (*net_control_fn)(const char *query);
 void net_set_control_hook(net_control_fn fn);
+// While this returns true, reboots requested over HTTP (after an update, /reboot)
+// are postponed: restarting while a computer has the drive open corrupts it.
+typedef bool (*net_busy_fn)(void);
+void net_set_reboot_guard(net_busy_fn busy);
 void ota_get_status(ota_status_t *out);
 
 // ---------------------------------------------------------------- update mode

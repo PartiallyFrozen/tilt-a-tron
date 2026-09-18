@@ -101,6 +101,15 @@ if ($watch) {
         Write-Host "Already up to date (build $want)." -ForegroundColor Green
         return
     }
+    # The update restarts the watch. If its drive is open here, Windows may not have
+    # written everything yet, and the restart corrupts the file table: eject first.
+    $drives = Get-Volume -ErrorAction SilentlyContinue | Where-Object {
+        $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Theme") -and (Test-Path "$($_.DriveLetter):\Guide") }
+    foreach ($d in $drives) {
+        Write-Host "Ejecting the Tilt-a-tron drive ($($d.DriveLetter):) so nothing is lost ..."
+        try { (New-Object -ComObject Shell.Application).NameSpace(17).ParseName("$($d.DriveLetter):").InvokeVerb("Eject") } catch {}
+        Start-Sleep -Seconds 4   # the watch reloads its theme when the drive comes back
+    }
     Write-Host "Sending $sizeKB KB to $($watch.Ip) over Wi-Fi ..."
     $sent = $false
     foreach ($attempt in 1..3) {

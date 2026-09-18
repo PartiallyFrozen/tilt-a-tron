@@ -158,7 +158,34 @@ static esp_err_t status_get(httpd_req_t *req)
     return httpd_resp_sendstr(req, buf);
 }
 
-static void reboot_cb(void *arg) { esp_restart(); }
+static net_busy_fn s_reboot_guard;
+void net_set_reboot_guard(net_busy_fn busy) { s_reboot_guard = busy; }
+
+static esp_timer_handle_t s_reboot_timer;
+
+static void reboot_cb(void *arg)
+{
+    if (s_reboot_guard && s_reboot_guard()) {
+        // The drive is open on a computer: try again in a second, until it's ejected.
+        ESP_LOGW(TAG, "reboot postponed: the drive is open on a computer");
+        esp_timer_start_once(s_reboot_timer, 1000000);
+        return;
+    }
+    esp_restart();
+}
+
+// Reboot in `us` microseconds, or once the drive is no longer open on a computer.
+static void schedule_reboot(uint64_t us)
+{
+    if (!s_reboot_timer) {
+        const esp_timer_create_args_t args = {.callback = reboot_cb, .name = "reboot"};
+        esp_timer_create(&args, &s_reboot_timer);
+    }
+    if (s_reboot_timer) {
+        esp_timer_stop(s_reboot_timer);
+        esp_timer_start_once(s_reboot_timer, us);
+    }
+}
 
 static esp_err_t log_get(httpd_req_t *req)
 {
@@ -177,9 +204,7 @@ static esp_err_t log_get(httpd_req_t *req)
 static esp_err_t reboot_get(httpd_req_t *req)
 {
     httpd_resp_sendstr(req, "rebooting");
-    static esp_timer_handle_t t;
-    const esp_timer_create_args_t args = {.callback = reboot_cb, .name = "http_reboot"};
-    if (!t && esp_timer_create(&args, &t) == ESP_OK) esp_timer_start_once(t, 500000);
+    schedule_reboot(500000);
     return ESP_OK;
 }
 
@@ -225,9 +250,7 @@ static esp_err_t update_post(httpd_req_t *req)
     httpd_resp_sendstr(req, "OK, rebooting");
 
     // The update screen reboots after showing "done"; this is the safety net.
-    static esp_timer_handle_t t;
-    const esp_timer_create_args_t args = {.callback = reboot_cb, .name = "ota_reboot"};
-    if (!t && esp_timer_create(&args, &t) == ESP_OK) esp_timer_start_once(t, 4000000);
+    schedule_reboot(4000000);
     return ESP_OK;
 }
 
