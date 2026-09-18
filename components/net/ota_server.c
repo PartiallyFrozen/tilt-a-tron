@@ -173,23 +173,14 @@ static esp_err_t status_get(httpd_req_t *req)
     return err;
 }
 
-static net_busy_fn s_reboot_guard;
-void net_set_reboot_guard(net_busy_fn busy) { s_reboot_guard = busy; }
-
 static esp_timer_handle_t s_reboot_timer;
 
 static void reboot_cb(void *arg)
 {
-    if (s_reboot_guard && s_reboot_guard()) {
-        // The drive is open on a computer: try again in a second, until it's ejected.
-        ESP_LOGW(TAG, "reboot postponed: the drive is open on a computer");
-        esp_timer_start_once(s_reboot_timer, 1000000);
-        return;
-    }
     esp_restart();
 }
 
-// Reboot in `us` microseconds, or once the drive is no longer open on a computer.
+// Reboot in `us` microseconds.
 static void schedule_reboot(uint64_t us)
 {
     if (!s_reboot_timer) {

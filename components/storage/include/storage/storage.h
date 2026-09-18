@@ -1,7 +1,6 @@
-// The Tilt-a-tron drive: a 16 MB FAT partition mounted at /data for apps, and
-// (when DEBUG MODE is off) shown to a computer as a USB flash drive. While a
-// computer has it open the app can't read it; on eject it comes back and the
-// generation counter bumps so themes reload.
+// Where the console keeps files: a 16 MB FAT partition mounted at /data. Only the watch
+// ever touches it - files arrive from a computer over the USB link (components/link), not
+// by handing the filesystem to Windows, which is how a set of themes was lost once.
 #pragma once
 
 #include <stdbool.h>
@@ -15,24 +14,18 @@ extern "C" {
 #define STORAGE_ROOT "/data"
 #define STORAGE_THEMES STORAGE_ROOT "/Theme"
 
-esp_err_t storage_init(bool usb_drive);
-// Call from the app task now and then: does deferred work (restoring missing
-// Default files) that must not run on the USB driver's task.
-void storage_service(void);
-bool storage_ready(void);            // mounted for the app right now
+esp_err_t storage_init(void);
+bool storage_ready(void);            // mounted and usable
 // The built-in (Default theme) icon PNG for an app id, embedded in the firmware.
 bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len);
-bool storage_on_computer(void);      // a computer currently has the drive open
 bool storage_free_bytes(uint32_t *total, uint32_t *free_bytes);   // of the storage area
 // Wipes the storage area and lays down a fresh, empty filesystem. Everything on it is
 // lost; the caller restarts so the Default theme and Guide are seeded again.
 esp_err_t storage_format(void);
-uint32_t storage_generation(void);   // bumps every time the drive returns to the app
-
-// Settings > USB DRIVE (persisted, default off): off, the USB port is for charging,
-// flashing and the manager app; on, it is also the Tilt-a-tron drive. Needs a restart.
-bool storage_usb_drive_enabled(void);
-void storage_set_usb_drive_enabled(bool on);
+// Bumps whenever the files change under the console's feet - a theme arriving over the
+// link, say - so the theme reloads without a restart. Call storage_changed() after writing.
+uint32_t storage_generation(void);
+void storage_changed(void);
 
 #ifdef __cplusplus
 }

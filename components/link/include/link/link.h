@@ -68,6 +68,8 @@ void link_set_icon_hook(bool (*fn)(const char *id, const uint8_t **png, size_t *
 
 // Where FS_* paths resolve, e.g. "/data". Without it the file commands are refused.
 void link_set_fs_root(const char *root);
+// Called after anything is written or deleted, so the console can reload what it shows.
+void link_set_changed_hook(void (*fn)(void));
 
 // True while the app is connected, so the watch stays awake and holds off its log.
 bool link_session_active(void);

@@ -25,7 +25,18 @@ static int (*s_list_hook)(link_game_t *, int);
 static bool (*s_icon_hook)(const char *, const uint8_t **, size_t *);
 static const char *s_fs_root;
 
+// One reply buffer, shared: the server handles a single command at a time, and internal
+// RAM is what Wi-Fi and the display pipeline are short of.
+static uint8_t s_scratch[LINK_MAX_PAYLOAD];
+
 void link_set_fs_root(const char *root) { s_fs_root = root; }
+
+static void (*s_changed_hook)(void);
+void link_set_changed_hook(void (*fn)(void)) { s_changed_hook = fn; }
+static void note_changed(void)
+{
+    if (s_changed_hook) s_changed_hook();
+}
 
 // An upload in progress. Only one at a time: there is one app and one wire.
 static FILE *s_put;
@@ -168,12 +179,12 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
         break;
     }
     case LINK_LIST: {
-        static link_game_t games[24];
+        link_game_t *games = (link_game_t *)s_scratch;
         const int n = s_list_hook ? s_list_hook(games, 24) : 0;
-        uint8_t buf[1 + sizeof(games)];
-        buf[0] = (uint8_t)(n);
-        memcpy(buf + 1, games, n * sizeof(link_game_t));
-        send(seq, cmd | 0x80, buf, 1 + n * sizeof(link_game_t));
+        // The count byte goes in front of the entries, so shift them up once.
+        memmove(s_scratch + 1, games, n * sizeof(link_game_t));
+        s_scratch[0] = (uint8_t)(n);
+        send(seq, cmd | 0x80, s_scratch, 1 + n * sizeof(link_game_t));
         break;
     }
     case LINK_ICON: {
@@ -204,10 +215,10 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
             fail(seq, "no such folder");
             break;
         }
-        static uint8_t out[LINK_MAX_PAYLOAD];
+        uint8_t *out = s_scratch;
         size_t n = 0;
         const struct dirent *e;
-        while ((e = readdir(d)) && n + 300 < sizeof(out)) {
+        while ((e = readdir(d)) && n + 300 < LINK_MAX_PAYLOAD) {
             if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") || !real_entry(e->d_name)) continue;
             char full[320];
             snprintf(full, sizeof(full), "%s/%.*s", path, 100, e->d_name);
@@ -217,7 +228,7 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
             const uint32_t size = (uint32_t)st.st_size;
             memcpy(out + n, &size, 4);
             n += 4;
-            n += snprintf((char *)out + n, sizeof(out) - n, "%s", e->d_name) + 1;
+            n += snprintf((char *)out + n, LINK_MAX_PAYLOAD - n, "%.100s", e->d_name) + 1;
         }
         closedir(d);
         send(seq, cmd | 0x80, out, n);
@@ -275,6 +286,7 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
             break;
         }
         ESP_LOGI(TAG, "stored %s", s_put_path);
+        note_changed();
         send(seq, cmd | 0x80, NULL, 0);
         break;
     }
@@ -295,9 +307,9 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
             fail(seq, "no such file");
             break;
         }
-        static uint8_t out[LINK_MAX_PAYLOAD];
+        uint8_t *out = s_scratch;
         fseek(f, (long)offset, SEEK_SET);
-        const size_t n = fread(out, 1, sizeof(out), f);
+        const size_t n = fread(out, 1, LINK_MAX_PAYLOAD, f);
         fclose(f);
         send(seq, cmd | 0x80, out, n);
         break;
@@ -325,6 +337,7 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
             break;
         }
         rm_recursive(path, 0);
+        note_changed();
         send(seq, cmd | 0x80, NULL, 0);
         break;
     }
@@ -335,6 +348,7 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
             break;
         }
         mkdir(path, 0775);
+        note_changed();
         send(seq, cmd | 0x80, NULL, 0);
         break;
     }
@@ -412,6 +426,6 @@ void link_start(void)
         return;
     }
     usb_serial_jtag_vfs_use_driver();
-    xTaskCreatePinnedToCore(link_task, "link", 8192, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(link_task, "link", 5120, NULL, 5, NULL, 0);
     ESP_LOGI(TAG, "USB link ready");
 }

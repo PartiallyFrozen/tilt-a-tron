@@ -2,7 +2,7 @@
 # Install Tilt-a-tron on a Waveshare ESP32-S3-Touch-AMOLED-1.75C over USB (macOS / Linux).
 # No ESP-IDF needed: flashes the prebuilt firmware in firmware/ with esptool.
 #
-#   ./install.sh                install (keeps settings, Wi-Fi and the theme drive)
+#   ./install.sh                install (keeps settings, Wi-Fi and themes)
 #   ./install.sh --erase        wipe the whole flash first
 #   ./install.sh --port /dev/ttyACM0
 #

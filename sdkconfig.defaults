@@ -43,7 +43,7 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_ESP_WIFI_IRAM_OPT=n
 CONFIG_ESP_WIFI_RX_IRAM_OPT=n
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
-# Wi-Fi shares internal RAM with the display pipeline and the USB drive, so keep
+# Wi-Fi shares internal RAM with the display pipeline, so keep
 # its buffer pools modest and dynamic (dynamic ones can live in PSRAM).
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=24
@@ -56,14 +56,6 @@ CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
 CONFIG_LWIP_TCP_RECVMBOX_SIZE=32
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 
-# USB drive: the storage partition appears as a FAT drive on a computer
-CONFIG_TINYUSB_MSC_ENABLED=y
-# Copying files onto the drive is 4x faster with a big USB buffer than the 512 B
-# default (Espressif measures 0.24 -> 0.93 MB/s on the ESP32-S3).
-CONFIG_TINYUSB_MSC_BUFSIZE=8192
-CONFIG_TINYUSB_DESC_MANUFACTURER_STRING="Tilt-a-tron"
-CONFIG_TINYUSB_DESC_PRODUCT_STRING="Tilt-a-tron"
-CONFIG_TINYUSB_DESC_MSC_STRING="Tilt-a-tron"
 CONFIG_WL_SECTOR_SIZE_512=y
 CONFIG_WL_SECTOR_MODE_PERF=y
 CONFIG_FATFS_LFN_HEAP=y

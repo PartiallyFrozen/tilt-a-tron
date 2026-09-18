@@ -43,26 +43,6 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.2.1
-  espressif/esp_tinyusb:
-    component_hash: 0fab24246e07bdf919c6489d17a590cffbffbbf6a9c44d6235641645c8b946b7
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.0'
-    - name: espressif/tinyusb
-      registry_url: https://components.espressif.com
-      require: public
-      version: '>=0.17.0~2'
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    targets:
-    - esp32s2
-    - esp32s3
-    - esp32p4
-    - esp32h4
-    - esp32s31
-    version: 2.3.0
   espressif/mdns:
     component_hash: b679eafd0acae2066e2645bd91d073e33ca5be515e2545cd3c4e55a3e3bce3cb
     dependencies:
@@ -73,22 +53,6 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.13.1
-  espressif/tinyusb:
-    component_hash: 16c8d774dab1f484d3e0c0f61105624d2424bbae864efd19818baf7b451b41e7
-    dependencies:
-    - name: idf
-      require: private
-      version: '>=5.0'
-    source:
-      registry_url: https://components.espressif.com
-      type: service
-    targets:
-    - esp32s2
-    - esp32s3
-    - esp32p4
-    - esp32h4
-    - esp32s31
-    version: 0.21.0~2
   idf:
     source:
       type: idf
@@ -110,10 +74,9 @@ dependencies:
 direct_dependencies:
 - espressif/esp_codec_dev
 - espressif/esp_lcd_co5300
-- espressif/esp_tinyusb
 - espressif/mdns
 - idf
 - waveshare/esp_lcd_touch_cst9217
-manifest_hash: 01af397364c4333b2329fad92e296c43459c1e923e92106f17e170f9e5a40ca8
+manifest_hash: 4d6f75a1b74ef0b01127ec66e3b2e6a5209129c42cf2f8f8b5c8e261ca5a6d24
 target: esp32s3
 version: 2.0.0

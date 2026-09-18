@@ -1,7 +1,7 @@
 # Install Tilt-a-tron on a Waveshare ESP32-S3-Touch-AMOLED-1.75C over USB.
 # No ESP-IDF needed: this flashes the prebuilt firmware in firmware/ with esptool.
 #
-#   .\install.ps1            install (keeps settings, Wi-Fi and the theme drive)
+#   .\install.ps1            install (keeps settings, Wi-Fi and themes)
 #   .\install.ps1 -Erase     wipe the whole flash first (fresh start)
 #   .\install.ps1 -Port COM5 use a specific port
 #

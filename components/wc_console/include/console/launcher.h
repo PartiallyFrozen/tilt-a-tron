@@ -17,8 +17,6 @@ public:
     void enter(wc::Engine &e) override;
     void update(wc::Engine &e, float dt) override;
     void draw(wc::Engine &e, wc::Gfx &g) override;
-    // Don't power off while a computer has the drive open.
-    bool keepAwake() const override;
 
 private:
     static constexpr int ICON_R = 105;
@@ -43,7 +41,6 @@ private:
 
     float anim_ = 0;   // horizontal offset of the carousel, eases to 0
     bool full_ = true;
-    bool on_computer_ = false;   // the drive is open on a computer right now
     float hint_t_ = 0;
     float battery_t_ = 9;           // seconds since the battery was read
     int battery_pct_ = -1;

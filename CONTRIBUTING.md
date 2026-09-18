@@ -41,7 +41,7 @@ builds for everyone.
 | `components/engine` | Renderer, frame pipeline, input, the pixel `Canvas` every game draws on, saved settings |
 | `components/wc_console` | The shell: launcher, settings, themes, the shared pause menu |
 | `components/games` | The games |
-| `components/link` | USB protocol the manager app speaks |
+| `components/link` | USB protocol the manager app speaks, and how files get onto a watch |
 | `components/net` | Wi-Fi, over-the-air updates, the web endpoints |
 | `docs/GAME_API.md` | Where this is going: an OS plus games as installable files |
 
