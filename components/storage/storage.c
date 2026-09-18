@@ -339,6 +339,13 @@ void storage_service(void)
     seed_defaults();
 }
 
+esp_err_t storage_format(void)
+{
+    const esp_err_t err = esp_vfs_fat_spiflash_format_rw_wl(STORAGE_ROOT, "storage");
+    ESP_LOGW(TAG, "format: %s", esp_err_to_name(err));
+    return err;
+}
+
 bool storage_free_bytes(uint32_t *total, uint32_t *free_bytes)
 {
     uint64_t t = 0, f = 0;
