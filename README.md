@@ -118,6 +118,9 @@ Default to what's fun on a watch you hold: tilt, gravity, momentum, juice.
   clipped to the round visible area, merged into a few rectangles.
 - Dirty pixels are copied into a pool of internal **DMA buffers** and queued to a
   **core 0** task that waits for the panel's **TE (vsync) edge** and streams them.
+  Canvas games skip the framebuffer: their bands are generated straight into the
+  DMA buffers (each just under the 32 KB single-transfer limit, and only as wide
+  as the round panel is at that height), so a whole frame is on the wire in ~14 ms.
 - At most **one frame is in flight**: `present()` blocks until the previous frame
   starts transmitting, so every frame is rendered from fresh input (~1 frame latency).
 - Input is sampled on core 0 independently of frame rate: buttons 500 Hz, IMU 250 Hz,
@@ -138,10 +141,30 @@ class MyGame : public wc::Game {
 ```
 
 Register it in `main/main.cpp`'s `apps[]` with a name, accent color and an icon
-function (see `wc_console/icons.cpp`). Draw incrementally rather than clearing
-the whole screen each frame: a full-screen change costs ~16 ms at 40 MHz.
-Round games can use `wc::Polar` (per-pixel angle/radius tables) to shade rings
-and arcs cheaply.
+function (see `wc_console/icons.cpp`).
+
+### Pixel canvas and sprite sheets (how all the games draw now)
+
+Games draw on a `wc::Canvas`: a small 8-bit palette picture (233x233 at 2x or
+155x155 at 3x, in PSRAM) that the presenter scales straight into the display's DMA
+bands, skipping the 466x466 framebuffer entirely. A full redraw costs well under a
+millisecond, so games repaint every frame and run at the display's 60 Hz limit;
+`presentRotated()` rotates the canvas on the way out (Grand Prix). Palette entries
+can change per frame for free (sky gradients, tints).
+
+Sprites are plain PNGs under `components/games/assets/<game>/`, embedded by the
+`games` CMakeLists and loaded with `Canvas::loadSheet(sheet, png, len, fw, fh)`
+(frames side by side, alpha < 128 = transparent). Edit them in any image editor;
+`tools/make_sprites.py` regenerates the originals from letter grids and
+`tools/preview_sheets.py <game>` tiles them for a look. `Polar` (per-pixel
+angle/radius tables) is still there for round layouts like Breakout's rings.
+
+### Seeing the watch from the PC
+
+With Wi-Fi on, `GET /screen` returns a PNG of the display (works for canvas games
+too) and `GET /input?...` drives it: `app=N` (0 = home), `tap=x,y`,
+`swipe=x0,y0,x1,y1`, `hold=x,y,ms`, `btn=a|b[,ms]`, `tilt=ax,ay,az` or `tilt=off`.
+Handy for checking a game without picking the watch up.
 
 ## Breakout controls
 
