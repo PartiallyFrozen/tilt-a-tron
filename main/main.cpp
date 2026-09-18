@@ -244,6 +244,7 @@ extern "C" void app_main(void)
     // bench (debug mode) sleeping drops the serial/flashing connection.
     engine.setKeepAwakeHook([] { return storage_on_computer() || pmu_usb_power(); });
     engine.setBusyHook(storage_on_computer);
+    net_set_reboot_guard(storage_on_computer);
     engine.setAutoOffSeconds(console::autoOffSeconds());
     engine.run(launcher);
 }

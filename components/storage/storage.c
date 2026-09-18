@@ -240,10 +240,28 @@ static void on_msc_event(tinyusb_msc_storage_handle_t handle, tinyusb_msc_event_
     }
 }
 
+// A never-used partition reads as all 0xFF. Only such a partition may be
+// formatted automatically; a damaged one keeps its data for a computer to repair.
+static bool partition_blank(void)
+{
+    const esp_partition_t *part =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
+    if (!part) return false;
+    uint8_t buf[256];
+    for (size_t off = 0; off < 8192; off += sizeof(buf)) {
+        if (esp_partition_read(part, off, buf, sizeof(buf)) != ESP_OK) return false;
+        for (size_t i = 0; i < sizeof(buf); i++)
+            if (buf[i] != 0xFF) return false;
+    }
+    return true;
+}
+
 esp_err_t storage_init(bool usb_drive)
 {
+    const bool blank = partition_blank();
+    if (blank) ESP_LOGI(TAG, "blank drive: formatting");
     esp_vfs_fat_mount_config_t mount = {
-        .format_if_mount_failed = true,
+        .format_if_mount_failed = blank,
         .max_files = 8,
         .allocation_unit_size = 0,
     };
@@ -258,7 +276,12 @@ esp_err_t storage_init(bool usb_drive)
         esp_vfs_fat_info(STORAGE_ROOT, &total, &free_bytes);
         ESP_LOGI(TAG, "drive: %llu KB, %llu KB free", total / 1024, free_bytes / 1024);
         if (total == 0 || (mkdir(STORAGE_THEMES, 0775) != 0 && errno != EEXIST)) {
-            // Leftover data from an older partition layout: start with a clean drive.
+            if (!blank) {
+                // Damaged, but it has data: leave it for a computer's disk check
+                // (plug in with DEBUG MODE off) rather than wipe the themes.
+                ESP_LOGE(TAG, "drive damaged (errno %d): not formatting, plug into a computer to repair", errno);
+                return ESP_FAIL;
+            }
             ESP_LOGW(TAG, "drive unusable (errno %d), formatting", errno);
             if ((err = esp_vfs_fat_spiflash_format_rw_wl(STORAGE_ROOT, "storage")) != ESP_OK) {
                 ESP_LOGE(TAG, "format failed: %s", esp_err_to_name(err));

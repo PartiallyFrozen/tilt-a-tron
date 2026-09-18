@@ -44,6 +44,7 @@ void SettingsApp::activate(wc::Engine &e, int item)
     }
     case DEBUG_MODE:
         // Switches what the USB port is (flashing/logs vs. the theme drive): needs a restart.
+        if (storage_on_computer()) return;   // eject the drive first; restarting now would corrupt it
         storage_set_debug_mode(!storage_debug_mode());
         esp_restart();
         return;
