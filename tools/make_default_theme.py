@@ -1,6 +1,6 @@
 """Generates themes/Default (the built-in look) as plain PNG + JSON files.
 
-The firmware embeds these and copies them onto the Tilt-a-tron's USB drive the
+The firmware embeds these and writes them into the Tilt-a-tron's storage the
 first time it boots, so people have a working example to copy and edit.
 
     python tools/make_default_theme.py
