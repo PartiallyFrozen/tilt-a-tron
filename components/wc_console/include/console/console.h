@@ -26,6 +26,10 @@ int brightnessLevel();
 void setBrightnessLevel(int level);   // applies and saves
 void applyBrightness();
 
+// ---- apps taken off the home screen (Settings > GAMES; persisted). Settings can't be.
+bool appHidden(const char *id);
+void setAppHidden(const char *id, bool hidden);
+
 // ---- motion sensor calibration (persisted; measured by Settings > CALIBRATE)
 void loadTiltCalibration();   // at boot: hands the saved correction to the input layer
 void saveTiltCalibration(const wc::TiltCal &cal);

@@ -221,6 +221,8 @@ extern "C" void app_main(void)
         {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings},
     };
     static console::Launcher launcher(apps, sizeof(apps) / sizeof(apps[0]));
+    static console::AppsApp games_screen(&settings, apps, sizeof(apps) / sizeof(apps[0]));
+    settings.setGamesScreen(&games_screen);
     // GET /input: remote control for testing without touching the watch.
     //   app=N (0 = home)  tap=x,y  swipe=x0,y0,x1,y1  hold=x,y,ms  btn=a|b[,ms]  tilt=ax,ay,az|off
     s_apps = apps;

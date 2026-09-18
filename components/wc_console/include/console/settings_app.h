@@ -2,6 +2,7 @@
 // USB drive, motion sensor calibration, firmware update, version.
 #pragma once
 
+#include "console/console.h"
 #include "console/scroll_list.h"
 #include "console/wifi_setup.h"
 #include "engine/engine.h"
@@ -23,8 +24,28 @@ private:
     wc::Gestures ges_;
 };
 
+// Settings -> GAMES: take apps off the home screen, or put them back.
+class AppsApp : public wc::Game {
+public:
+    AppsApp(wc::Game *back, const App *apps, int count) : back_(back), apps_(apps), n_(count) {}
+    void enter(wc::Engine &e) override;
+    void update(wc::Engine &e, float dt) override;
+    void draw(wc::Engine &e, wc::Gfx &g) override;
+
+private:
+    wc::Game *back_;
+    const App *apps_;
+    int n_;
+    int rows_[24];   // app index for each list row (Settings itself isn't listed)
+    int row_count_ = 0;
+    wc::Gestures ges_;
+    ui::ScrollList list_;
+    bool full_ = true;
+};
+
 class SettingsApp : public wc::Game {
 public:
+    void setGamesScreen(wc::Game *games) { games_ = games; }
     void setScreens(wc::Game *wifi, wc::Game *updater, wc::Game *calibrate = nullptr)
     {
         wifi_ = wifi;
@@ -36,13 +57,14 @@ public:
     void draw(wc::Engine &e, wc::Gfx &g) override;
 
 private:
-    enum Item { BRIGHTNESS, VOLUME, THEME, WIFI, NETWORK, AUTO_OFF, CALIBRATE, DEBUG_MODE, UPDATE, VERSION, ITEM_COUNT };
+    enum Item { BRIGHTNESS, VOLUME, THEME, GAMES, WIFI, NETWORK, AUTO_OFF, CALIBRATE, DEBUG_MODE, UPDATE, VERSION, ITEM_COUNT };
     void activate(wc::Engine &e, int item);
     void drawRow(wc::Gfx &g, int item, int y);
 
     wc::Game *wifi_ = nullptr;
     wc::Game *updater_ = nullptr;
     wc::Game *calibrate_ = nullptr;
+    wc::Game *games_ = nullptr;
     wc::Gestures ges_;
     ui::ScrollList list_;
     bool full_ = true;

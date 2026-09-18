@@ -79,6 +79,28 @@ void setAutoOffIndex(int index)
     }
 }
 
+bool appHidden(const char *id)
+{
+    if (std::strcmp(id, "settings") == 0) return false;
+    uint8_t v = 0;
+    nvs_handle_t h;
+    if (nvs_open("apps", NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, id, &v);
+        nvs_close(h);
+    }
+    return v != 0;
+}
+
+void setAppHidden(const char *id, bool hidden)
+{
+    nvs_handle_t h;
+    if (nvs_open("apps", NVS_READWRITE, &h) != ESP_OK) return;
+    if (hidden) nvs_set_u8(h, id, 1);
+    else nvs_erase_key(h, id);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
 static bool s_tilt_calibrated = false;
 
 void loadTiltCalibration()

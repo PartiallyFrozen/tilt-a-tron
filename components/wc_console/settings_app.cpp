@@ -25,6 +25,51 @@ void WifiApp::update(wc::Engine &e, float dt)
     if (back_) e.switchTo(*back_);
 }
 
+void AppsApp::enter(wc::Engine &e)
+{
+    row_count_ = 0;
+    for (int i = 0; i < n_ && row_count_ < 24; i++)
+        if (std::string(apps_[i].id) != "settings") rows_[row_count_++] = i;
+    list_.reset();
+    full_ = true;
+}
+
+void AppsApp::update(wc::Engine &e, float dt)
+{
+    const auto &touch = e.input().touch;
+    ges_.update(touch);
+    list_.setCount(row_count_);
+    const int picked = list_.update(touch, ges_, dt);
+    if (picked >= 0) {
+        const App &app = apps_[rows_[picked]];
+        setAppHidden(app.id, !appHidden(app.id));
+        list_.invalidate();
+        return;
+    }
+    const bool back = (e.input().clicked & wc::BTN_B) || (ges_.swipe_right && !list_.dragging()) ||
+                      (ges_.tap && ui::buttonRect(0, 1).hit(ges_.x, ges_.y));
+    if (back) {
+        if (back_) e.switchTo(*back_);
+        else e.goHome();
+    }
+}
+
+void AppsApp::draw(wc::Engine &e, wc::Gfx &g)
+{
+    if (full_) {
+        ui::clearScreen(g);
+        ui::title(g, "GAMES");
+        ui::outlineButton(g, ui::buttonRect(0, 1), "BACK");
+        list_.invalidate();
+        full_ = false;
+    }
+    list_.draw(g, [this](wc::Gfx &gg, int row, int y) {
+        const App &app = apps_[rows_[row]];
+        const bool hidden = appHidden(app.id);
+        ui::rowAt(gg, y, app.name, hidden ? "HIDDEN" : "ON", hidden ? ui::DIM : ui::GO);
+    });
+}
+
 void SettingsApp::activate(wc::Engine &e, int item)
 {
     switch (item) {
@@ -67,6 +112,9 @@ void SettingsApp::activate(wc::Engine &e, int item)
         break;
     case CALIBRATE:
         if (calibrate_) e.switchTo(*calibrate_);
+        return;
+    case GAMES:
+        if (games_) e.switchTo(*games_);
         return;
     case UPDATE:
         if (net_state() == NET_CONNECTED && updater_) e.switchTo(*updater_);
@@ -141,6 +189,7 @@ void SettingsApp::drawRow(wc::Gfx &g, int item, int y)
         break;
     }
     case AUTO_OFF: ui::rowAt(g, y, "AUTO OFF", AUTO_OFF_NAMES[autoOffIndex()]); break;
+    case GAMES: ui::rowAt(g, y, "GAMES", "CHOOSE", ui::ACCENT); break;
     case CALIBRATE: ui::rowAt(g, y, "CALIBRATE", tiltCalibrated() ? "DONE" : "GO", tiltCalibrated() ? ui::GO : ui::ACCENT); break;
     case UPDATE: ui::rowAt(g, y, "UPDATE", "GO", ui::ACCENT); break;
     case VERSION: ui::rowAt(g, y, "VERSION", firmwareVersion(), ui::DIM); break;

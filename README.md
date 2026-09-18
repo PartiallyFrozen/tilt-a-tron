@@ -134,6 +134,16 @@ are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the tem
 - Wi-Fi is **off by default**. When on, it connects in the background at boot with
   modem power-save and reconnects with backoff; games keep running on core 1.
 
+### Settings worth knowing
+
+- **GAMES**: take any app off the home screen (HIDDEN) or put it back (ON). Nothing is deleted;
+  the app and its saves come back when you turn it on again
+- **CALIBRATE**: a one-minute walkthrough (lay it flat, spin it half a turn, check the bubble
+  level) that measures this watch's motion sensor at rest and corrects every game's tilt
+- **USB DRIVE**: off = the USB port is for charging, flashing and logs; on = it's the theme drive
+- The watch never dozes off while something is talking to it over Wi-Fi: it stays awake during
+  an update or upload and for two minutes after any request to its web server
+
 ## Shared console UX
 
 All apps follow the same conventions (use `console::ui` and `wc::Gestures`):
@@ -272,12 +282,15 @@ the watch like a steering wheel.
   to 6 MB. Turn on Settings > USB DRIVE, copy the WAD into the drive's `Doom` folder, eject, and
   open DOOM: it copies the file into its own flash region once (about a minute). Developers can
   send it over Wi-Fi instead: `curl --data-binary @doom1.wad "http://<watch>/wad?name=doom1.wad"`
-- How it fits: the WAD is memory-mapped straight from flash, so graphics and sounds cost no RAM;
-  the engine runs in its own task with its stack, zone heap (2-3 MB) and globals all in PSRAM.
-  It renders 320x200 at up to 35 Hz; the console shows the newest frame rotated and stretched
-  (4:3 pixels, the middle ~240 columns fill the round screen) at the display's own rate, so the
-  horizon stays level even between Doom frames. Health, ammo and keys are redrawn in the visible
-  part of the picture; sound effects play through the console mixer; there's no music yet
+- How it fits: the WAD sits in its own 6 MB region at the end of the flash (that far up it
+  can't be memory-mapped, so lumps are read on demand and cached in Doom's heap). The engine
+  runs in its own task with its stack, a ~2.2 MB heap and its globals all in PSRAM, leaving
+  about 1.6 MB of PSRAM for everything else; it stays in memory once started, so going home
+  and back is instant. It renders 320x200 at up to 35 Hz; the console shows the newest frame
+  rotated and stretched (4:3 pixels, the middle ~240 columns fill the round screen) at the
+  display's own rate, so the horizon stays level even between Doom frames. Health, ammo and
+  keys are redrawn in the visible part of the picture; sound effects play through the console
+  mixer; there's no music yet
 - Nothing is saved from inside the engine (no savegames or config yet); skill and walk
   sensitivity are kept by the console
 - **Licence:** `components/doom` is GPL-2.0-or-later (see its `LICENSE`), so firmware built
