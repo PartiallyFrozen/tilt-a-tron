@@ -156,6 +156,8 @@ void Presenter::presentBands(const BandFill &fill)
     xSemaphoreTake(static_cast<SemaphoreHandle_t>(idle_sem_), portMAX_DELAY);
     stats_.last_wait_us = uint32_t(esp_timer_get_time() - t0);
     stats_.last_bytes = 0;
+    Gfx *snap = snap_;   // a screenshot request covers one whole frame
+    snap_ = nullptr;
 
     // The wire is the bottleneck for a full-screen frame, so send as few bytes as
     // possible: each band is only as wide as the round panel is at that height.
@@ -176,8 +178,8 @@ void Presenter::presentBands(const BandFill &fill)
         Item *it;
         xQueueReceive(FREE_Q, &it, portMAX_DELAY);   // waits here while the wire is busy
         fill(y, rows, x0, x1 - x0, it->px);
-        if (snap_) {
-            Color *fb = snap_->pixels();
+        if (snap) {
+            Color *fb = snap->pixels();
             for (int r = 0; r < rows; r++)
                 std::memcpy(fb + (y + r) * Gfx::W + x0, it->px + r * (x1 - x0), (x1 - x0) * sizeof(Color));
         }
@@ -193,7 +195,6 @@ void Presenter::presentBands(const BandFill &fill)
     Item *end = kFrameEnd;
     xQueueSend(WORK_Q, &end, portMAX_DELAY);
     streamed_ = true;
-    snap_ = nullptr;
     stats_.last_copy_us = uint32_t(esp_timer_get_time() - t0) - stats_.last_wait_us;
 }
 

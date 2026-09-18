@@ -8,8 +8,10 @@
 
 #include "audio/audio.h"
 #include "console/ui.h"
+#include "engine/canvas.h"
 #include "engine/gestures.h"
 #include "engine/polar.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "nvs.h"
@@ -28,7 +30,9 @@ constexpr float C = 233.0f;
 constexpr int W = Gfx::W, H = Gfx::H;
 constexpr float R = 233;
 
-constexpr float PADDLE_R = 212, PADDLE_T = 9, BALL_R = 5.5f, LOSE_R = R + 10, CORE_R = 34;
+constexpr float PADDLE_R = 212, PADDLE_T = 10, BALL_R = 6.5f, LOSE_R = R + 10, CORE_R = 34;
+// Drawn on a 233 x 233 canvas shown at 2x; the game itself keeps screen units.
+constexpr int SCALE = 2, CW = (Gfx::W + SCALE - 1) / SCALE;
 constexpr float RING_IN = CORE_R + 10, GAP = 3;
 constexpr int ROWS = 4;
 constexpr float FIELD_R = 120, TAPER = 0.4f, BASE_SPEED = 200;
@@ -146,8 +150,8 @@ struct Ring {
     int n, hp;
     RGB color;
     std::vector<int8_t> bricks;
-    // shading, precomputed
-    Color full, dim, outline;
+    // shading, precomputed (palette indices)
+    uint8_t full, dim, outline, shade, dim_shade;
     uint16_t r0_16, r1_16, gap_frac, outline_frac, off16;
 };
 
@@ -230,19 +234,13 @@ struct Breakout::State {
     struct { int ring = -1, idx = 0; float time = 0; } flash_brick_;
     float grav_x = 0, grav_y = 1;   // smoothed gravity in screen axes (tilt mode)
 
-    // --- rendering bookkeeping
-    bool full_redraw = true;
-    std::vector<Rect> scene_dirty;    // scene pixels that changed (bricks, paddle, shield, core)
-    std::vector<Rect> sprite_rects;   // where sprites were drawn last frame
-    bool core_dirty = true;
-    float drawn_paddle = -100, drawn_hw = 0;
-    bool drawn_flash = false, drawn_shield = false, drawn_over = false;
-    int drawn_score = -1, drawn_lives = -1;
-
-    // per-frame shading constants
-    uint16_t pad_a16 = 0, pad_hw16 = 0;
-    float cap_x[2] = {}, cap_y[2] = {};
-    Color pad_color = 0;
+    // --- rendering
+    Canvas canvas;
+    uint8_t *scene = nullptr;         // rings + core + backdrop, rebuilt when a brick changes
+    bool full_redraw = true;          // scene is stale
+    uint8_t c_black = 0, c_white = 0, c_track = 0, c_core = 0, c_core_edge = 0, c_shield = 0, c_star = 0;
+    uint8_t c_star2 = 0, c_pad = 0, c_pad_flash = 0, c_pad_edge = 0, c_ball_rim = 0, c_life_off = 0;
+    uint8_t c_cyan = 0, c_yellow = 0, c_panel = 0;
 
     // =================================================================== setup
 
@@ -272,9 +270,11 @@ struct Breakout::State {
             g.spd = (i % 2 ? 1 : -1) * (0.1f + 0.03f * i);
             g.bricks.assign(g.n, int8_t(g.hp));
 
-            g.full = col(g.color);
-            g.dim = col(g.color, 0.85f);
-            g.outline = col(lerp(g.color, WHITE, 0.75f));
+            g.full = canvas.color(col(g.color));
+            g.dim = canvas.color(col(g.color, 0.85f));
+            g.outline = canvas.color(col(lerp(g.color, WHITE, 0.75f)));
+            g.shade = canvas.color(col(g.color, 0.55f));
+            g.dim_shade = canvas.color(col(g.color, 0.5f));
             g.r0_16 = uint16_t(r0 * 16);
             g.r1_16 = uint16_t(r1 * 16);
             const float frac_per_rad = g.n / TAU * 65536.0f;
@@ -366,22 +366,21 @@ struct Breakout::State {
     }
 
     // Paint one brick sector solid, so a hit flashes before the scene redraws it.
-    void flashBrick(Gfx &gfx, const Ring &g, int idx, Color c)
+    void flashBrick(Canvas &c, const Ring &g, int idx, uint8_t col)
     {
         const Rect box = brickBox(g, idx);
         const uint32_t sec = 65536u / uint32_t(g.n);
-        Color *fb = gfx.pixels();
-        for (int y = std::max(0, box.y); y < std::min(H, box.y + box.h); y++) {
-            for (int x = std::max(0, box.x); x < std::min(W, box.x + box.w); x++) {
-                const int i = y * W + x;
+        uint8_t *px = c.pixels();
+        for (int y = std::max(0, box.y / 2); y < std::min(CW, (box.y + box.h) / 2 + 1); y++) {
+            for (int x = std::max(0, box.x / 2); x < std::min(CW, (box.x + box.w) / 2 + 1); x++) {
+                const int i = (2 * y) * W + 2 * x;
                 const uint16_t r16 = Polar::radius16(i);
                 if (r16 < g.r0_16 || r16 > g.r1_16) continue;
                 const uint16_t rel = uint16_t(Polar::angle(i) - g.off16);
                 if (rel / sec != uint32_t(idx)) continue;
-                fb[i] = c;
+                px[y * CW + x] = col;
             }
         }
-        gfx.markDirty(box.x, box.y, box.w, box.h);
     }
 
     void hitBrick(int gi, int idx)
@@ -405,7 +404,7 @@ struct Breakout::State {
             score += 2;
             burst(x, y, WHITE, 5);
         }
-        scene_dirty.push_back(brickBox(g, idx));
+        full_redraw = true;
     }
 
     void applyCap(CapType t)
@@ -665,7 +664,7 @@ struct Breakout::State {
         if (flash_brick_.ring >= 0) {
             flash_brick_.time -= dt;
             if (flash_brick_.time <= 0) {
-                scene_dirty.push_back(brickBox(rings[flash_brick_.ring], flash_brick_.idx));
+                full_redraw = true;
                 flash_brick_.ring = -1;
             }
         }
@@ -748,24 +747,50 @@ struct Breakout::State {
     }
 
     // =================================================================== rendering
-
-    // The static scene (everything except balls, particles, capsules and text) at one pixel.
-    inline Color shade(int x, int y) const
+    bool loadAssets()
     {
-        static constexpr Color TRACK = rgb(13, 13, 13);
-        static constexpr Color CORE_FILL = rgb(0x10, 0x13, 0x1a);
-        static constexpr Color CORE_EDGE = rgb(0x31, 0x34, 0x3a);
-        static constexpr Color SHIELD = rgb(0x5a, 0xb0, 0xb4);
+        if (!canvas.init(SCALE)) return false;
+        scene = static_cast<uint8_t *>(heap_caps_malloc(CW * CW, MALLOC_CAP_SPIRAM));
+        if (!scene) return false;
+        c_black = canvas.color(rgb(0, 0, 0));
+        c_white = canvas.color(rgb(255, 255, 255));
+        c_track = canvas.color(rgb(22, 22, 28));
+        c_core = canvas.color(rgb(0x10, 0x13, 0x1a));
+        c_core_edge = canvas.color(rgb(0x4a, 0x50, 0x60));
+        c_shield = canvas.color(rgb(0x5a, 0xb0, 0xb4));
+        c_star = canvas.color(rgb(40, 42, 56));
+        c_star2 = canvas.color(rgb(70, 74, 96));
+        c_pad = canvas.color(rgb(235, 238, 245));
+        c_pad_flash = canvas.color(col(hex(0xffd23f)));
+        c_pad_edge = canvas.color(rgb(120, 130, 160));
+        c_ball_rim = canvas.color(rgb(170, 190, 220));
+        c_life_off = canvas.color(rgb(60, 60, 60));
+        c_cyan = canvas.color(colors::cyan);
+        c_yellow = canvas.color(colors::yellow);
+        c_panel = canvas.color(rgb(16, 18, 26));
+        return true;
+    }
 
-        const int i = y * W + x;
+    // Colours that fade (particles, pops, shockwaves) are quantised to four
+    // brightness steps so they don't eat the palette.
+    uint8_t fade(RGB c, float k)
+    {
+        const int q = std::max(1, std::min(4, int(k * 4 + 0.999f)));
+        return canvas.color(col(c, q / 4.0f));
+    }
+
+    // The static scene at one canvas pixel: backdrop, brick rings and the core.
+    inline uint8_t shadeScene(int x, int y) const
+    {
+        const int i = (2 * y) * W + 2 * x;
         const uint16_t r16 = Polar::radius16(i);
-        if (r16 > uint16_t(R * 16)) return 0;
+        if (r16 > uint16_t(R * 16)) return c_black;
         const uint16_t a = Polar::angle(i);
-        Color c = 0;
 
         if (r16 <= uint16_t(CORE_R * 16)) {
-            c = r16 >= uint16_t((CORE_R - 1.5f) * 16) ? CORE_EDGE : CORE_FILL;
-        } else if (r16 < uint16_t(FIELD_R * 16)) {
+            return r16 >= uint16_t((CORE_R - 2.0f) * 16) ? c_core_edge : c_core;
+        }
+        if (r16 < uint16_t(FIELD_R * 16)) {
             for (const Ring &g : rings) {
                 if (r16 < g.r0_16 || r16 > g.r1_16) continue;
                 const uint32_t prod = uint32_t(uint16_t(a - g.off16)) * uint32_t(g.n);
@@ -773,102 +798,99 @@ struct Breakout::State {
                 const uint16_t frac = prod & 0xFFFF;
                 const int8_t hp = g.bricks[idx];
                 if (hp <= 0 || frac < g.gap_frac || frac > 65535 - g.gap_frac) break;
+                // Bevel: lit along the outer edge and leading side, dark along the
+                // inner edge and trailing side, so each brick reads as a little tile.
+                const uint16_t edge = g.gap_frac + g.outline_frac;
+                const bool outer = r16 > g.r1_16 - 32, inner = r16 < g.r0_16 + 32;
+                const bool lead = frac < edge, trail = frac > 65535 - edge;
                 if (hp > 1) {
-                    const uint16_t edge = g.gap_frac + g.outline_frac;
-                    c = (r16 < g.r0_16 + 24 || r16 > g.r1_16 - 24 || frac < edge || frac > 65535 - edge) ? g.outline
-                                                                                                       : g.full;
-                } else {
-                    c = g.dim;
+                    if (outer || lead) return g.outline;
+                    if (inner || trail) return g.shade;
+                    return g.full;
                 }
-                break;
-            }
-        } else if (r16 >= uint16_t(PADDLE_R * 16) && r16 <= uint16_t((PADDLE_R + PADDLE_T) * 16)) {
-            c = TRACK;
-            if (shield && r16 >= uint16_t((PADDLE_R + 4) * 16) && r16 <= uint16_t((PADDLE_R + 6) * 16)) c = SHIELD;
-            const int16_t d = int16_t(a - pad_a16);
-            if ((d < 0 ? -d : d) <= pad_hw16) {
-                c = pad_color;
-            } else {
-                const float fx = x + 0.5f, fy = y + 0.5f, cr2 = (PADDLE_T / 2) * (PADDLE_T / 2);
-                for (int k = 0; k < 2; k++) {
-                    const float ex = fx - cap_x[k], ey = fy - cap_y[k];
-                    if (ex * ex + ey * ey <= cr2) c = pad_color;
-                }
+                if (inner || trail) return g.dim_shade;
+                return g.dim;
             }
         }
-
-        if (over && c) {
-            // 35% brightness overlay
-            const uint16_t v = uint16_t((c >> 8) | (c << 8));
-            const uint16_t rr = ((v >> 11) & 31) * 35 / 100, gg = ((v >> 5) & 63) * 35 / 100, bb = (v & 31) * 35 / 100;
-            const uint16_t o = uint16_t((rr << 11) | (gg << 5) | bb);
-            c = uint16_t((o >> 8) | (o << 8));
-        }
-        return c;
+        // Backdrop: a faint scatter of stars in the empty space.
+        const unsigned h = unsigned(x * 2654435761u) ^ unsigned(y * 40503u);
+        if ((h >> 9) % 97 == 0) return ((h >> 3) & 3) ? c_star : c_star2;
+        return c_black;
     }
 
-    void restore(Gfx &g, Rect r)
+    void buildScene()
     {
-        if (r.x < 0) { r.w += r.x; r.x = 0; }
-        if (r.y < 0) { r.h += r.y; r.y = 0; }
-        if (r.x + r.w > W) r.w = W - r.x;
-        if (r.y + r.h > H) r.h = H - r.y;
-        if (r.w <= 0 || r.h <= 0) return;
-        Color *fb = g.pixels();
-        for (int y = r.y; y < r.y + r.h; y++) {
-            Color *row = fb + y * W;
-            for (int x = r.x; x < r.x + r.w; x++) row[x] = shade(x, y);
-        }
-        g.markDirty(r.x, r.y, r.w, r.h);
+        for (int y = 0; y < CW; y++)
+            for (int x = 0; x < CW; x++) scene[y * CW + x] = shadeScene(x, y);
     }
 
-    Rect paddleBox(float p, float h) const
+    // Paddle track, shield and paddle, painted over the scene every frame.
+    void drawPaddle(Canvas &c)
     {
-        const float capA = (PADDLE_T / 2 + 1) / PADDLE_R;
-        return arcBox(p - h - capA, p + h + capA, PADDLE_R - 1, PADDLE_R + PADDLE_T + 1);
-    }
-
-    void setShadingConstants()
-    {
-        pad_a16 = toA16(paddle);
-        pad_hw16 = uint16_t(hw / TAU * 65536.0f);
-        const float cr = PADDLE_R + PADDLE_T / 2;
+        const uint16_t pad_a16 = toA16(paddle), pad_hw16 = uint16_t(hw / TAU * 65536.0f);
+        const float cr = PADDLE_R + PADDLE_T / 2, cr2 = (PADDLE_T / 2) * (PADDLE_T / 2);
+        float cap_x[2], cap_y[2];
         for (int k = 0; k < 2; k++) {
             const float a = paddle + (k ? hw : -hw);
             cap_x[k] = C + std::cos(a) * cr;
             cap_y[k] = C + std::sin(a) * cr;
         }
-        pad_color = flash > 0 ? col(hex(0xffd23f)) : colors::white;
+        const uint8_t pad = flash > 0 ? c_pad_flash : c_pad;
+        const int y0 = int((C - PADDLE_R - PADDLE_T - 2) / 2), y1 = int((C + PADDLE_R + PADDLE_T + 2) / 2);
+        uint8_t *px = c.pixels();
+        for (int y = std::max(0, y0); y <= std::min(CW - 1, y1); y++) {
+            for (int x = 0; x < CW; x++) {
+                const int i = (2 * y) * W + 2 * x;
+                const uint16_t r16 = Polar::radius16(i);
+                if (r16 < uint16_t((PADDLE_R - 1) * 16) || r16 > uint16_t((PADDLE_R + PADDLE_T + 1) * 16)) continue;
+                uint8_t col = c_track;
+                if (shield && r16 >= uint16_t((PADDLE_R + 4) * 16) && r16 <= uint16_t((PADDLE_R + 6) * 16)) col = c_shield;
+                const int16_t d = int16_t(Polar::angle(i) - pad_a16);
+                bool on = (d < 0 ? -d : d) <= pad_hw16 && r16 >= uint16_t(PADDLE_R * 16) &&
+                          r16 <= uint16_t((PADDLE_R + PADDLE_T) * 16);
+                if (!on) {
+                    const float fx = 2 * x + 1.0f, fy = 2 * y + 1.0f;
+                    for (int k = 0; k < 2 && !on; k++) {
+                        const float ex = fx - cap_x[k], ey = fy - cap_y[k];
+                        on = ex * ex + ey * ey <= cr2;
+                    }
+                }
+                if (on) {
+                    // Lit outer face, darker inner face.
+                    col = r16 > uint16_t((PADDLE_R + PADDLE_T - 2.5f) * 16) ? c_pad_edge
+                          : r16 < uint16_t((PADDLE_R + 2.5f) * 16)          ? c_white
+                                                                             : pad;
+                }
+                px[y * CW + x] = col;
+            }
+        }
     }
 
-    static Rect disc(Gfx &g, float cx, float cy, float r, Color c)
+    void disc(Canvas &c, float cx, float cy, float r, uint8_t col)
     {
+        cx /= 2, cy /= 2, r /= 2;
         const int y0 = int(std::floor(cy - r)), y1 = int(std::ceil(cy + r));
         for (int y = y0; y <= y1; y++) {
             const float dy = y + 0.5f - cy;
             if (dy * dy > r * r) continue;
             const float half = std::sqrt(r * r - dy * dy);
             const int xa = int(std::ceil(cx - half - 0.5f)), xb = int(std::floor(cx + half - 0.5f));
-            if (xb >= xa) g.fillRect(xa, y, xb - xa + 1, 1, c);
+            if (xb >= xa) c.fillRect(xa, y, xb - xa + 1, 1, col);
         }
-        return {int(cx - r) - 1, y0 - 1, int(2 * r) + 4, y1 - y0 + 3};
     }
 
-    // All game text is bold; scale 2 is the smallest used anywhere.
-    Rect textCentered(Gfx &g, float cx, float cy, const char *s, Color c, int scale)
+    // Text in screen units: scale 2 -> canvas 1, scale 4 -> canvas 2.
+    void textCentered(Canvas &c, float cx, float cy, const char *s, uint8_t col, int scale)
     {
-        int x, y, w, h;
-        g.textCentered(int(cx), int(cy), s, c, scale, true, &x, &y, &w, &h);
-        return {x - 1, y - 1, w + 2, h + 2};
+        c.textCentered(int(cx / 2), int(cy / 2), s, col, std::max(1, scale / 2), true);
     }
 
-    void drawCore(Gfx &g)
+    void drawCore(Canvas &c)
     {
         char buf[16];
         snprintf(buf, sizeof(buf), "%d", score);
-        const int scale = std::strlen(buf) > 3 ? 2 : 3;
-        textCentered(g, C, C - 7, buf, colors::white, scale);
-        for (int i = 0; i < 3; i++) disc(g, C - 11 + i * 11, C + 19, 3.2f, i < lives ? colors::white : rgb(60, 60, 60));
+        textCentered(c, C, C - 7, buf, c_white, std::strlen(buf) > 3 ? 2 : 3);
+        for (int i = 0; i < 3; i++) disc(c, C - 11 + i * 11, C + 19, 3.4f, i < lives ? c_white : c_life_off);
     }
 
     void drawMenu(Gfx &g)
@@ -885,98 +907,56 @@ struct Breakout::State {
         ui::outlineButton(g, ui::buttonRect(1, 2), "HOME");
     }
 
-    void draw(Gfx &g)
+    void draw(Engine &e, Gfx &g)
     {
         if (menu) {
             if (menu_dirty) {
                 drawMenu(g);
                 menu_dirty = false;
             }
-            sprite_rects.clear();
             return;
         }
-
-        setShadingConstants();
-        const Rect core_box = {int(C - CORE_R) - 1, int(C - CORE_R) - 1, int(2 * CORE_R) + 3, int(2 * CORE_R) + 3};
-
-        if (over != drawn_over) {
-            full_redraw = true;
-            drawn_over = over;
-        }
-
-        bool core_redraw = false;
+        Canvas &c = canvas;
         if (full_redraw) {
-            restore(g, {0, 0, W, H});
+            buildScene();
             full_redraw = false;
-            scene_dirty.clear();
-            sprite_rects.clear();
-            core_redraw = true;
-            drawn_paddle = paddle;
-            drawn_hw = hw;
-            drawn_flash = flash > 0;
-            drawn_shield = shield;
-        } else {
-            // Paddle moved, resized, or changed color: reshade old and new footprint.
-            if (paddle != drawn_paddle || hw != drawn_hw || (flash > 0) != drawn_flash) {
-                scene_dirty.push_back(paddleBox(drawn_paddle, drawn_hw));
-                scene_dirty.push_back(paddleBox(paddle, hw));
-                drawn_paddle = paddle;
-                drawn_hw = hw;
-                drawn_flash = flash > 0;
-            }
-            if (shield != drawn_shield) {
-                for (int k = 0; k < 16; k++)
-                    scene_dirty.push_back(arcBox(k * TAU / 16, (k + 1) * TAU / 16, PADDLE_R + 3, PADDLE_R + 7));
-                drawn_shield = shield;
-            }
-            for (const Rect &r : sprite_rects) scene_dirty.push_back(r);
-            sprite_rects.clear();
-
-            for (const Rect &r : scene_dirty) {
-                restore(g, r);
-                if (r.intersects(core_box)) core_redraw = true;
-            }
-            scene_dirty.clear();
         }
-
-        if (score != drawn_score || lives != drawn_lives) core_redraw = true;
-        if (core_redraw && !over) {
-            restore(g, core_box);
-            drawCore(g);
-            drawn_score = score;
-            drawn_lives = lives;
-        }
+        std::memcpy(c.pixels(), scene, CW * CW);
+        drawPaddle(c);
+        if (!over) drawCore(c);
 
         if (flash_brick_.ring >= 0 && flash_brick_.time > 0)
-            flashBrick(g, rings[flash_brick_.ring], flash_brick_.idx, colors::white);
+            flashBrick(c, rings[flash_brick_.ring], flash_brick_.idx, c_white);
 
-        // ---- sprites (redrawn every frame, erased next frame via sprite_rects)
-        for (const Cap &c : caps) {
-            const float x = C + std::cos(c.a) * c.r, y = C + std::sin(c.a) * c.r;
-            sprite_rects.push_back(disc(g, x, y, 11, col(CAPS[c.type].color)));
-            const char s[2] = {CAPS[c.type].letter, 0};
-            textCentered(g, x, y, s, colors::black, 2);
+        // ---- sprites
+        for (const Cap &cp : caps) {
+            const float x = C + std::cos(cp.a) * cp.r, y = C + std::sin(cp.a) * cp.r;
+            disc(c, x, y, 12, canvas.color(col(CAPS[cp.type].color)));
+            disc(c, x - 3, y - 3, 4, canvas.color(col(lerp(CAPS[cp.type].color, WHITE, 0.5f))));
+            const char s[2] = {CAPS[cp.type].letter, 0};
+            textCentered(c, x, y, s, c_black, 2);
         }
-        for (const Ball &b : balls) sprite_rects.push_back(disc(g, b.x, b.y, BALL_R, colors::white));
-        for (const Part &p : parts) {
-            const float k = clampf(p.life * 2, 0, 1);
-            g.fillRect(int(p.x - 1.5f), int(p.y - 1.5f), 3, 3, col(p.color, k));
-            sprite_rects.push_back({int(p.x - 1.5f), int(p.y - 1.5f), 3, 3});
+        for (const Ball &b : balls) {
+            disc(c, b.x, b.y, BALL_R, c_ball_rim);
+            disc(c, b.x, b.y, BALL_R - 1.6f, c_white);
         }
+        for (const Part &p : parts) c.fillRect(int(p.x / 2) - 1, int(p.y / 2) - 1, 2, 2, fade(p.color, clampf(p.life * 2, 0, 1)));
 
         // Impact rings: a quick shockwave where the ball struck.
         for (const Shock &r : rings_fx) {
-            const int rad = int(6 + (1.0f - r.life) * 26);
-            g.circle(int(r.x), int(r.y), rad, col(r.color, clampf(r.life, 0, 1)));
-            sprite_rects.push_back({int(r.x) - rad - 1, int(r.y) - rad - 1, 2 * rad + 3, 2 * rad + 3});
+            const int rad = int((6 + (1.0f - r.life) * 26) / 2);
+            const uint8_t col = fade(r.color, clampf(r.life, 0, 1));
+            for (int k = 0; k < 24; k++) {
+                const float a = k * TAU / 24;
+                c.pixel(int(r.x / 2 + std::cos(a) * rad), int(r.y / 2 + std::sin(a) * rad), col);
+            }
         }
 
         // Score pops floating up from broken bricks.
         for (const Pop &p : pops) {
             char buf[12];
             snprintf(buf, sizeof(buf), "+%d", p.score);
-            sprite_rects.push_back(
-                textCentered(g, p.x, p.y, buf, col(p.color, clampf(p.life, 0, 1)), 2));
+            textCentered(c, p.x, p.y, buf, fade(p.color, clampf(p.life, 0, 1)), 2);
         }
 
         const bool stuck = std::any_of(balls.begin(), balls.end(), [](const Ball &b) { return b.stuck; });
@@ -988,21 +968,23 @@ struct Breakout::State {
             char top[32];
             if (level > 1) snprintf(top, sizeof(top), "LEVEL %d", level);
             else snprintf(top, sizeof(top), "%s", mode_line);
-            sprite_rects.push_back(textCentered(g, C, 58, top, colors::cyan, 2));
-            sprite_rects.push_back(textCentered(g, C, 84, level > 1 ? mode_line : "PWR: CHANGE",
-                                                level > 1 ? colors::cyan : colors::yellow, 2));
-            sprite_rects.push_back(textCentered(g, C, 382, "TAP TO LAUNCH", colors::white, 2));
-            sprite_rects.push_back(textCentered(g, C, 408, "SWIPE < MENU", colors::yellow, 2));
+            textCentered(c, C, 58, top, c_cyan, 2);
+            textCentered(c, C, 84, level > 1 ? mode_line : "PWR: CHANGE", level > 1 ? c_cyan : c_yellow, 2);
+            textCentered(c, C, 382, "TAP TO LAUNCH", c_white, 2);
+            textCentered(c, C, 408, "SWIPE < MENU", c_yellow, 2);
         } else if (mode_label_t > 0 && !over) {
-            sprite_rects.push_back(textCentered(g, C, 70, mode_line, colors::cyan, 2));
+            textCentered(c, C, 70, mode_line, c_cyan, 2);
         }
         if (over) {
             char buf[32];
             snprintf(buf, sizeof(buf), "SCORE %d", score);
-            sprite_rects.push_back(textCentered(g, C, C - 44, "GAME OVER", colors::white, 4));
-            sprite_rects.push_back(textCentered(g, C, C + 4, buf, colors::yellow, 3));
-            sprite_rects.push_back(textCentered(g, C, C + 46, "TAP TO PLAY", colors::white, 2));
+            c.fillRect(CW / 2 - 60, CW / 2 - 34, 120, 68, c_panel);
+            c.rect(CW / 2 - 60, CW / 2 - 34, 120, 68, c_core_edge);
+            textCentered(c, C, C - 40, "GAME OVER", c_white, 4);
+            textCentered(c, C, C + 2, buf, c_yellow, 3);
+            textCentered(c, C, C + 42, "TAP TO PLAY", c_white, 2);
         }
+        c.present(e.presenter());
     }
 };
 
@@ -1012,6 +994,7 @@ Breakout::~Breakout() { delete s_; }
 void Breakout::begin(Engine &e)
 {
     if (!Polar::init()) ESP_LOGE(TAG, "polar tables alloc failed");
+    if (!s_->loadAssets()) ESP_LOGE(TAG, "no memory for the scene");
     s_->loadSettings();
     s_->newGame();
     ESP_LOGI(TAG, "ready: control=%s, tap/BOOT to launch, PWR cycles control, swipe left for settings",
@@ -1022,7 +1005,6 @@ void Breakout::enter(Engine &e)
 {
     // Coming back from the home screen: repaint, and pause a game that was mid-rally.
     s_->full_redraw = true;
-    s_->drawn_score = s_->drawn_lives = -1;
     const bool in_play = std::any_of(s_->balls.begin(), s_->balls.end(), [](const Ball &b) { return !b.stuck; });
     if (in_play && !s_->over) s_->openMenu();
 }
@@ -1040,7 +1022,7 @@ void Breakout::update(Engine &e, float dt)
 
 void Breakout::draw(Engine &e, Gfx &g)
 {
-    s_->draw(g);
+    if (s_->scene) s_->draw(e, g);
 }
 
 }  // namespace games
