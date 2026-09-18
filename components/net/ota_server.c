@@ -100,6 +100,19 @@ static esp_err_t input_get(httpd_req_t *req)
     return httpd_resp_sendstr(req, ok ? "ok" : "bad request");
 }
 
+static net_tilt_fn s_tilt_fn;
+void net_set_tilt_hook(net_tilt_fn fn) { s_tilt_fn = fn; }
+
+static esp_err_t tilt_get(httpd_req_t *req)
+{
+    if (!authed(req)) return deny(req);
+    note_request();
+    char out[320] = "no sensor hook";
+    if (s_tilt_fn) s_tilt_fn(out, sizeof(out));
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_sendstr(req, out);
+}
+
 void net_set_screen_hook(net_screen_fn fn) { s_screen_fn = fn; }
 
 static esp_err_t screen_get(httpd_req_t *req)
@@ -344,6 +357,7 @@ esp_err_t ota_server_start(void)
         {.uri = "/reboot", .method = HTTP_GET, .handler = reboot_get},
         {.uri = "/screen", .method = HTTP_GET, .handler = screen_get},
         {.uri = "/input", .method = HTTP_GET, .handler = input_get},
+        {.uri = "/tilt", .method = HTTP_GET, .handler = tilt_get},
         {.uri = "/update", .method = HTTP_POST, .handler = update_post},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) httpd_register_uri_handler(s_server, &uris[i]);

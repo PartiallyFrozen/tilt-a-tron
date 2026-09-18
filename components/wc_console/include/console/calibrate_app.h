@@ -42,8 +42,9 @@ private:
     bool full_ = true;
     int msg_ = 0, drawn_msg_ = -1;
     Window win_;
-    float first_a_[2] = {0, 0}, first_g_[3] = {0, 0, 0};
+    float first_a_[3] = {0, 0, 0}, first_g_[3] = {0, 0, 0};
     float turned_ = 0;         // degrees since the first reading
+    const char *fail_line1_ = nullptr, *fail_line2_ = nullptr;   // which check said no
     wc::Tilt raw_;             // latest uncorrected sample
     wc::TiltCal found_;
 };

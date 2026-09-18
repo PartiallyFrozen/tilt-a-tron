@@ -30,6 +30,10 @@ struct Tilt {
 struct TiltCal {
     float ax = 0, ay = 0;           // g read with the watch lying truly level
     float gx = 0, gy = 0, gz = 0;   // deg/s read with the watch still
+    // What the accelerometer reads for 1 g. Parts are trimmed to a few percent and this
+    // one is out by more than six, which no amount of offset can fix: gravity has to come
+    // out as 1.0 or every threshold measured in g is quietly wrong.
+    float a_scale = 1.0f;
 };
 
 struct InputState {

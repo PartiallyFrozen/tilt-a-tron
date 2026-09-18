@@ -22,8 +22,16 @@ constexpr float STILL_DPS = 2.5f;         // more gyro wobble than this restarts
 constexpr float STILL_G = 0.03f;
 constexpr float FLAT_Z = 0.9f;            // |az| above this = lying flat
 constexpr float TURN_MIN = 150.0f, TURN_MAX = 210.0f;
-constexpr float MAX_TILT_G = 0.2f;        // bigger "corrections" than these mean the
-constexpr float MAX_DRIFT_DPS = 15.0f;    // table wasn't flat or the watch was moving
+// What counts as a reading worth keeping. These are sanity limits on a measurement that
+// has ALREADY been taken while the watch held still (that is what the window above is
+// for) - they are not a judgement on how good the sensor is. An early version capped the
+// gyro at 15 deg/s, and the watch it was written on has a gyro sitting at 18: every
+// calibration failed, and the screen blamed the table. A part can be out by a lot and
+// still be perfectly correctable; what these catch is a reading taken while the watch was
+// genuinely on the move, or a sensor that has nothing sensible to say at all.
+constexpr float MAX_TILT_G = 0.35f;        // about 20 degrees off level
+constexpr float MAX_DRIFT_DPS = 60.0f;     // beyond this the gyro is not merely biased
+constexpr float MIN_SCALE = 0.85f, MAX_SCALE = 1.15f;   // trust the measured 1 g this far
 
 enum Msg {
     M_INTRO, M_HANDS_OFF, M_NOT_FLAT, M_TURN, M_TURN_MORE, M_TURN_BACK, M_RESULT, M_FAIL,
@@ -37,7 +45,7 @@ const char *const LINES[][2] = {
     {"A BIT MORE...", "HALF A TURN, THEN LET GO"},
     {"TOO FAR - TURN IT BACK", "TO THE MARK"},
     {"", "BUBBLE IN THE MIDDLE?"},
-    {"THAT LOOKED WRONG", "USE A STEADY, FLAT TABLE"},
+    {"", ""},   // M_FAIL fills both lines in with what actually went wrong
 };
 
 void ringDots(wc::Gfx &g, float from_deg, float to_deg, wc::Color c)
@@ -90,6 +98,7 @@ void CalibrateApp::finish(bool two_readings)
 {
     const float n = float(win_.n);
     const float k = two_readings ? 0.5f : 1.0f;
+    float az = first_a_[2];
     found_ = wc::TiltCal{};
     if (two_readings) {
         // Half a turn flips the table's slope but not the sensor's own error.
@@ -98,15 +107,40 @@ void CalibrateApp::finish(bool two_readings)
         found_.gx = (first_g_[0] + win_.g[0] / n) * k;
         found_.gy = (first_g_[1] + win_.g[1] / n) * k;
         found_.gz = (first_g_[2] + win_.g[2] / n) * k;
+        az = (first_a_[2] + win_.a[2] / n) * k;
     } else {
         found_.ax = first_a_[0], found_.ay = first_a_[1];
         found_.gx = first_g_[0], found_.gy = first_g_[1], found_.gz = first_g_[2];
     }
+
+    // Lying level, the only force on it is gravity, so whatever the sensor reads for the
+    // length of that vector is what it thinks 1 g is. Anything measured in g - how far
+    // "full tilt" is, how flat counts as flat - is wrong by the same factor until this
+    // is taken out.
+    const float magnitude = std::sqrt(found_.ax * found_.ax + found_.ay * found_.ay + az * az);
+    const float scale = magnitude > 0.1f ? 1.0f / magnitude : 1.0f;
+    found_.a_scale = std::clamp(scale, MIN_SCALE, MAX_SCALE);
+
     const float tilt = std::hypot(found_.ax, found_.ay);
     const float drift = std::sqrt(found_.gx * found_.gx + found_.gy * found_.gy + found_.gz * found_.gz);
-    ESP_LOGI(TAG, "found: level %.4f,%.4f g  drift %.2f,%.2f,%.2f dps (%s)", found_.ax, found_.ay, found_.gx,
-             found_.gy, found_.gz, two_readings ? "two readings" : "one reading");
-    const bool ok = tilt <= MAX_TILT_G && drift <= MAX_DRIFT_DPS;
+    ESP_LOGI(TAG, "found: level %.4f,%.4f g  1g reads %.4f (x%.4f)  drift %.2f,%.2f,%.2f dps (%s)", found_.ax,
+             found_.ay, magnitude, found_.a_scale, found_.gx, found_.gy, found_.gz,
+             two_readings ? "two readings" : "one reading");
+
+    // Say which test failed. Being told to find a flatter table when the table was fine
+    // and the gyro is simply a biased part is how this screen wasted an evening.
+    fail_line1_ = fail_line2_ = nullptr;
+    if (tilt > MAX_TILT_G) {
+        fail_line1_ = "IT WASN'T LYING FLAT";
+        fail_line2_ = "SCREEN UP ON A LEVEL TABLE";
+    } else if (drift > MAX_DRIFT_DPS) {
+        fail_line1_ = "IT WAS STILL MOVING";
+        fail_line2_ = "HANDS OFF, THEN TRY AGAIN";
+    } else if (scale < MIN_SCALE || scale > MAX_SCALE) {
+        fail_line1_ = "THE SENSOR LOOKS WRONG";
+        fail_line2_ = "GRAVITY DIDN'T READ AS 1 G";
+    }
+    const bool ok = fail_line1_ == nullptr;
     wc::audio::play(ok ? wc::audio::Tone{.f0 = 660, .f1 = 990, .ms = 140} : wc::audio::Tone{.f0 = 300, .f1 = 180, .ms = 220});
     setPhase(ok ? RESULT : FAIL);
 }
@@ -121,10 +155,14 @@ void CalibrateApp::update(wc::Engine &e, float dt)
 {
     const auto &in = e.input();
     ges_.update(in.touch);
-    // This screen measures the sensor itself, so undo the correction that's in force.
+    // This screen measures the sensor itself, so undo the correction that's in force -
+    // in the reverse order the input layer applies it: unscale, then add the offset back.
     const wc::TiltCal cur = wc::Input::calibration();
+    const float inv = cur.a_scale > 0.01f ? 1.0f / cur.a_scale : 1.0f;
     raw_ = in.tilt;
-    raw_.ax += cur.ax, raw_.ay += cur.ay;
+    raw_.ax = raw_.ax * inv + cur.ax;
+    raw_.ay = raw_.ay * inv + cur.ay;
+    raw_.az *= inv;
     raw_.gx += cur.gx, raw_.gy += cur.gy, raw_.gz += cur.gz;
 
     const bool left = ges_.tap && ui::buttonRect(0, 2).hit(ges_.x, ges_.y);
@@ -153,8 +191,7 @@ void CalibrateApp::update(wc::Engine &e, float dt)
             if (sample(raw_, dt)) {
                 if (phase_ == FLAT2) return finish(true);
                 const float n = float(win_.n);
-                first_a_[0] = win_.a[0] / n, first_a_[1] = win_.a[1] / n;
-                for (int i = 0; i < 3; i++) first_g_[i] = win_.g[i] / n;
+                for (int i = 0; i < 3; i++) first_a_[i] = win_.a[i] / n, first_g_[i] = win_.g[i] / n;
                 wc::audio::play({.f0 = 660, .f1 = 880, .ms = 90});
                 setPhase(TURN);
             }
@@ -198,16 +235,18 @@ void CalibrateApp::draw(wc::Engine &e, wc::Gfx &g)
         ui::menuBackground(g);
         ui::title(g, "CALIBRATE");
         drawn_msg_ = msg_;
-        const char *l1 = LINES[msg_][0];
+        const char *l1 = LINES[msg_][0], *l2 = LINES[msg_][1];
         char buf[40];
         if (phase_ == RESULT) {
             const float deg = std::asin(std::min(1.0f, std::hypot(found_.ax, found_.ay))) * 180.0f / float(M_PI);
             const float drift = std::sqrt(found_.gx * found_.gx + found_.gy * found_.gy + found_.gz * found_.gz);
-            snprintf(buf, sizeof(buf), "TILT %.1f DEG  DRIFT %.1f/S", deg, drift);
+            snprintf(buf, sizeof(buf), "TILT %.1f DEG  DRIFT %.0f/S", deg, drift);
             l1 = buf;
+        } else if (phase_ == FAIL && fail_line1_) {
+            l1 = fail_line1_, l2 = fail_line2_;
         }
         ui::hint(g, LINE1_Y, l1, ui::TEXT);
-        ui::hint(g, LINE2_Y, LINES[msg_][1], phase_ == FAIL ? ui::DANGER : ui::DIM);
+        ui::hint(g, LINE2_Y, l2, phase_ == FAIL ? ui::DANGER : ui::DIM);
         if (phase_ == INTRO && tiltCalibrated()) ui::hint(g, 96, "SAVED - PWR CLEARS IT", ui::GO);
         switch (phase_) {
         case INTRO:
@@ -245,7 +284,8 @@ void CalibrateApp::draw(wc::Engine &e, wc::Gfx &g)
 
     // What the games would see: the saved correction, or on the result screen the new one.
     const wc::TiltCal cal = phase_ == RESULT ? found_ : wc::Input::calibration();
-    const float bx = -(raw_.ax - cal.ax), by = -(raw_.ay - cal.ay);   // a bubble rises to the high side
+    // A bubble rises to the high side, so this is what a game would see, negated.
+    const float bx = -(raw_.ax - cal.ax) * cal.a_scale, by = -(raw_.ay - cal.ay) * cal.a_scale;
     constexpr float PX_PER_G = 420.0f;   // about 7 px per degree
     float px = bx * PX_PER_G, py = by * PX_PER_G;
     const float d = std::hypot(px, py), lim = float(DISH_R - 16);

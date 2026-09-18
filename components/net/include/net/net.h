@@ -89,6 +89,11 @@ void net_set_screen_hook(net_screen_fn fn);
 // GET /input?<query>: remote control for testing; the hook gets the raw query string.
 typedef bool (*net_control_fn)(const char *query);
 void net_set_control_hook(net_control_fn fn);
+
+// GET /tilt: what the motion sensor is reading, as text. For working out whether a
+// complaint about the tilt is the sensor, the calibration, or the game.
+typedef void (*net_tilt_fn)(char *out, size_t len);
+void net_set_tilt_hook(net_tilt_fn fn);
 // While this returns true, reboots requested over HTTP (after an update, /reboot)
 // are postponed: restarting while a computer has the drive open corrupts it.
 // True while an upload is running, or within two minutes of any request to the

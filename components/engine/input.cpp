@@ -180,7 +180,11 @@ void Input::snapshot(InputState &out)
     out.touch.y = s.ty;
     out.touch.t_us = s.t_us;
     out.tilt = s.tilt;
-    out.tilt.ax -= s_cal.ax, out.tilt.ay -= s_cal.ay;
+    // Offsets first, then the scale: the offset is an error in the reading, so it has to
+    // come off before the reading is stretched to where 1 g really is.
+    out.tilt.ax = (out.tilt.ax - s_cal.ax) * s_cal.a_scale;
+    out.tilt.ay = (out.tilt.ay - s_cal.ay) * s_cal.a_scale;
+    out.tilt.az *= s_cal.a_scale;
     out.tilt.gx -= s_cal.gx, out.tilt.gy -= s_cal.gy, out.tilt.gz -= s_cal.gz;
     out.touch_hz = s.touch_hz;
     out.imu_ok = s.imu_ok;
