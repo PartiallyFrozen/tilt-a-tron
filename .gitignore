@@ -6,3 +6,8 @@ sdkconfig
 sdkconfig.old
 managed_components/
 releases/*.bin
+
+# .NET build output for the manager app
+app/**/bin/
+app/**/obj/
+__pycache__/

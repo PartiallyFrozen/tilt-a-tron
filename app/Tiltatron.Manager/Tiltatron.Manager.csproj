@@ -7,7 +7,6 @@
     <AssemblyName>tiltatron-manager</AssemblyName>
     <RootNamespace>Tiltatron.Manager</RootNamespace>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- One self-contained file, so nobody has to install a runtime: see app/README.md -->
     <PublishSingleFile>true</PublishSingleFile>
