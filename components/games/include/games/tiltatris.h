@@ -1,8 +1,9 @@
 // Tilt-a-tris: radial Tetris. Wedge-shaped pieces fall inward from the rim; fill a
-// whole ring and it clears. The pile is locked to the real world, so turning the
-// watch spins the pile under the falling piece.
+// whole ring and it clears. The pile is part of the watch and turns with it; the
+// falling piece hangs from the real world's "up", so turning the watch moves the
+// piece around the rim relative to the pile.
 //
-//   turn watch  - rotate the pile (the piece stays put at the top of the screen)
+//   turn watch  - aim: the piece stays "up" while the pile turns beneath it
 //   tap         - rotate the piece
 //   hold        - soft drop
 //   PWR         - hard drop
