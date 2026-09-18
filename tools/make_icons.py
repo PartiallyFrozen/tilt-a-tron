@@ -353,6 +353,39 @@ def star_icon():
     finish(img, "star")
 
 
+def pindrop_icon():
+    """A cream board with pegs, a red ball mid-fall, and the hole it is heading for."""
+    img = canvas((238, 228, 200))
+    face, face2 = (238, 228, 200), (218, 206, 176)
+    pin, pin_hi, pin_sh = (150, 152, 160), (250, 250, 255), (96, 98, 108)
+    ball, ball_hi = (232, 46, 74), (255, 170, 182)
+    hole, lip = (14, 16, 24), (255, 205, 60)
+
+    # A hint of the board's dish, so it does not read as flat paper.
+    disc(img, L / 2, L / 2, L / 2 - 1, face2)
+    disc(img, L / 2, L / 2, L / 2 - 4, face)
+
+    # Pegs in the offset rows a peg board actually has.
+    for row in range(4):
+        y = 14 + row * 9
+        for col in range(5):
+            x = 9 + col * 9 + (4 if row % 2 else 0)
+            if (x - L / 2) ** 2 + (y - L / 2) ** 2 > (L / 2 - 5) ** 2:
+                continue
+            rect(img, x, y + 1, 3, 2, pin_sh)
+            rect(img, x, y, 3, 2, pin)
+            rect(img, x, y, 1, 1, pin_hi)
+
+    # The hole, low and off to one side.
+    disc(img, 33, 41, 6, lip)
+    disc(img, 33, 41, 5, hole)
+
+    # The ball, on its way down.
+    disc(img, 20, 24, 4, ball)
+    disc(img, 19, 23, 1, ball_hi)
+    finish(img, "pindrop")
+
+
 def main():
     jump_icon()
     racer_icon()
@@ -362,6 +395,7 @@ def main():
     tiltatris_icon()
     clock_icon()
     star_icon()
+    pindrop_icon()
 
 
 if __name__ == "__main__":

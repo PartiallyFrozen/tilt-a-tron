@@ -27,12 +27,17 @@
 #include "games/tiltatris.h"
 #include "games/clock.h"
 #include "games/star.h"
+#include "tat/tat_host.h"
 #include "net/net.h"
 #include "link/link.h"
 #include "nvs_flash.h"
 #include "storage/storage.h"
 
 static const char *TAG = "main";
+
+// Games built against tat_api.h. The build renames each one's descriptor so several can
+// live in one firmware; a loaded package will simply export "tat_game".
+extern "C" const tat_game_t tat_game_pindrop;
 
 static wc::Engine *s_engine;
 static const console::App *s_apps;
@@ -199,6 +204,9 @@ extern "C" void app_main(void)
     static games::Tiltatris tiltatris;
     static games::Clock clock_app;
     static games::Star star;
+    // The first game written against tat_api.h alone. Compiled in for now, but it talks to
+    // the console only through the table, which is what a loaded package will do.
+    static tat::HostedGame pindrop(tat_game_pindrop);
     static console::SettingsApp settings;
     static console::WifiApp wifi_setup(&settings);
     static console::UpdateApp updater(&settings);
@@ -211,6 +219,7 @@ extern "C" void app_main(void)
         {"jump", "SKY JUMP", wc::rgb(255, 190, 50), console::icons::jump, &jump},
         {"tiltatris", "TILT-A-TRIS", wc::rgb(80, 220, 240), console::icons::tiltatris, &tiltatris},
         {"star", "SLEEPY STAR", wc::rgb(255, 217, 61), console::icons::star, &star},
+        {"pindrop", "PIN DROP", wc::rgb(228, 62, 96), console::icons::pindrop, &pindrop},
         {"clock", "CLOCK", wc::rgb(214, 170, 60), console::icons::clock, &clock_app},
         {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings},
     };

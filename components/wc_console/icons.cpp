@@ -217,6 +217,28 @@ void star(Color *buf, int r)
     });
 }
 
+void pindrop(Color *buf, int r)
+{
+    // Fallback only (the real icon is a PNG): a cream board, pegs, a ball and the hole.
+    static constexpr Color FACE = rgb(238, 228, 200), FACE2 = rgb(214, 202, 172), EDGE = rgb(70, 74, 92),
+                           PIN = rgb(150, 152, 160), BALL = rgb(232, 46, 74), HOLE = rgb(14, 16, 24),
+                           LIP = rgb(255, 205, 60);
+    forEach(buf, r, [&](float nd, float, float x, float y) -> Color {
+        if (nd > 0.955f) return EDGE;
+        const float hx = x - 0.30f, hy = y - 0.42f;
+        if (hx * hx + hy * hy < 0.020f) return HOLE;
+        if (hx * hx + hy * hy < 0.030f) return LIP;
+        const float bx = x + 0.34f, by = y + 0.30f;
+        if (bx * bx + by * by < 0.013f) return BALL;
+        // Pegs on offset rows, the way a peg board is actually laid out.
+        const float row = (y + 1.0f) * 4.0f;
+        const float off = (int(row) & 1) ? 0.12f : 0.0f;
+        const float px = fmodf(x + 1.0f + off, 0.25f), py = fmodf(y + 1.0f, 0.25f);
+        if (px < 0.075f && py < 0.055f) return PIN;
+        return nd > 0.88f ? FACE2 : FACE;
+    });
+}
+
 void settings(Color *buf, int r)
 {
     static constexpr Color BG = rgb(26, 30, 40), EDGE = rgb(70, 74, 92), GEAR = rgb(205, 210, 222),

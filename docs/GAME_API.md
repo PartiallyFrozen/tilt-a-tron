@@ -143,6 +143,21 @@ guarantees it stays valid until `unload`.
 
 ### 4.2 What the OS provides
 
+**The header is real now:** `components/tat_api/include/tat/tat_api.h`, with the console's
+side in `tat_host.cpp`. PIN DROP is written against it and nothing else. Three things
+changed from the sketch below once a real game used it:
+
+- **`rgb(r, g, b)` is an API call, not a macro.** The panel stores RGB565 byte-swapped, and
+  a macro baked that into the game - every colour came out wrong. How a pixel is packed is
+  the console's business, so a game asks for a colour rather than building one.
+- **The pause menu is exposed whole** (`menu_open`, `menu_update`, `menu_draw`, ...) rather
+  than as row and button primitives. Primitives would have every game reinventing the pause
+  screen, which is what was just removed from all seven.
+- **`redraw` was added to the game descriptor**, for games that only draw when something
+  changed. Without it a screenshot over Wi-Fi catches a black frame.
+
+The sketch that follows is kept for the shape of the thing; the header is the truth.
+
 ```c
 #define TAT_API_MAJOR 1
 #define TAT_API_MINOR 0
