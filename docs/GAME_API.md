@@ -344,7 +344,7 @@ readable reason for the refusal.
 | `FS_FREE` 0x10 | — | storage total, free |
 | `FS_LIST` 0x11 | path | entries: is_dir, size, name |
 | `FS_PUT` 0x12 | size u32, crc32 u32, path | OK, then `FS_DATA` chunks, then `FS_END` |
-| `FS_DATA` 0x13 | chunk | OK |
+| `FS_DATA` 0x13 | offset u32, chunk | OK. The offset lets a resent chunk be recognised rather than counted twice |
 | `FS_END` 0x14 | — | OK once the CRC matches; a bad file is deleted, not kept |
 | `FS_GET` 0x15 | path | the file |
 | `FS_DELETE` 0x16 | path | OK (a file, or a folder and everything under it) |
@@ -436,6 +436,9 @@ instead. Settings > GAMES keeps working as it does now for hiding without deleti
 Each phase leaves a working watch.
 
 1. ~~USB link: framing, HELLO/INFO/LIST/ICON~~ **done, proven on hardware.**
+1. ~~File commands, and the manager app sending themes~~ **done.**
+1. ~~Retire USB mass storage~~ **done.**
+1. ~~Spike the game loader~~ **done: code written into PSRAM at run time executes.**
 2. File commands over the link, and the manager app sending themes and watch faces.
    *No dependency on §6.*
 3. The watch-face renderer (§3), so faces are real content.

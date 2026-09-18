@@ -46,6 +46,16 @@ builds for everyone.
 | `app/` | The desktop manager app (C#, Avalonia) - see [app/README.md](app/README.md) |
 | `docs/GAME_API.md` | Where this is going: an OS plus games as installable files |
 
+## Tests
+
+```bash
+./tests/run.sh      # or .	estsun.ps1 on Windows without gcc
+```
+
+They compile the real firmware sources against stubs, so they test what ships. CI runs them
+before it builds anything. `python tools/bench.py` measures a watch over USB when you want
+to show a performance change rather than argue it.
+
 ## House style
 
 The existing code is the specification; match it. In particular:

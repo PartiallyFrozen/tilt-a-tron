@@ -19,7 +19,9 @@
 extern "C" {
 #endif
 
-#define LINK_PROTO_VERSION 1
+// 2: FS_DATA carries its offset. Without it a resent chunk - which happens whenever a
+//    reply is lost - was counted twice and the transfer failed part way through.
+#define LINK_PROTO_VERSION 2
 #define LINK_MAX_PAYLOAD 4096
 
 enum {
@@ -33,7 +35,7 @@ enum {
     LINK_FS_FREE = 0x10,    // -> nothing;              <- total u32, free u32
     LINK_FS_LIST = 0x11,    // -> path;                 <- entries: u8 is_dir, u32 size, name\0
     LINK_FS_PUT = 0x12,     // -> size u32, crc32 u32, path;  then FS_DATA frames, then FS_END
-    LINK_FS_DATA = 0x13,    // -> chunk
+    LINK_FS_DATA = 0x13,    // -> offset u32, chunk. The offset makes a resend harmless
     LINK_FS_END = 0x14,     // -> nothing;              <- ok once the CRC matches
     LINK_FS_GET = 0x15,     // -> offset u32, path;     <- up to 4 KB of it from there
     LINK_FS_DELETE = 0x16,  // -> path (a file, or a directory and everything under it)

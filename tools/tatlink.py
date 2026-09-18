@@ -67,8 +67,14 @@ class Watch:
         deadline = time.time() + self.timeout
         buf = bytearray()
         while time.time() < deadline:
-            chunk = self.ser.read(4096)
+            # read(n) waits for n bytes or the whole timeout, and a reply is eight bytes -
+            # asking for 4096 burned the full timeout on every single call. Block for one
+            # byte, then take whatever else has arrived with it.
+            chunk = self.ser.read(1)
             if chunk:
+                waiting = self.ser.in_waiting
+                if waiting:
+                    chunk += self.ser.read(waiting)
                 buf += chunk
             while True:
                 i = buf.find(b"\xa5\x5a")
@@ -86,6 +92,8 @@ class Watch:
                 del buf[:end]
                 if got != crc16(body, crc16(struct.pack("BB", seq, rcmd))):
                     continue
+                if seq != self.seq:
+                    continue   # a late reply to something already given up on
                 if rcmd == ERR:
                     raise RuntimeError(body.decode(errors="replace"))
                 if rcmd == (cmd | 0x80):
@@ -175,9 +183,9 @@ class Watch:
     def fs_put(self, path, data, progress=None):
         crc = zlib.crc32(data) & 0xFFFFFFFF
         self.call(FS_PUT, struct.pack("<II", len(data), crc) + path.encode())
-        CHUNK = 4096   # the watch's maximum payload
+        CHUNK = 4092   # the watch's maximum payload, less the offset in front
         for off in range(0, len(data), CHUNK):
-            self.call(FS_DATA, data[off:off + CHUNK])
+            self.call(FS_DATA, struct.pack("<I", off) + data[off:off + CHUNK])
             if progress:
                 progress(min(off + CHUNK, len(data)), len(data))
         self.call(FS_END)
@@ -203,7 +211,7 @@ def open_port(port):
     ser = serial.Serial()
     ser.port = port
     ser.baudrate = 115200
-    ser.timeout = 0.02   # short: a reply is polled for, not waited on
+    ser.timeout = 0.05   # how long to wait for the first byte of a reply
     ser.dtr = False
     ser.rts = False
     ser.open()

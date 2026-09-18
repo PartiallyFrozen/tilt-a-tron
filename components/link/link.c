@@ -44,7 +44,7 @@ static void note_changed(void)
 #define PUT_BUF (32 * 1024)
 static uint8_t *s_put_buf;
 static FILE *s_put;
-static uint32_t s_put_left, s_put_crc, s_put_want;
+static uint32_t s_put_left, s_put_crc, s_put_want, s_written;
 static char s_put_path[160];
 
 static void put_abort(void)
@@ -264,23 +264,42 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
         if (!s_put_buf) s_put_buf = heap_caps_malloc(PUT_BUF, MALLOC_CAP_SPIRAM);
         if (s_put_buf) setvbuf(s_put, (char *)s_put_buf, _IOFBF, PUT_BUF);
         s_put_crc = 0;
+        s_written = 0;
         ESP_LOGI(TAG, "receiving %s, %u bytes", s_put_path, (unsigned)s_put_left);
         send(seq, cmd | 0x80, NULL, 0);
         break;
     }
     case LINK_FS_DATA: {
-        if (!s_put || len > s_put_left) {
+        uint32_t offset = 0;
+        if (!s_put || len < 4) {
             put_abort();
             fail(seq, "not expecting that");
             break;
         }
-        if (fwrite(body, 1, len, s_put) != len) {
+        memcpy(&offset, body, 4);
+        const uint8_t *chunk = body + 4;
+        const uint16_t n = len - 4;
+
+        // A reply can be lost on the way back, and the client will send the chunk again.
+        // Recognising that is the difference between a transfer that recovers and one
+        // that fails half way through.
+        if (offset + n <= s_written) {
+            send(seq, cmd | 0x80, NULL, 0);   // already have it
+            break;
+        }
+        if (offset != s_written || n > s_put_left) {
+            put_abort();
+            fail(seq, "that chunk is out of order");
+            break;
+        }
+        if (fwrite(chunk, 1, n, s_put) != n) {
             put_abort();
             fail(seq, "the storage is full");
             break;
         }
-        s_put_crc = esp_rom_crc32_le(s_put_crc, body, len);
-        s_put_left -= len;
+        s_put_crc = esp_rom_crc32_le(s_put_crc, chunk, n);
+        s_put_left -= n;
+        s_written += n;
         send(seq, cmd | 0x80, NULL, 0);
         break;
     }

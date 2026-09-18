@@ -66,12 +66,20 @@ and tests.
 
 ## Speed, and a known limit
 
-Reading from the watch runs at about **86 KB/s**. Writing to it runs at about **9 KB/s**,
-so a 300 KB theme takes around half a minute.
+`python tools/bench.py` measures a watch, so a change can be shown rather than argued:
 
-That asymmetry is in the watch's USB receive path, not in this app - `tools/tatlink.py`
-measures the same. Things that were tried and made no difference: chunk sizes from 256 B to
-4 KB, the driver's buffer sizes, the link task's priority, batching the writes to flash,
-running the firmware's code from flash instead of PSRAM, and doing it while the watch was
-in a game so nothing else touched storage. Worth another look, because esptool pushes
-firmware over the same port far faster.
+```
+  round trip, no payload      0.3 ms
+  read   (watch -> PC)      163.2 KB/s
+  write  (PC -> watch)        9.0 KB/s
+```
+
+Writing is the odd one out, and it is the watch's USB receive path - not this app, not the
+filesystem. Re-sending chunks the watch already has makes it skip the flash entirely, and
+that measures the same 9 KB/s, which rules the storage out completely. Also ruled out, with
+the benchmark in hand: chunk sizes from 256 B to 4 KB, the driver buffer sizes, the link
+task's priority, batching the writes, and running the firmware from flash instead of PSRAM
+(measurably worse, 8.5 vs 9.6 KB/s). esptool pushes firmware over the same port far faster,
+so it is solvable - just not yet solved.
+
+A 300 KB theme therefore takes about half a minute to send. Reading and backing up are quick.
