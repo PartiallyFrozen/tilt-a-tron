@@ -112,6 +112,12 @@ struct Tiltatris::State {
     float grav_x = 0, grav_y = 1;
     float roll = 0;                 // board rotation on screen (radians)
     uint16_t off16 = 0;
+    // The gyro carries the rotation when the watch lies flat (gravity can't tell);
+    // gravity corrects the gyro's drift whenever the watch is upright enough. The
+    // gyro's sign in screen space is learned from gravity the first time you turn it.
+    float gyro_sign = 1, sign_score = 0, last_target = 0;
+    bool had_target = false;
+    uint8_t piece_mask[RINGS + 4][N];   // the falling piece in screen columns (north = up)
 
     // ---- input
     Gestures ges;
@@ -313,18 +319,40 @@ struct Tiltatris::State {
     }
 
     // ------------------------------------------------------------------ update
+    static float wrapAngle(float a)
+    {
+        while (a > PI) a -= TAU;
+        while (a < -PI) a += TAU;
+        return a;
+    }
+
     void updateTilt(const InputState &in, float dt)
     {
+        // Gyro about the screen's normal: the world turns the other way on screen.
+        const float gz = in.tilt.gz * (PI / 180.0f) * dt;
+        roll = wrapAngle(roll - gyro_sign * gz);
+
         const float k = std::min(1.0f, dt / 0.10f);
         grav_x += (in.tilt.ax - grav_x) * k;
         grav_y += (in.tilt.ay - grav_y) * k;
-        if (grav_x * grav_x + grav_y * grav_y > 0.05f) {
+        const float upright = grav_x * grav_x + grav_y * grav_y;   // 1 = on edge, 0 = flat
+        if (upright > 0.16f) {
             // "Down" on the screen is where gravity points; the pile keeps that as its down.
             const float target = std::atan2(grav_y, grav_x) - PI / 2;
-            float d = target - roll;
-            while (d > PI) d -= TAU;
-            while (d < -PI) d += TAU;
-            roll += d * std::min(1.0f, dt / 0.06f);
+            if (had_target && std::fabs(gz) > 0.004f) {
+                // Gravity and gyro should agree on the direction of a turn.
+                sign_score += wrapAngle(target - last_target) * (-gyro_sign * gz) * 400;
+                if (sign_score < -1.0f) {
+                    gyro_sign = -gyro_sign;
+                    sign_score = 0;
+                }
+                sign_score = std::min(sign_score, 3.0f);
+            }
+            last_target = target;
+            had_target = true;
+            roll = wrapAngle(roll + wrapAngle(target - roll) * std::min(1.0f, dt / 0.25f));
+        } else {
+            had_target = false;
         }
         off16 = uint16_t(int(std::floor(roll / TAU * 65536.0f)) & 0xFFFF);
     }
@@ -472,9 +500,19 @@ struct Tiltatris::State {
             pieceCells(piece, rot, g, p_col, c);
             for (int i = 0; i < 4; i++)
                 if (c[i][0] >= 0 && c[i][0] < RINGS + 4 && !merged[c[i][0]][c[i][1]]) merged[c[i][0]][c[i][1]] = 9;
+        }
+        // The falling piece never turns with the pile: it sits at the top of the
+        // screen, in screen columns, and snaps into the pile's grid when it lands.
+        std::memset(piece_mask, 0, sizeof(piece_mask));
+        if (phase == PLAYING) {
+            int c[4][2];
             pieceCells(piece, rot, p_ring, p_col, c);
-            for (int i = 0; i < 4; i++)
-                if (c[i][0] >= 0 && c[i][0] < RINGS + 4) merged[c[i][0]][c[i][1]] = uint8_t(piece + 1);
+            const int north = N * 3 / 4;   // screen column straight up (angles run clockwise from +x)
+            for (int i = 0; i < 4; i++) {
+                const int rel = wrapCol(c[i][1] - p_col);   // 0..size-1 within the piece
+                const int sc = wrapCol(north - SHAPES[piece].size / 2 + rel);
+                if (c[i][0] >= 0 && c[i][0] < RINGS + 4) piece_mask[c[i][0]][sc] = uint8_t(piece + 1);
+            }
         }
     }
 
@@ -492,7 +530,7 @@ struct Tiltatris::State {
                 } else {
                     const int pring = std::min(RINGS + 3, int((r - CORE_R) / RING_H));
                     const int ring = outward ? RINGS - 1 - pring : pring;   // floor-first index
-                    const float rf = r - CORE_R - ring * RING_H;
+                    const float rf = r - CORE_R - pring * RING_H;
                     const uint32_t rel = uint32_t(uint16_t(Polar::angle(i) - off16)) * N;
                     const int col = rel >> 16;
                     const uint32_t frac = rel & 0xFFFF;
@@ -514,6 +552,17 @@ struct Tiltatris::State {
                         if (frac < gap || frac > 65535 - gap || rf < 1.0f) c = c_gap;
                         else if (rf > RING_H - 2.0f || frac < gap * 3) c = c_lit[p];
                         else if (rf < 3.0f || frac > 65535 - gap * 3) c = c_dark[p];
+                        else c = c_full[p];
+                    }
+                    // The falling piece, in screen columns, on top of everything.
+                    const uint32_t srel = uint32_t(Polar::angle(i)) * N;
+                    const uint8_t pv = (ring >= 0 && ring < RINGS + 4) ? piece_mask[ring][srel >> 16] : 0;
+                    if (pv) {
+                        const uint32_t sfrac = srel & 0xFFFF;
+                        const int p = pv - 1;
+                        if (sfrac < gap || sfrac > 65535 - gap || rf < 1.0f) c = c_gap;
+                        else if (rf > RING_H - 2.0f || sfrac < gap * 3) c = c_lit[p];
+                        else if (rf < 3.0f || sfrac > 65535 - gap * 3) c = c_dark[p];
                         else c = c_full[p];
                     }
                 }

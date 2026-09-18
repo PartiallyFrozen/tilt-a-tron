@@ -1,5 +1,8 @@
 #include "console/launcher.h"
 
+#include "board/board.h"
+#include <cstdio>
+
 #include <algorithm>
 #include <cmath>
 
@@ -89,18 +92,23 @@ void Launcher::update(Engine &e, float dt)
 
     if (ges_.swipe_left) move(+1);
     if (ges_.swipe_right) move(-1);
-    since_click_move_ += dt;
+    // PWR on the home screen does one thing: double-click puts the watch to sleep.
     if (in.double_clicked & wc::BTN_B) {
-        // If the first click of the pair already browsed an app, put it back, then sleep.
-        if (since_click_move_ < 0.5f) move(-1);
-        since_click_move_ = 99;
         wc::audio::play({.f0 = 700, .f1 = 180, .ms = 260, .wave = wc::audio::Wave::Triangle, .volume = 0.6f});
         e.sleep();
         return;
     }
-    if (in.clicked & wc::BTN_B) {   // PWR also browses
-        move(+1);
-        since_click_move_ = 0;
+
+    battery_t_ += dt;
+    if (battery_t_ > 5.0f) {
+        battery_t_ = 0;
+        const int pct = pmu_battery_percent();
+        const bool chg = pmu_charging() || pmu_usb_power();
+        if (pct != battery_pct_ || chg != battery_charging_) {
+            battery_pct_ = pct;
+            battery_charging_ = chg;
+            battery_dirty_ = true;
+        }
     }
 
     hint_t_ += dt;
@@ -185,6 +193,22 @@ void Launcher::draw(Engine &e, Gfx &g)
         ui::restoreBg(g, Gfx::CX - 110, Gfx::CY + 175, 220, 22);
         ui::shadowText(g, Gfx::CX, Gfx::CY + 185, hints[hint_], ui::DIM, 2);
         hint_dirty_ = false;
+        battery_dirty_ = true;
+    }
+    if (battery_dirty_ && battery_pct_ >= 0) {
+        // Battery at the top: a little cell with its charge, the percentage beside it.
+        const int y = 34, bx = Gfx::CX - 34, bw = 28, bh = 14;
+        ui::restoreBg(g, Gfx::CX - 50, y - 12, 100, 26);
+        const Color c = battery_charging_ ? ui::GO : battery_pct_ <= 15 ? ui::DANGER : ui::TEXT;
+        g.fillRect(bx + 1, y - bh / 2 + 1, bw, bh, wc::rgb(0, 0, 0));   // shadow
+        g.rect(bx, y - bh / 2, bw, bh, c);
+        g.fillRect(bx + bw, y - 3, 3, 6, c);                          // the nub
+        const int fill = (bw - 4) * battery_pct_ / 100;
+        if (fill > 0) g.fillRect(bx + 2, y - bh / 2 + 2, fill, bh - 4, c);
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d%%", battery_pct_);
+        ui::shadowText(g, bx + bw + 30, y, buf, c, 2);
+        battery_dirty_ = false;
     }
     // The home screen is still unless the carousel is sliding: nothing to redraw,
     // nothing sent to the panel, and the engine idles between frames.

@@ -63,6 +63,8 @@ void      imu_sleep(bool sleep);
 // ---------------------------------------------------------------- power
 esp_err_t pmu_init(void);
 bool      pmu_usb_power(void);   // USB cable supplying power (charger or computer)
+int       pmu_battery_percent(void);   // 0..100, or -1 if unknown
+bool      pmu_charging(void);
 
 // ---------------------------------------------------------------- buttons
 enum { BTN_BOOT = 1 << 0, BTN_PWR = 1 << 1 };
