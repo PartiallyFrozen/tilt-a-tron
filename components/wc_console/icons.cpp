@@ -161,7 +161,7 @@ void jump(Color *buf, int r)
     });
 }
 
-void ringdrop(Color *buf, int r)
+void tiltatris(Color *buf, int r)
 {
     // Fallback only (the real icon is a PNG): coloured wedge rings around a dark core.
     static constexpr Color BG = rgb(12, 12, 20), EDGE = rgb(70, 74, 92), CORE = rgb(16, 19, 28);

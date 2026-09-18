@@ -23,7 +23,7 @@
 #include "games/maze.h"
 #include "games/racer.h"
 #include "games/jump.h"
-#include "games/ringdrop.h"
+#include "games/tiltatris.h"
 #include "net/net.h"
 #include "nvs_flash.h"
 #include "storage/storage.h"
@@ -183,7 +183,7 @@ extern "C" void app_main(void)
     static games::Maze maze;
     static games::Racer racer;
     static games::Jump jump;
-    static games::RingDrop ringdrop;
+    static games::Tiltatris tiltatris;
     static console::SettingsApp settings;
     static console::WifiApp wifi_setup(&settings);
     static console::UpdateApp updater(&settings);
@@ -193,7 +193,7 @@ extern "C" void app_main(void)
         {"maze", "MARBLE MAZE", wc::rgb(222, 178, 112), console::icons::maze, &maze},
         {"racer", "GRAND PRIX", wc::rgb(255, 70, 70), console::icons::racer, &racer},
         {"jump", "SKY JUMP", wc::rgb(255, 190, 50), console::icons::jump, &jump},
-        {"ringdrop", "RING DROP", wc::rgb(80, 220, 240), console::icons::ringdrop, &ringdrop},
+        {"tiltatris", "TILT-A-TRIS", wc::rgb(80, 220, 240), console::icons::tiltatris, &tiltatris},
         {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings},
     };
     static console::Launcher launcher(apps, sizeof(apps) / sizeof(apps[0]));

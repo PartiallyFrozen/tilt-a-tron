@@ -4,9 +4,30 @@
 (ESP32-S3R8, 32 MB flash, 8 MB PSRAM, 466×466 round CO5300 AMOLED over QSPI,
 CST9217 touch, QMI8658 IMU, ES8311 audio). Built on ESP-IDF 5.5.5, C++.
 
-## Build & install
+## Install (no toolchain needed)
 
-One command:
+Got the same Waveshare board? The repo ships the built firmware in `firmware/`.
+You need Python 3 and a USB cable that carries data.
+
+```powershell
+git clone https://github.com/PartiallyFrozen/tilt-a-tron.git
+cd tilt-a-tron
+.\install.ps1          # Windows          (macOS / Linux: ./install.sh)
+```
+
+The script installs `esptool` the first time, then asks you to put the watch in
+install mode: unplug it, hold the small **BOOT** button by the USB port, plug it
+in, let go after 2 seconds. It writes the bootloader, partition table and app
+(about 15 s), and the watch restarts into Tilt-a-tron. `-Erase` wipes everything
+first (settings, Wi-Fi, the theme drive). After that, updates can go over Wi-Fi.
+
+Maintainers: after building, `.\tools\make_release.ps1` refreshes `firmware/`
+(binaries + `manifest.json` with offsets and the build hash) so the installer
+matches the source.
+
+## Build & install (developers)
+
+Needs ESP-IDF 5.5.5 (`C:\Espressif`, installed with EIM). One command:
 
 ```powershell
 .\update.ps1            # build, install, verify
@@ -199,12 +220,14 @@ Handy for checking a game without picking the watch up.
 - The sky turns to stars as you climb. **Swipe left** menu (tilt sensitivity, sound,
   new game, best) · **BOOT** home. Best height is saved
 
-## Ring Drop controls
+## Tilt-a-tris controls
 
 - Radial Tetris: wedge pieces fall inward from the rim; fill a whole ring to clear it
 - The pile is locked to the real world: **turn the watch** to spin the pile under the
   falling piece, which stays at the top of the screen
 - **Tap** rotates the piece · **hold** soft-drops · **PWR** hard-drops
+- Some level-ups flip gravity: pieces rise from the core and the pile builds against
+  the rim, until the next flip
 - Score, level and the next piece live in the core. **Swipe left** menu (sound, new
   game, best) · **BOOT** home. Best score is saved
 

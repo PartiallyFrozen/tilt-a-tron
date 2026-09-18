@@ -1,0 +1,29 @@
+﻿{
+    "name":  "Tilt-a-tron",
+    "version":  "0.4.0",
+    "sha":  "dd12defa65c87b08",
+    "chip":  "esp32s3",
+    "flash":  {
+                  "mode":  "dio",
+                  "freq":  "80m",
+                  "size":  "32MB"
+              },
+    "files":  [
+                  {
+                      "offset":  "0x0",
+                      "file":  "bootloader.bin"
+                  },
+                  {
+                      "offset":  "0x8000",
+                      "file":  "partition-table.bin"
+                  },
+                  {
+                      "offset":  "0xf000",
+                      "file":  "ota_data_initial.bin"
+                  },
+                  {
+                      "offset":  "0x20000",
+                      "file":  "tiltatron.bin"
+                  }
+              ]
+}

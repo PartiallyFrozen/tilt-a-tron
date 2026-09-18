@@ -234,7 +234,7 @@ def settings_icon():
     finish(img, "settings")
 
 
-def ringdrop_icon():
+def tiltatris_icon():
     img = canvas((12, 12, 20))
     c = 26
     cols = [(80, 220, 240), (255, 215, 60), (190, 90, 240), (255, 150, 40), (70, 130, 255), (90, 230, 110),
@@ -275,7 +275,7 @@ def ringdrop_icon():
                 px[xx, yy] = col + (255,)
             elif rf < 1:
                 px[xx, yy] = (26, 26, 40, 255)
-    finish(img, "ringdrop")
+    finish(img, "tiltatris")
 
 
 def main():
@@ -284,7 +284,7 @@ def main():
     maze_icon()
     breakout_icon()
     settings_icon()
-    ringdrop_icon()
+    tiltatris_icon()
 
 
 if __name__ == "__main__":
