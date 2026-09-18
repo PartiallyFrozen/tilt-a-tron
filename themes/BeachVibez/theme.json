@@ -1,0 +1,15 @@
+{
+  "name": "BeachVibez",
+  "author": "Tilt-a-tron",
+  "colors": {
+    "background": "#000000",
+    "text": "#FFFFFF",
+    "label": "#E1E1E1",
+    "dim": "#969696",
+    "box": "#5A5A64",
+    "value": "#28E6E6",
+    "accent": "#FFDC28",
+    "go": "#28C86E",
+    "danger": "#FF2828"
+  }
+}

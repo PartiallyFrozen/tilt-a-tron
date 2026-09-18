@@ -58,7 +58,9 @@ def main():
     with open(os.path.join(ROOT, "theme.json"), "w", newline="\n") as f:
         json.dump(THEME, f, indent=2)
         f.write("\n")
-    background().save(os.path.join(ROOT, "background.png"), optimize=True)
+    # The background is hand-made art now; only generate the placeholder if it is missing.
+    if not os.path.exists(os.path.join(ROOT, "background.png")):
+        background().save(os.path.join(ROOT, "background.png"), optimize=True)
     make_icons.main()   # the app icons, built from the games' sprite sheets
     for dirpath, _, files in os.walk(ROOT):
         for n in files:

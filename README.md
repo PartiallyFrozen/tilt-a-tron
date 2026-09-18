@@ -76,6 +76,11 @@ wraps `idf.py` with the ESP-IDF 5.5.5 environment (`C:\Espressif`), e.g.
 
 ## Themes
 
+Ready-made themes live in `themes/` (BeachVibez, CPU, SkaterGirl, Spaceportal,
+Tiltatron-8bit): copy a folder into the watch's `Theme` drive and pick it in
+Settings > THEME. `Default` is built into the firmware.
+
+
 Themes are plain files on the Tilt-a-tron drive, so anyone can make one:
 
 ```
