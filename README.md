@@ -6,6 +6,12 @@ CST9217 touch, QMI8658 IMU, ES8311 audio). Built on ESP-IDF 5.5.5, C++.
 
 ## Install (no toolchain needed)
 
+**Easiest: the browser installer at <https://partiallyfrozen.github.io/tilt-a-tron/>.** Plug the
+watch in, open the page in Chrome or Edge on a desktop, press FLASH. (The page lives in `site/`
+and is deployed by `.github/workflows/pages.yml`.)
+
+Or from a clone of this repository:
+
 Got the same Waveshare board? The repo ships the built firmware in `firmware/`.
 You need Python 3 and a USB cable that carries data.
 
