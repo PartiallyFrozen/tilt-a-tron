@@ -93,17 +93,14 @@ static bool pngFits(const std::string &path, int max_w, int max_h)
     return true;
 }
 
-static bool loadPng(const std::string &path, Image &out, int max_w, int max_h)
+// Decode PNG bytes (from a file read into memory, or embedded in the firmware).
+static bool loadPngBytes(const uint8_t *png, size_t len, const char *what, Image &out, int max_w, int max_h)
 {
-    struct stat st;
-    if (stat(path.c_str(), &st) != 0) return false;
-    if (!pngFits(path, max_w, max_h)) return false;
-
     unsigned char *rgba = nullptr;
     unsigned w = 0, h = 0;
-    const unsigned err = lodepng_decode32_file(&rgba, &w, &h, path.c_str());
+    const unsigned err = lodepng_decode32(&rgba, &w, &h, png, len);
     if (err) {
-        ESP_LOGW(TAG, "%s: %s", path.c_str(), lodepng_error_text(err));
+        ESP_LOGW(TAG, "%s: %s", what, lodepng_error_text(err));
         free(rgba);
         return false;
     }
@@ -113,7 +110,7 @@ static bool loadPng(const std::string &path, Image &out, int max_w, int max_h)
     unsigned step = 1;
     while ((w + step - 1) / step > unsigned(max_w) || (h + step - 1) / step > unsigned(max_h)) step++;
     const unsigned out_w = (w + step - 1) / step, out_h = (h + step - 1) / step;
-    if (step > 1) ESP_LOGI(TAG, "%s: %ux%u shrunk to %ux%u", path.c_str(), w, h, out_w, out_h);
+    if (step > 1) ESP_LOGI(TAG, "%s: %ux%u shrunk to %ux%u", what, w, h, out_w, out_h);
 
     out.release();
     out.w = out_w;
@@ -161,6 +158,29 @@ static bool loadPng(const std::string &path, Image &out, int max_w, int max_h)
         out.alpha = nullptr;
     }
     return true;
+}
+
+static bool loadPng(const std::string &path, Image &out, int max_w, int max_h)
+{
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return false;
+    if (!pngFits(path, max_w, max_h)) return false;
+    uint8_t *buf = static_cast<uint8_t *>(heap_caps_malloc(st.st_size, MALLOC_CAP_SPIRAM));
+    if (!buf) return false;
+    FILE *f = std::fopen(path.c_str(), "rb");
+    const size_t n = f ? std::fread(buf, 1, st.st_size, f) : 0;
+    if (f) std::fclose(f);
+    const bool ok = n == size_t(st.st_size) && loadPngBytes(buf, n, path.c_str(), out, max_w, max_h);
+    heap_caps_free(buf);
+    return ok;
+}
+
+bool Theme::builtinIcon(const std::string &app_id, Image &out)
+{
+    const uint8_t *png = nullptr;
+    size_t len = 0;
+    if (!storage_builtin_icon(app_id.c_str(), &png, &len)) return false;
+    return loadPngBytes(png, len, app_id.c_str(), out, 232, 232);
 }
 
 static bool parseColor(cJSON *colors, const char *key, Color &out)

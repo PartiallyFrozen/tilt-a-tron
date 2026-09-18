@@ -23,6 +23,10 @@ void Launcher::begin(Engine &e)
     const int size = 2 * ICON_R;
     for (int i = 0; i < n_; i++) {
         Image img;
+        if (Theme::builtinIcon(apps_[i].id, img)) {
+            builtin_icons_.push_back(img);
+            continue;
+        }
         img.w = img.h = size;
         img.px = static_cast<Color *>(heap_caps_malloc(size * size * sizeof(Color), MALLOC_CAP_SPIRAM));
         img.alpha = static_cast<uint8_t *>(heap_caps_malloc(size * size, MALLOC_CAP_SPIRAM));

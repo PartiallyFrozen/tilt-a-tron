@@ -56,8 +56,30 @@ static void write_if_missing(const char *path, const uint8_t *start, const uint8
     write_file(path, start, end, true);
 }
 
+bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len)
+{
+    static const struct {
+        const char *id;
+        const uint8_t *start, *end;
+    } icons[] = {
+        {"breakout", _binary_breakout_png_start, _binary_breakout_png_end},
+        {"settings", _binary_settings_png_start, _binary_settings_png_end},
+        {"maze", _binary_maze_png_start, _binary_maze_png_end},
+        {"racer", _binary_racer_png_start, _binary_racer_png_end},
+        {"jump", _binary_jump_png_start, _binary_jump_png_end},
+    };
+    for (size_t i = 0; i < sizeof(icons) / sizeof(icons[0]); i++) {
+        if (strcmp(icons[i].id, id) != 0) continue;
+        *png = icons[i].start;
+        *len = icons[i].end - icons[i].start;
+        return true;
+    }
+    return false;
+}
+
 // Make sure Theme/Default exists with the built-in files, so there's always a
-// working theme to copy. Files the user already changed are left alone.
+// working theme to copy. Default is the firmware's own look, so its files are
+// refreshed when a new firmware ships different ones (copy it to make your own).
 static void seed_defaults(void)
 {
     mkdir(STORAGE_THEMES, 0775);
@@ -65,16 +87,16 @@ static void seed_defaults(void)
     mkdir(STORAGE_THEMES "/Default/icons", 0775);
     // The README is ours, not the user's: keep it current with the firmware.
     write_file(STORAGE_ROOT "/README.txt", _binary_README_txt_start, _binary_README_txt_end, false);
-    write_if_missing(STORAGE_THEMES "/Default/theme.json", _binary_theme_json_start, _binary_theme_json_end);
-    write_if_missing(STORAGE_THEMES "/Default/background.png", _binary_background_png_start,
-                     _binary_background_png_end);
-    write_if_missing(STORAGE_THEMES "/Default/icons/breakout.png", _binary_breakout_png_start,
-                     _binary_breakout_png_end);
-    write_if_missing(STORAGE_THEMES "/Default/icons/settings.png", _binary_settings_png_start,
-                     _binary_settings_png_end);
-    write_if_missing(STORAGE_THEMES "/Default/icons/maze.png", _binary_maze_png_start, _binary_maze_png_end);
-    write_if_missing(STORAGE_THEMES "/Default/icons/racer.png", _binary_racer_png_start, _binary_racer_png_end);
-    write_if_missing(STORAGE_THEMES "/Default/icons/jump.png", _binary_jump_png_start, _binary_jump_png_end);
+    write_file(STORAGE_THEMES "/Default/theme.json", _binary_theme_json_start, _binary_theme_json_end, false);
+    write_file(STORAGE_THEMES "/Default/background.png", _binary_background_png_start,
+               _binary_background_png_end, false);
+    write_file(STORAGE_THEMES "/Default/icons/breakout.png", _binary_breakout_png_start,
+               _binary_breakout_png_end, false);
+    write_file(STORAGE_THEMES "/Default/icons/settings.png", _binary_settings_png_start,
+               _binary_settings_png_end, false);
+    write_file(STORAGE_THEMES "/Default/icons/maze.png", _binary_maze_png_start, _binary_maze_png_end, false);
+    write_file(STORAGE_THEMES "/Default/icons/racer.png", _binary_racer_png_start, _binary_racer_png_end, false);
+    write_file(STORAGE_THEMES "/Default/icons/jump.png", _binary_jump_png_start, _binary_jump_png_end, false);
 
     // Design templates: where icons, titles and menu rows land on the round screen.
     mkdir(STORAGE_ROOT "/Guide", 0775);
