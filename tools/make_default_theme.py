@@ -18,10 +18,6 @@ ICON = 210          # icon size in the carousel
 SCREEN = 466
 
 
-def hexrgb(h):
-    return tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
-
-
 def background():
     """Near-black with a faint cool glow in the middle (AMOLED-friendly)."""
     img = Image.new("RGB", (SCREEN, SCREEN))

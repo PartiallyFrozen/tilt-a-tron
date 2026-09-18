@@ -29,12 +29,10 @@ bool storage_free_bytes(uint32_t *total, uint32_t *free_bytes);   // of the stor
 esp_err_t storage_format(void);
 uint32_t storage_generation(void);   // bumps every time the drive returns to the app
 
-// DEBUG MODE (persisted, default on for now): the USB port stays the flashing /
-// log port. Off: the USB port is the Tilt-a-tron drive. Takes effect after restart.
-bool storage_debug_mode(void);           // = !storage_usb_drive_enabled()
-bool storage_usb_drive_enabled(void);    // Settings > USB DRIVE (default off)
+// Settings > USB DRIVE (persisted, default off): off, the USB port is for charging,
+// flashing and the manager app; on, it is also the Tilt-a-tron drive. Needs a restart.
+bool storage_usb_drive_enabled(void);
 void storage_set_usb_drive_enabled(bool on);
-void storage_set_debug_mode(bool on);
 
 #ifdef __cplusplus
 }

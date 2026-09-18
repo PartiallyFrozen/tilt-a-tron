@@ -382,5 +382,3 @@ void storage_set_usb_drive_enabled(bool on)
     nvs_close(h);
 }
 
-bool storage_debug_mode(void) { return !storage_usb_drive_enabled(); }
-void storage_set_debug_mode(bool on) { storage_set_usb_drive_enabled(!on); }

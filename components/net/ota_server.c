@@ -234,7 +234,7 @@ static esp_err_t fail(httpd_req_t *req, esp_ota_handle_t h, const char *msg)
 }
 
 #define RX_BUF 8192
-static char s_rx_buf[RX_BUF];   // shared by /update and /wad: the server handles one request at a time
+static char s_rx_buf[RX_BUF];   // out of the server task's stack
 
 static esp_err_t update_post_inner(httpd_req_t *req)
 {
