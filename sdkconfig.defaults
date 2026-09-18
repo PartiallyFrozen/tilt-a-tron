@@ -10,9 +10,7 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
-# Code runs from flash (the usual way). Copying it into PSRAM too cost 1.4 MB, which Doom needs.
-# CONFIG_SPIRAM_FETCH_INSTRUCTIONS is not set
-# Read-only data does live in PSRAM: components/doom/linker.lf relies on that.
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
 CONFIG_SPIRAM_RODATA=y
 CONFIG_SPIRAM_USE_MALLOC=y
 # Keep small allocations in fast internal RAM; big ones (framebuffer, assets) go to PSRAM
