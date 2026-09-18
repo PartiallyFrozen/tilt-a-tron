@@ -19,6 +19,7 @@ public:
     virtual ~Game() = default;
     virtual void begin(Engine &) {}   // once, the first time the app is shown
     virtual void enter(Engine &) {}   // every time the app becomes active (screen is black)
+    virtual void leave(Engine &) {}   // another app is taking over, or the watch is going to sleep
     virtual void update(Engine &, float dt) = 0;
     virtual void draw(Engine &, Gfx &) = 0;
     // Apps that only draw when something changes: draw the next frame regardless.

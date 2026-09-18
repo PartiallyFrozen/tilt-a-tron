@@ -1,7 +1,7 @@
 idf_component_register(
-    SRCS "breakout.cpp" "maze.cpp" "racer.cpp" "jump.cpp" "tiltatris.cpp" "clock.cpp" "star.cpp"
+    SRCS "breakout.cpp" "maze.cpp" "racer.cpp" "jump.cpp" "tiltatris.cpp" "clock.cpp" "star.cpp" "doom.cpp"
     INCLUDE_DIRS "include"
-    REQUIRES engine wc_console audio esp_hw_support nvs_flash esp_timer net
+    REQUIRES engine wc_console audio esp_hw_support nvs_flash esp_timer net doom storage
     EMBED_FILES
         "assets/jump/hopper.png"
         "assets/jump/monster.png"

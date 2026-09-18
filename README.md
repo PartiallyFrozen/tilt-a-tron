@@ -76,6 +76,7 @@ wraps `idf.py` with the ESP-IDF 5.5.5 environment (`C:\Espressif`), e.g.
 | `themes/` | Source of the built-in Default theme (embedded in firmware, copied to the drive) |
 | `tools/make_default_theme.py` | Regenerates `themes/Default` PNGs |
 | `components/net` | Wi-Fi join/scan, saved credentials, OTA HTTP server, update-mode flag |
+| `components/doom` | The Doom engine (GPL-2.0) plus `port/`: the platform layer, engine task and the memory-mapped WAD store |
 | `components/games` | Games. `Breakout`: round breakout ported from the web prototype. `Maze`: tilt marble labyrinth with generated levels and holes |
 | `main/` | App registry (carousel order) + `BenchGame` bring-up/calibration app |
 | `docs/` | Board schematic |
@@ -253,6 +254,34 @@ Handy for checking a game without picking the watch up.
   on the watch from its number (the same for everybody) and solved by breadth-first search
 - **PWR** or the RST button starts the level over · **swipe left** menu (level, sound,
   flat play with the gyro, reset) · built from `docs/SLEEPY_STAR_SPEC.md`
+
+## Doom
+
+The real thing: id Software's Doom engine (GPL source, via Chocolate Doom and
+[doomgeneric](https://github.com/ozkl/doomgeneric)) in `components/doom`, played by holding
+the watch like a steering wheel.
+
+- **Turn the watch** to turn, like the wheel in Grand Prix; the picture counter-rotates, so the
+  world stays upright. **Tip it forward** to walk (further = run), **back** to back up; "level"
+  is however you were holding it when the game (re)started
+- **Tap or hold** the screen to fire · **PWR** = use (doors, switches) · **swipe right** next
+  weapon · **swipe left** menu (skill, sound, walk sensitivity, new game) · **BOOT** home (Doom
+  stays paused in memory, so coming back is instant)
+- **It needs a WAD** (Doom's game data), which isn't in this repository. The free shareware
+  `DOOM1.WAD` (episode 1) works, as do the registered `DOOM.WAD` and other Doom-engine IWADs up
+  to 6 MB. Turn on Settings > USB DRIVE, copy the WAD into the drive's `Doom` folder, eject, and
+  open DOOM: it copies the file into its own flash region once (about a minute). Developers can
+  send it over Wi-Fi instead: `curl --data-binary @doom1.wad "http://<watch>/wad?name=doom1.wad"`
+- How it fits: the WAD is memory-mapped straight from flash, so graphics and sounds cost no RAM;
+  the engine runs in its own task with its stack, zone heap (2-3 MB) and globals all in PSRAM.
+  It renders 320x200 at up to 35 Hz; the console shows the newest frame rotated and stretched
+  (4:3 pixels, the middle ~240 columns fill the round screen) at the display's own rate, so the
+  horizon stays level even between Doom frames. Health, ammo and keys are redrawn in the visible
+  part of the picture; sound effects play through the console mixer; there's no music yet
+- Nothing is saved from inside the engine (no savegames or config yet); skill and walk
+  sensitivity are kept by the console
+- **Licence:** `components/doom` is GPL-2.0-or-later (see its `LICENSE`), so firmware built
+  with it is distributed under the GPL. The local changes to the engine are marked `TILT-A-TRON`
 
 ## Pocket Watch (Clock)
 

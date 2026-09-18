@@ -1,0 +1,19 @@
+# Doom's zero-initialised globals (visplanes, drawsegs, lookup tables: several hundred
+# KB) go in PSRAM; internal RAM is for Wi-Fi, DMA buffers and task stacks.
+[sections:doom_bss]
+entries:
+    .bss+
+
+[sections:doom_common]
+entries:
+    COMMON
+
+[scheme:doom_extram_bss]
+entries:
+    doom_bss -> extern_ram
+    doom_common -> extern_ram
+
+[mapping:doom]
+archive: libdoom.a
+entries:
+    * (doom_extram_bss)
