@@ -40,7 +40,9 @@ private:
     bool full_ = true;
     bool on_computer_ = false;   // the drive is open on a computer right now
     float hint_t_ = 0;
-    float since_click_move_ = 99;   // seconds since a PWR click browsed
+    float battery_t_ = 9;           // seconds since the battery was read
+    int battery_pct_ = -1;
+    bool battery_charging_ = false, battery_dirty_ = true;
     int hint_ = 0;
     bool hint_dirty_ = true;
     int drawn_shift_ = 1 << 30;

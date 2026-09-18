@@ -322,9 +322,10 @@ struct Maze::State {
 
     void beginPlay(const InputState &in)
     {
-        // However the watch is being held right now counts as level.
-        tilt_nx = in.tilt.ax;
-        tilt_ny = in.tilt.ay;
+        // Level is real level (flat), so tipping toward you always rolls toward you.
+        // Capturing "how it's held now" made the ball ignore the natural viewing tilt.
+        // The pause menu's RECENTER can still set a custom level.
+        (void)in;
         phase = PLAYING;
         phase_t = 0;
         still_t = 0;
@@ -490,11 +491,15 @@ struct Maze::State {
     {
         namespace ui = console::ui;
         if (ui::rowRect(0).hit(x, y)) {
-            // Hold the watch how you like, then tap: that becomes level.
-            tilt_nx = e.input().tilt.ax;
-            tilt_ny = e.input().tilt.ay;
+            // Hold the watch how you like, then tap: that becomes level. Tap again to go back to flat.
+            if (tilt_nx == 0 && tilt_ny == 0) {
+                tilt_nx = e.input().tilt.ax;
+                tilt_ny = e.input().tilt.ay;
+            } else {
+                tilt_nx = tilt_ny = 0;
+            }
             vx = vy = 0;
-            closeMenu();
+            menu_dirty = true;
         } else if (ui::rowRect(1).hit(x, y)) {
             wc::audio::setVolume(wc::audio::volume() == 0 ? 2 : 0);
             if (wc::audio::volume() > 0) sfx::start();
@@ -515,7 +520,7 @@ struct Maze::State {
         namespace ui = console::ui;
         ui::clearScreen(g);
         ui::title(g, "PAUSED");
-        ui::row(g, 0, "RECENTER TILT", "SET", ui::ACCENT);
+        ui::row(g, 0, "LEVEL", tilt_nx == 0 && tilt_ny == 0 ? "FLAT" : "CUSTOM", ui::ACCENT);
         ui::row(g, 1, "SOUND", wc::audio::volume() ? "ON" : "OFF", wc::audio::volume() ? ui::GO : ui::DIM);
         ui::row(g, 2, "NEW GAME", "GO", ui::ACCENT);
         char buf[16];
