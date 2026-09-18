@@ -295,7 +295,49 @@ Notes that matter:
   the package. That is what makes uninstall complete, and what makes a shared game safe to
   run.
 
-### 4.3 Versioning
+### 4.3 Porting a game to the API
+
+What the first two conversions came down to, so the rest come out the same shape. A ported
+game is one `.c` file plus, if it ships files, a `_builtin.c` naming them.
+
+| C++ it used | What it becomes |
+|---|---|
+| `wc::Canvas canvas; canvas.init(s)` | `T->canvas_create(s, 0)`, kept in the game's own struct |
+| `c.fillCircle(...)`, `c.textCentered(...)` | the matching `T->canvas_*` call, canvas first |
+| `Gfx::W`, a hardcoded canvas width | `T->canvas_width(cv)` — ask, don't assume |
+| `wc::Store s("id"); s.get(k, v)` | `T->save_get(k, &v, limit)`; the namespace is the descriptor's `id` |
+| `wc::audio::play({...})` | `tat_tone_t` + `T->tone(&t)`, one call per tone |
+| `console::ui::PauseMenu menu` | `T->menu_open/is_open/update/draw/...` |
+| `games::ui::banner(...)` | `tat_banner_t` + `T->canvas_banner(...)` |
+| `Gestures ges; ges.update(...)` | `T->gestures()` — the host already did it |
+| `esp_random()`, `esp_timer_get_time()` | `T->random()`, `T->now_us()` |
+| `ESP_LOGI(TAG, ...)` | `T->log(...)` — the tag is the game's `id` |
+| `e.presenter()`, `e.input()`, `e.goHome()` | `T->canvas_present(cv)`, `T->input()`, `T->go_home()` |
+| `_binary_x_png_start` in the game | a `tat_assets[]` table in `_builtin.c`; the game calls `T->asset("x.png", &len)` |
+| `std::vector<Thing> things` | `Thing things[MAX]; int n_things;` and swap-with-last removal |
+
+Three things that bite every time:
+
+- **Removing from a fixed array.** `a[i] = a[--n]` moves the last element into the hole, so
+  the loop must **not** advance `i` afterwards — or must `break` immediately. Both ports had
+  one of each.
+- **Filling up.** Decide what happens when the array is full *before* it is, and prefer
+  stopping cleanly to dropping the newest thing on the floor.
+- **Anything `const` and file-scope must be a constant expression in C.** C++ will fold
+  things C will not — the difference of two linker symbols being the one that caught us.
+
+Build it in by adding the source to `components/games/CMakeLists.txt` and renaming the
+symbols a package would export, so several games can share one firmware:
+
+```cmake
+set_source_files_properties("mygame/mygame.c" "mygame/mygame_builtin.c"
+    PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_mygame;tat_assets=tat_assets_mygame")
+```
+
+then declare `extern "C" const tat_game_t tat_game_mygame;` in `main/main.cpp` and register
+`static tat::HostedGame mygame(tat_game_mygame);` in the carousel.
+
+### 4.4 Versioning
 
 `major` changes when something is removed or changes meaning. `minor` changes when functions
 are **appended to the end** of the struct and nowhere else.
@@ -456,7 +498,7 @@ instead. Settings > GAMES keeps working as it does now for hiding without deleti
 - **A bad game can't brick the watch.** The OS writes "launching &lt;id&gt;" before the first
   call into a game and clears it on a clean exit. Booting with that mark still set means it
   crashed: the game is quarantined, and the launcher says so and offers uninstall.
-- **The OS never loads a game it can't satisfy** (§4.3).
+- **The OS never loads a game it can't satisfy** (§4.4).
 - **Install is checked end to end** (§2), and the registry entry is written last.
 - **Memory is accounted per game.** `alloc`/`free` and every canvas and sheet it created are
   released at `unload`, so leaks can't build up across launches.
