@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install pyserial
-      - run: ./tests/run.sh
+      - run: bash tests/run.sh   # not ./ : the executable bit does not survive a Windows checkout
 
   build:
     runs-on: ubuntu-latest
