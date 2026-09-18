@@ -91,8 +91,8 @@ extern "C" void app_main(void)
             en.requestRedraw();
             vTaskDelay(pdMS_TO_TICKS(120));   // a frame or two, so the copy has happened
             const int n = wc::Gfx::W * wc::Gfx::H;
-            // A full-size PNG needs about 2 MB of working memory. With less than that free
-            // (Doom is resident) the picture is sent at half size, which needs a quarter.
+            // A full-size PNG needs about 2 MB of working memory. If PSRAM is too
+            // fragmented for that, send the picture at half size instead of nothing.
             const int step = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) > 2200 * 1024 ? 1 : 2;
             const int ow = wc::Gfx::W / step, oh = wc::Gfx::H / step;
             uint8_t *rgb = static_cast<uint8_t *>(heap_caps_malloc(ow * oh * 3, MALLOC_CAP_SPIRAM));
