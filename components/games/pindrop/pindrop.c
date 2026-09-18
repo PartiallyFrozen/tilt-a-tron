@@ -27,11 +27,13 @@ static const tat_api_t *T;
                          // band top and bottom for the HUD - the canvas corners
                          // are never visible at all.
 
-#define BALL_R 4.5f
+#define BALL_R 7.5f
 #define PIN_R 3.0f
-#define MAX_PINS 64
+#define MAX_PINS 48
+#define MAX_DRAINS 4
+#define LIVES 3
 
-#define GRAVITY 300.0f      // px/s^2 at one g
+#define GRAVITY 185.0f      // px/s^2 at one g
 #define BOUNCE 0.52f        // how much speed a pin gives back
 #define RIM_BOUNCE 0.40f
 #define DRAG 0.35f          // 1/s, so a ball left alone settles instead of jittering forever
@@ -46,14 +48,17 @@ static struct {
 
     /* palette */
     uint8_t c_bg, c_face, c_face_dim, c_rim, c_rim2, c_pin, c_pin_hi, c_pin_sh;
-    uint8_t c_hole, c_hole_rim, c_ball, c_ball_hi, c_text, c_dim, c_accent, c_go;
+    uint8_t c_hole, c_hole_rim, c_drain_rim, c_ball, c_ball_hi, c_text, c_dim, c_accent, c_go;
 
     /* level */
     int level, best_level;
     Vec pins[MAX_PINS];
     int pin_count;
-    Vec hole;
+    Vec hole;          /* the one you want */
     float hole_r;
+    Vec drains[MAX_DRAINS];
+    int drain_count;
+    float drain_r;
 
     /* ball */
     Vec p, v;
@@ -61,7 +66,8 @@ static struct {
     float run_t;
 
     /* play */
-    enum { READY, PLAYING, SUNK } phase;
+    enum { READY, PLAYING, SUNK, DRAINED, OVER } phase;
+    int lives;
     float phase_t;
     Vec grav;          /* low-passed, in g */
     float flat_t;      /* how long the watch has been lying flat */
@@ -93,8 +99,15 @@ static float dist2(Vec a, Vec b)
 
 static int pins_for(int level)
 {
-    const int n = 14 + level * 3;
+    const int n = 9 + level * 2;
     return n > MAX_PINS ? MAX_PINS : n;
+}
+
+// None on the first level - learn the board first, then start losing balls to it.
+static int drains_for(int level)
+{
+    const int n = level / 2;
+    return n > MAX_DRAINS ? MAX_DRAINS : n;
 }
 
 static float hole_r_for(int level)
@@ -120,8 +133,26 @@ static void build_level(int level)
         if (g.hole.y > CCENTRE - 20.0f || tries > 40) break;
     }
 
+    // Drains: the same size as the hole so they are a real threat, placed apart from it
+    // and from each other so the board never becomes a funnel into one.
+    g.drain_r = g.hole_r * 0.95f;
+    g.drain_count = 0;
+    for (int tries = 0; g.drain_count < drains_for(level) && tries < 600; tries++) {
+        const float a = frand(0, 6.2831853f);
+        const float r = frand(BOARD_R * 0.30f, BOARD_R - g.drain_r - 7.0f);
+        Vec c = {CCENTRE + cosf(a) * r, CCENTRE + sinf(a) * r};
+        const float apart = (g.hole_r + g.drain_r + 18.0f);
+        if (dist2(c, g.hole) < apart * apart) continue;
+        bool clear = true;
+        for (int i = 0; i < g.drain_count && clear; i++)
+            if (dist2(c, g.drains[i]) < apart * apart) clear = false;
+        if (!clear) continue;
+        if (c.y < 34.0f && fabsf(c.x - CCENTRE) < 18.0f) continue;   /* not under the drop */
+        g.drains[g.drain_count++] = c;
+    }
+
     // Pins scattered with enough room between them for the ball to pass, and kept clear
-    // of the hole so a level is always winnable.
+    // of every hole so a level is always winnable.
     const float min_gap = BALL_R * 2 + PIN_R * 2 + 3.0f;
     int placed = 0;
     for (int tries = 0; placed < g.pin_count && tries < 4000; tries++) {
@@ -129,9 +160,14 @@ static void build_level(int level)
         const float r = frand(14.0f, BOARD_R - PIN_R - 7.0f);
         Vec c = {CCENTRE + cosf(a) * r, CCENTRE + sinf(a) * r};
 
-        if (dist2(c, g.hole) < (g.hole_r + PIN_R + BALL_R + 4.0f) * (g.hole_r + PIN_R + BALL_R + 4.0f)) continue;
+        const float clearance = g.hole_r + PIN_R + BALL_R + 4.0f;
+        if (dist2(c, g.hole) < clearance * clearance) continue;
+        bool near_drain = false;
+        for (int i = 0; i < g.drain_count && !near_drain; i++)
+            if (dist2(c, g.drains[i]) < clearance * clearance) near_drain = true;
+        if (near_drain) continue;
         /* keep the drop point clear so the ball always gets moving */
-        if (c.y < 30.0f && fabsf(c.x - CCENTRE) < 14.0f) continue;
+        if (c.y < 34.0f && fabsf(c.x - CCENTRE) < 18.0f) continue;
 
         bool clear = true;
         for (int i = 0; i < placed && clear; i++)
@@ -143,6 +179,8 @@ static void build_level(int level)
     g.pin_count = placed;
 }
 
+static void start_level(int level);
+
 static void drop_ball(void)
 {
     // In at the top of the board, nudged a little so it does not fall dead straight.
@@ -152,6 +190,12 @@ static void drop_ball(void)
     g.v.y = 12.0f;
     g.bounces = 0;
     g.run_t = 0;
+}
+
+static void start_run(int level)
+{
+    g.lives = LIVES;
+    start_level(level);
 }
 
 static void start_level(int level)
@@ -175,6 +219,14 @@ static void tick(float speed)
     T->tone(&t);
 }
 
+static void lost(void)
+{
+    tat_tone_t a = {330, 150, 180, TAT_SQUARE, 0.6f, 0};
+    tat_tone_t b = {150, 90, 220, TAT_TRIANGLE, 0.5f, 150};
+    T->tone(&a);
+    T->tone(&b);
+}
+
 static void plunk(void)
 {
     tat_tone_t a = {700, 1180, 90, TAT_TRIANGLE, 0.7f, 0};
@@ -185,7 +237,9 @@ static void plunk(void)
 
 // ---------------------------------------------------------------- physics
 
-static void bounce_off(Vec centre, float radius, float restitution)
+// Off the outside of something round - a pin. The surface pushes the ball away from the
+// centre, so that is the way the normal points.
+static void bounce_off_pin(Vec centre, float radius, float restitution)
 {
     float dx = g.p.x - centre.x, dy = g.p.y - centre.y;
     float d = sqrtf(dx * dx + dy * dy);
@@ -195,15 +249,31 @@ static void bounce_off(Vec centre, float radius, float restitution)
         d = 1;
     }
     const float nx = dx / d, ny = dy / d;
-
-    /* lift the ball clear so it cannot end up inside the pin */
-    g.p.x = centre.x + nx * radius;
+    g.p.x = centre.x + nx * radius;   /* never leave the ball inside the pin */
     g.p.y = centre.y + ny * radius;
 
     const float into = g.v.x * nx + g.v.y * ny;
-    if (into >= 0) return;   /* already moving away */
+    if (into >= 0) return;   /* already heading away */
     g.v.x -= (1.0f + restitution) * into * nx;
     g.v.y -= (1.0f + restitution) * into * ny;
+}
+
+// Off the inside of the rim, where the wall faces the other way. Using the pin version
+// here left the ball pressed against the rim with its outward speed intact - it looked
+// exactly like the game had frozen.
+static void bounce_inside_rim(float radius, float restitution)
+{
+    float dx = g.p.x - CCENTRE, dy = g.p.y - CCENTRE;
+    float d = sqrtf(dx * dx + dy * dy);
+    if (d < 0.0001f) return;
+    const float ox = dx / d, oy = dy / d;   /* outward */
+    g.p.x = CCENTRE + ox * radius;
+    g.p.y = CCENTRE + oy * radius;
+
+    const float into = g.v.x * ox + g.v.y * oy;   /* positive means driving into the wall */
+    if (into <= 0) return;
+    g.v.x -= (1.0f + restitution) * into * ox;
+    g.v.y -= (1.0f + restitution) * into * oy;
 }
 
 static void step_ball(float dt)
@@ -233,7 +303,7 @@ static void step_ball(float dt)
             const float reach = PIN_R + BALL_R;
             if (dist2(g.p, g.pins[i]) < reach * reach) {
                 const float before = sqrtf(g.v.x * g.v.x + g.v.y * g.v.y);
-                bounce_off(g.pins[i], reach, BOUNCE);
+                bounce_off_pin(g.pins[i], reach, BOUNCE);
                 if (before > 25.0f) {
                     g.bounces++;
                     tick(before);
@@ -244,9 +314,18 @@ static void step_ball(float dt)
         /* the rim of the board */
         const float dx = g.p.x - CCENTRE, dy = g.p.y - CCENTRE;
         const float rr = BOARD_R - BALL_R;
-        if (dx * dx + dy * dy > rr * rr) {
-            Vec c = {CCENTRE, CCENTRE};
-            bounce_off(c, rr, RIM_BOUNCE);
+        if (dx * dx + dy * dy > rr * rr) bounce_inside_rim(rr, RIM_BOUNCE);
+
+        /* a drain costs a ball */
+        const float drain_lip = g.drain_r - BALL_R * 0.55f;
+        for (int i = 0; i < g.drain_count; i++) {
+            if (drain_lip > 0 && dist2(g.p, g.drains[i]) < drain_lip * drain_lip) {
+                g.lives--;
+                g.phase = g.lives > 0 ? DRAINED : OVER;
+                g.phase_t = 0;
+                lost();
+                return;
+            }
         }
 
         /* down the hole: the ball has to be properly over it, not just clipping the edge */
@@ -290,6 +369,7 @@ static void pd_begin(const tat_api_t *api)
     g.c_pin_sh = T->canvas_color(g.cv, T->rgb(92, 94, 104));
     g.c_hole = T->canvas_color(g.cv, T->rgb(14, 16, 24));
     g.c_hole_rim = T->canvas_color(g.cv, T->rgb(255, 205, 60));
+    g.c_drain_rim = T->canvas_color(g.cv, T->rgb(120, 126, 140));
     g.c_ball = T->canvas_color(g.cv, T->rgb(232, 46, 74));
     g.c_ball_hi = T->canvas_color(g.cv, T->rgb(255, 168, 180));
     g.c_text = T->canvas_color(g.cv, T->rgb(250, 250, 255));
@@ -300,7 +380,7 @@ static void pd_begin(const tat_api_t *api)
     g.best_level = 1;
     T->save_get("best", &g.best_level, 0);
     T->save_get("bounces", &g.best_bounces, 0);
-    start_level(g.best_level);
+    start_run(g.best_level);
 }
 
 static void pd_enter(void)
@@ -317,12 +397,12 @@ static void pd_update(float dt)
     if (T->menu_is_open()) {
         switch (T->menu_update()) {
         case 0:   /* LEVEL: step through the ones reached */
-            start_level(g.level >= g.best_level ? 1 : g.level + 1);
+            start_run(g.level >= g.best_level ? 1 : g.level + 1);
             T->menu_invalidate();
             break;
         case 1: T->menu_toggle_sound(); break;
         case 2:   /* RETRY */
-            start_level(g.level);
+            start_run(g.level);
             T->menu_close();
             break;
         }
@@ -363,6 +443,19 @@ static void pd_update(float dt)
     case SUNK:
         if (g.phase_t > 1.4f || ges->tap || (in->clicked & TAT_BTN_B)) start_level(g.level + 1);
         break;
+
+    case DRAINED:
+        if (g.phase_t > 1.1f || ges->tap || (in->clicked & TAT_BTN_B)) {
+            drop_ball();        /* same board, one ball fewer */
+            g.phase = READY;
+            g.phase_t = 0;
+            g.dirty = true;
+        }
+        break;
+
+    case OVER:
+        if (g.phase_t > 0.8f && (ges->tap || (in->clicked & TAT_BTN_B))) start_run(1);
+        break;
     }
 }
 
@@ -389,6 +482,12 @@ static void draw_board(void)
     T->canvas_fill_circle(g.cv, (int)g.hole.x, (int)g.hole.y, (int)g.hole_r + 1, g.c_hole_rim);
     T->canvas_fill_circle(g.cv, (int)g.hole.x, (int)g.hole.y, (int)g.hole_r, g.c_hole);
 
+    /* drains read as holes too, but cold and unlit rather than gold */
+    for (int i = 0; i < g.drain_count; i++) {
+        T->canvas_fill_circle(g.cv, (int)g.drains[i].x, (int)g.drains[i].y, (int)g.drain_r + 1, g.c_drain_rim);
+        T->canvas_fill_circle(g.cv, (int)g.drains[i].x, (int)g.drains[i].y, (int)g.drain_r, g.c_hole);
+    }
+
     for (int i = 0; i < g.pin_count; i++) {
         const int x = (int)g.pins[i].x, y = (int)g.pins[i].y;
         T->canvas_fill_circle(g.cv, x, y + 1, (int)PIN_R, g.c_pin_sh);
@@ -402,6 +501,12 @@ static void draw_hud(void)
     char buf[32];
     snprintf(buf, sizeof(buf), "LVL %d", g.level);
     T->canvas_text_centered(g.cv, CW / 2, 11, buf, g.c_text, 1, true);
+
+    /* balls left, as balls */
+    for (int i = 0; i < LIVES; i++) {
+        const int x = CW / 2 - (LIVES - 1) * 6 + i * 12;
+        T->canvas_fill_circle(g.cv, x, 24, 4, i < g.lives ? g.c_ball : g.c_face_dim);
+    }
 
     const char *plural = g.bounces == 1 ? "" : "S";
     if (g.best_bounces) snprintf(buf, sizeof(buf), "%d PING%s   BEST %d", g.bounces, plural, g.best_bounces);
@@ -454,6 +559,14 @@ static void pd_draw(void)
         char sub[24];
         snprintf(sub, sizeof(sub), "%d PING%s", g.bounces, g.bounces == 1 ? "" : "S");
         banner("IN!", sub, g.c_go);
+    } else if (g.phase == DRAINED) {
+        char sub[24];
+        snprintf(sub, sizeof(sub), "%d BALL%s LEFT", g.lives, g.lives == 1 ? "" : "S");
+        banner("LOST IT", sub, g.c_drain_rim);
+    } else if (g.phase == OVER) {
+        char sub[24];
+        snprintf(sub, sizeof(sub), "REACHED LEVEL %d", g.level);
+        banner("OUT OF BALLS", sub, g.c_ball);
     } else if (g.flat_t > 1.2f) {
         T->canvas_text_centered(g.cv, CW / 2, (int)CCENTRE + 70, "TURN THE WATCH", g.c_accent, 1, true);
     }
@@ -464,6 +577,7 @@ static void pd_draw(void)
 static void pd_redraw(void) { g.dirty = true; }
 
 static bool pd_keep_awake(void) { return g.phase == PLAYING && !T->menu_is_open(); }
+
 
 const tat_game_t tat_game = {
     .magic = TAT_GAME_MAGIC,
