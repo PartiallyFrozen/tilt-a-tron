@@ -217,6 +217,24 @@ void star(Color *buf, int r)
     });
 }
 
+void doom(Color *buf, int r)
+{
+    // A demon's face: red-brown hide, horns, burning eyes, teeth.
+    static constexpr Color BG = rgb(30, 8, 6), EDGE = rgb(90, 30, 20), HIDE = rgb(150, 52, 30), DARK = rgb(96, 30, 18),
+                           HORN = rgb(222, 205, 170), EYE = rgb(255, 210, 40), TOOTH = rgb(240, 232, 214);
+    forEach(buf, r, [&](float nd, float, float x, float y) -> Color {
+        if (nd > 0.955f) return EDGE;
+        const float ax = std::fabs(x);
+        if (y < -0.30f && ax > 0.30f && ax < 0.30f + (y + 0.85f) * 0.45f && y > -0.85f) return HORN;
+        const float fx = x / 0.62f, fy = (y - 0.08f) / 0.58f;
+        if (fx * fx + fy * fy > 1.0f) return BG;
+        if (y > -0.18f && y < -0.02f && ax > 0.14f && ax < 0.40f && y > -0.30f + ax * 0.5f) return EYE;
+        if (y > 0.30f && y < 0.46f && ax < 0.36f) return (int((x + 1.0f) * 9.0f) & 1) ? TOOTH : DARK;
+        if (y > 0.24f && y < 0.52f && ax < 0.42f) return DARK;
+        return HIDE;
+    });
+}
+
 void settings(Color *buf, int r)
 {
     static constexpr Color BG = rgb(26, 30, 40), EDGE = rgb(70, 74, 92), GEAR = rgb(205, 210, 222),

@@ -27,6 +27,8 @@
 #include "games/tiltatris.h"
 #include "games/clock.h"
 #include "games/star.h"
+#include "games/doom.h"
+#include "doom/doom_port.h"
 #include "net/net.h"
 #include "nvs_flash.h"
 #include "storage/storage.h"
@@ -193,6 +195,7 @@ extern "C" void app_main(void)
     static games::Tiltatris tiltatris;
     static games::Clock clock_app;
     static games::Star star;
+    static games::Doom doom;
     static console::SettingsApp settings;
     static console::WifiApp wifi_setup(&settings);
     static console::UpdateApp updater(&settings);
@@ -205,6 +208,7 @@ extern "C" void app_main(void)
         {"jump", "SKY JUMP", wc::rgb(255, 190, 50), console::icons::jump, &jump},
         {"tiltatris", "TILT-A-TRIS", wc::rgb(80, 220, 240), console::icons::tiltatris, &tiltatris},
         {"star", "SLEEPY STAR", wc::rgb(255, 217, 61), console::icons::star, &star},
+        {"doom", "DOOM", wc::rgb(220, 60, 40), console::icons::doom, &doom},
         {"clock", "CLOCK", wc::rgb(214, 170, 60), console::icons::clock, &clock_app},
         {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings},
     };
@@ -250,6 +254,8 @@ extern "C" void app_main(void)
         }
         return any;
     });
+    // POST /wad: Doom's game data, straight into its flash region.
+    net_set_wad_hooks(doom_wad_write_begin, doom_wad_write, doom_wad_write_end);
     engine.setHome(launcher);
     engine.setSleepHooks(net_suspend, net_resume);
     // AUTO OFF applies everywhere, charging or not. The one exception: a computer has

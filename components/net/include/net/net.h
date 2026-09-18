@@ -78,6 +78,12 @@ void net_status_set_extra(const char *json_fields);
 // (the server frees it) and its size, or 0 on failure.
 typedef size_t (*net_screen_fn)(uint8_t **png_out);
 void net_set_screen_hook(net_screen_fn fn);
+
+// POST /wad: a big file streamed to whoever stores it (Doom's game data).
+typedef bool (*net_blob_begin_fn)(const char *name, uint32_t length);
+typedef bool (*net_blob_write_fn)(const void *data, size_t len);
+typedef bool (*net_blob_end_fn)(void);
+void net_set_wad_hooks(net_blob_begin_fn begin, net_blob_write_fn write, net_blob_end_fn end);
 // GET /input?<query>: remote control for testing; the hook gets the raw query string.
 typedef bool (*net_control_fn)(const char *query);
 void net_set_control_hook(net_control_fn fn);

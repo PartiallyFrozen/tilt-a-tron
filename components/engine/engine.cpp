@@ -46,6 +46,7 @@ void Engine::loopEntry(void *arg) { static_cast<Engine *>(arg)->loop(); }
 
 void Engine::activate(Game &app)
 {
+    if (game_ && game_ != &app) game_->leave(*this);
     game_ = &app;
     gfx_.clear(colors::black);
     if (!app.begun_) {
@@ -83,6 +84,7 @@ void Engine::irisOut()
 // Everything off except the chip: Wi-Fi paused, input task idle, panel and IMU asleep.
 void Engine::quiesce()
 {
+    if (game_) game_->leave(*this);   // enter() runs again on wake
     if (before_sleep_) before_sleep_();
     input_.pause(true);
     display_sleep(true);

@@ -43,6 +43,16 @@ struct Voice {
 
 Voice s_voices[VOICES];
 
+struct PcmVoice {
+    volatile bool active = false;
+    const uint8_t *data = nullptr;
+    uint32_t len = 0;
+    uint32_t pos = 0, step = 0;   // 16.16 fixed point, in source samples
+    float gain = 0;
+};
+
+PcmVoice s_pcm[PCM_CHANNELS];
+
 float waveSample(Wave w, float phase, uint32_t &noise)
 {
     switch (w) {
@@ -102,6 +112,17 @@ void mixerTask(void *)
                 v.phase += freq / SAMPLE_RATE;
                 if (v.phase >= 1.0f) v.phase -= 1.0f;
                 if (++v.samples_done >= v.samples_total) v.active = false;
+            }
+            for (auto &p : s_pcm) {
+                if (!p.active) continue;
+                any = true;
+                const uint32_t at = p.pos >> 16;
+                if (at >= p.len) {
+                    p.active = false;
+                    continue;
+                }
+                sample += (float(p.data[at]) - 128.0f) * (1.0f / 128.0f) * p.gain;
+                p.pos += p.step;
             }
             sample *= master;
             if (sample > 1.0f) sample = 1.0f;
@@ -222,6 +243,42 @@ void play(const Tone *tones, int count)
 void stopAll()
 {
     for (auto &v : s_voices) v.active = false;
+    for (auto &p : s_pcm) p.active = false;
 }
 
+void pcmStart(int channel, const uint8_t *data, int len, int rate, float volume)
+{
+    if (channel < 0 || channel >= PCM_CHANNELS || !data || len <= 0 || !s_ready || s_volume == 0) return;
+    PcmVoice &p = s_pcm[channel];
+    p.active = false;   // the mixer skips it while the fields change
+    p.data = data;
+    p.len = uint32_t(len);
+    p.pos = 0;
+    p.step = uint32_t((uint64_t(rate) << 16) / SAMPLE_RATE);
+    p.gain = volume;
+    p.active = true;
+}
+
+void pcmVolume(int channel, float volume)
+{
+    if (channel >= 0 && channel < PCM_CHANNELS) s_pcm[channel].gain = volume;
+}
+
+void pcmStop(int channel)
+{
+    if (channel >= 0 && channel < PCM_CHANNELS) s_pcm[channel].active = false;
+}
+
+bool pcmPlaying(int channel) { return channel >= 0 && channel < PCM_CHANNELS && s_pcm[channel].active; }
+
 }  // namespace wc::audio
+
+extern "C" {
+void wc_audio_pcm_start(int channel, const uint8_t *data, int len, int rate, float volume)
+{
+    wc::audio::pcmStart(channel, data, len, rate, volume);
+}
+void wc_audio_pcm_volume(int channel, float volume) { wc::audio::pcmVolume(channel, volume); }
+void wc_audio_pcm_stop(int channel) { wc::audio::pcmStop(channel); }
+int wc_audio_pcm_playing(int channel) { return wc::audio::pcmPlaying(channel); }
+}

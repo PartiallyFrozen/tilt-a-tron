@@ -9,3 +9,6 @@ app0,     app,  ota_0,   ,        4M,
 app1,     app,  ota_1,   ,        4M,
 storage,  data, fat,     ,        16M,
 coredump, data, coredump,,        64K,
+# Doom's game data (a WAD file), memory-mapped by the engine. Watches flashed before this
+# entry existed claim the same region at run time (components/doom/port/doom_wad.c).
+wad,      data, 0x40,    0x1900000, 6M,
