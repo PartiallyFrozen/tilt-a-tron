@@ -27,7 +27,7 @@ static size_t s_log_head;      // next write position
 static bool s_log_wrapped;
 static portMUX_TYPE s_log_mux = portMUX_INITIALIZER_UNLOCKED;
 static vprintf_like_t s_prev_vprintf;
-static char s_status_extra[192];
+static char s_status_extra[448];
 static net_screen_fn s_screen_fn;
 static net_control_fn s_control_fn;
 
@@ -142,7 +142,7 @@ static esp_err_t status_get(httpd_req_t *req)
 {
     ota_status_t st;
     ota_get_status(&st);
-    char buf[512];
+    char buf[768];
     const esp_app_desc_t *app = esp_app_get_description();
     // The ELF hash is unique to every build (the compile time isn't: it only
     // changes when that one file is recompiled), so it's how updates are verified.

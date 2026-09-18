@@ -74,3 +74,9 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
 
 # Games don't need the task watchdog yelling at a busy render loop on core 1
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
+
+# Crash dumps to the coredump partition; the boot after a crash reports the backtrace.
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
+CONFIG_ESP_COREDUMP_STACK_SIZE=1536
