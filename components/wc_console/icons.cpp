@@ -201,6 +201,22 @@ void clock(Color *buf, int r)
     });
 }
 
+void star(Color *buf, int r)
+{
+    // Fallback only (the real icon is a PNG): two rings, a beam from the top, a star.
+    static constexpr Color BG = rgb(14, 14, 28), EDGE = rgb(70, 74, 92), DISC = rgb(22, 22, 42),
+                           PLATE = rgb(46, 53, 80), PLATE2 = rgb(58, 67, 104), BEAM = rgb(255, 77, 210),
+                           STAR = rgb(255, 217, 61);
+    forEach(buf, r, [&](float nd, float, float x, float y) -> Color {
+        if (nd > 0.955f) return EDGE;
+        if (std::fabs(x) < 0.035f && y < -0.2f && y > -0.85f) return BEAM;
+        if (nd < 0.2f) return STAR;
+        if (nd > 0.62f && nd < 0.76f) return std::fabs(x) < 0.09f && y < 0 ? DISC : PLATE;
+        if (nd > 0.36f && nd < 0.50f) return std::fabs(x) < 0.09f && y < 0 ? DISC : PLATE2;
+        return nd < 0.86f ? DISC : BG;
+    });
+}
+
 void settings(Color *buf, int r)
 {
     static constexpr Color BG = rgb(26, 30, 40), EDGE = rgb(70, 74, 92), GEAR = rgb(205, 210, 222),

@@ -236,6 +236,18 @@ Handy for checking a game without picking the watch up.
 - Score, level and the next piece live in the core. **Swipe left** menu (sound, new
   game, best) · **BOOT** home. Best score is saved
 
+## Sleepy Star controls
+
+- A laser always falls straight down; rings of walls with gaps, mirrors and splitters sit
+  between it and a sleeping star. **Turn the watch** and the emitter moves round the rim to
+  real-world "up" (free, 8 notches); **tap a ring** to click it one notch, and the ring inside
+  it turns the other way. Get the light through the star's door
+- Only taps are counted, against each level's verified best (3 stars at best, 2 within two,
+  1 for any solve). Six hand-made levels at 1, 2, 4, 7, 11, 16; every other level is generated
+  on the watch from its number (the same for everybody) and solved by breadth-first search
+- **PWR** or the RST button starts the level over · **swipe left** menu (level, sound,
+  flat play with the gyro, reset) · built from `docs/SLEEPY_STAR_SPEC.md`
+
 ## Pocket Watch (Clock)
 
 - Five faces, **tap** to cycle: Pocket (brass, numerals, sweeping seconds, date window),
