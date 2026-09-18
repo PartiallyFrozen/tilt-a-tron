@@ -10,12 +10,12 @@
 #include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
+#include "engine/store.h"
 #include "engine/gestures.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
-#include "nvs.h"
 
 namespace wc {
 extern const uint8_t kFont5x7[][5];
@@ -272,24 +272,18 @@ struct Racer::State {
     // ================================================================= settings
     void load()
     {
-        nvs_handle_t h;
-        if (nvs_open("racer", NVS_READONLY, &h) != ESP_OK) return;
-        uint8_t v;
-        if (nvs_get_u8(h, "mirror", &v) == ESP_OK) mirror = v;
-        if (nvs_get_u8(h, "pitch", &v) == ESP_OK && v < 4) pitch_sens = v;
-        if (nvs_get_u8(h, "wins", &v) == ESP_OK) wins = v;
-        nvs_close(h);
+        wc::Store s("racer");
+        s.get("mirror", mirror);
+        s.get("pitch", pitch_sens, 4);
+        s.get("wins", wins);
     }
 
     void save()
     {
-        nvs_handle_t h;
-        if (nvs_open("racer", NVS_READWRITE, &h) != ESP_OK) return;
-        nvs_set_u8(h, "mirror", mirror);
-        nvs_set_u8(h, "pitch", uint8_t(pitch_sens));
-        nvs_set_u8(h, "wins", uint8_t(std::min(wins, 250)));
-        nvs_commit(h);
-        nvs_close(h);
+        wc::Store s("racer", wc::Store::Write);
+        s.set("mirror", mirror);
+        s.set("pitch", pitch_sens);
+        s.set("wins", wins);
     }
 
     // ================================================================= update

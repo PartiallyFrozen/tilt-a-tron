@@ -11,11 +11,11 @@
 #include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
+#include "engine/store.h"
 #include "engine/gestures.h"
 #include "engine/polar.h"
 #include "esp_log.h"
 #include "net/net.h"
-#include "nvs.h"
 
 using namespace wc;
 
@@ -96,26 +96,19 @@ struct Clock::State {
     // ------------------------------------------------------------------ persistence
     void load()
     {
-        nvs_handle_t h;
-        if (nvs_open("clock", NVS_READONLY, &h) != ESP_OK) return;
-        uint8_t f, v;
-        int32_t tz;
-        if (nvs_get_u8(h, "face", &f) == ESP_OK && f < FACE_COUNT) face = f;
-        if (nvs_get_u8(h, "h24", &v) == ESP_OK) h24 = v;
-        if (nvs_get_i32(h, "tz", &tz) == ESP_OK) tz_min = tz;
-        if (nvs_get_u8(h, "tz_auto", &v) == ESP_OK) tz_auto = v;
-        nvs_close(h);
+        wc::Store s("clock");
+        s.get("face", face, FACE_COUNT);
+        s.get("h24", h24);
+        s.get("tz", tz_min);
+        s.get("tz_auto", tz_auto);
     }
     void save()
     {
-        nvs_handle_t h;
-        if (nvs_open("clock", NVS_READWRITE, &h) != ESP_OK) return;
-        nvs_set_u8(h, "face", uint8_t(face));
-        nvs_set_u8(h, "h24", h24);
-        nvs_set_i32(h, "tz", tz_min);
-        nvs_set_u8(h, "tz_auto", tz_auto);
-        nvs_commit(h);
-        nvs_close(h);
+        wc::Store s("clock", wc::Store::Write);
+        s.set("face", face);
+        s.set("h24", h24);
+        s.set("tz", tz_min);
+        s.set("tz_auto", tz_auto);
     }
 
     bool loadAssets()

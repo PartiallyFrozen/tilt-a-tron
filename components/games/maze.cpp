@@ -10,11 +10,13 @@
 #include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
+#include "engine/store.h"
+
+#include "game_ui.h"
 #include "engine/gestures.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "nvs.h"
 
 extern "C" {
 extern const uint8_t _binary_ball_png_start[], _binary_ball_png_end[];
@@ -282,20 +284,14 @@ struct Maze::State {
     // ------------------------------------------------------------------ flow
     void loadBest()
     {
-        nvs_handle_t h;
-        if (nvs_open("maze", NVS_READONLY, &h) != ESP_OK) return;
-        uint8_t v;
-        if (nvs_get_u8(h, "best", &v) == ESP_OK && v > 0) best = v;
-        nvs_close(h);
+        wc::Store s("maze");
+        s.get("best", best);
     }
 
     void saveBest()
     {
-        nvs_handle_t h;
-        if (nvs_open("maze", NVS_READWRITE, &h) != ESP_OK) return;
-        nvs_set_u8(h, "best", uint8_t(std::min(best, 250)));
-        nvs_commit(h);
-        nvs_close(h);
+        wc::Store s("maze", wc::Store::Write);
+        s.set("best", best);
     }
 
     void placeBall()
@@ -636,11 +632,8 @@ struct Maze::State {
 
     void banner(Canvas &c, const char *top, const char *bottom, uint8_t col)
     {
-        const int h = bottom ? 30 : 18;
-        c.fillRect(42, 100, W - 84, h, c_panel);
-        c.rect(42, 100, W - 84, h, c_box);
-        c.textCentered(W / 2, 109, top, col, 1, true);
-        if (bottom) c.textCentered(W / 2, 121, bottom, c_label, 1, false);
+        const games::ui::BannerStyle style{c_panel, c_box, c_label, c_label};
+        games::ui::banner(c, W / 2, 100, W - 84, top, bottom, nullptr, col, style);
     }
 
     void draw(Engine &e, Gfx &g)

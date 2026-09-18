@@ -9,11 +9,13 @@
 #include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
+#include "engine/store.h"
+
+#include "game_ui.h"
 #include "engine/gestures.h"
 #include "engine/polar.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "nvs.h"
 
 using namespace wc;
 
@@ -136,19 +138,13 @@ struct Tiltatris::State {
     // ------------------------------------------------------------------ persistence
     void load()
     {
-        nvs_handle_t h;
-        if (nvs_open("tiltatris", NVS_READONLY, &h) != ESP_OK) return;
-        int32_t v;
-        if (nvs_get_i32(h, "best", &v) == ESP_OK) best = v;
-        nvs_close(h);
+        wc::Store s("tiltatris");
+        s.get("best", best);
     }
     void save()
     {
-        nvs_handle_t h;
-        if (nvs_open("tiltatris", NVS_READWRITE, &h) != ESP_OK) return;
-        nvs_set_i32(h, "best", best);
-        nvs_commit(h);
-        nvs_close(h);
+        wc::Store s("tiltatris", wc::Store::Write);
+        s.set("best", best);
     }
 
     bool loadAssets()
@@ -544,12 +540,8 @@ struct Tiltatris::State {
 
     void banner(Canvas &c, const char *top, const char *mid, const char *bottom, uint8_t col)
     {
-        const int h = bottom ? 34 : mid ? 26 : 16;
-        c.fillRect(30, 100, CW - 60, h, c_panel);
-        c.rect(30, 100, CW - 60, h, c_box);
-        c.textCentered(CW / 2, 108, top, col, 1, true);
-        if (mid) c.textCentered(CW / 2, 118, mid, c_dim, 1, false);
-        if (bottom) c.textCentered(CW / 2, 127, bottom, c_dim, 1, false);
+        const games::ui::BannerStyle style{c_panel, c_box, c_dim, c_dim};
+        games::ui::banner(c, CW / 2, 100, CW - 60, top, mid, bottom, col, style);
     }
 
     void draw(Engine &e, Gfx &g)

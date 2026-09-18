@@ -13,12 +13,14 @@
 #include "console/pause_menu.h"
 #include "console/ui.h"
 #include "engine/canvas.h"
+#include "engine/store.h"
+
+#include "game_ui.h"
 #include "engine/gestures.h"
 #include "engine/polar.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "nvs.h"
 
 using namespace wc;
 
@@ -349,38 +351,30 @@ struct Star::State {
     // ------------------------------------------------------------------ persistence
     void load()
     {
-        nvs_handle_t h;
-        if (nvs_open("sleepystar", NVS_READONLY, &h) != ESP_OK) return;
-        uint16_t d;
-        uint8_t v;
-        if (nvs_get_u16(h, "depth", &d) == ESP_OK && d >= 1) depth = d;
-        if (nvs_get_u16(h, "level", &d) == ESP_OK && d >= 1) level = std::min<int>(d, depth);
-        if (nvs_get_u8(h, "seen_tut", &v) == ESP_OK) seen_tut = v;
-        if (nvs_get_u8(h, "flat", &v) == ESP_OK) flat_play = v;
-        nvs_close(h);
+        wc::Store s("sleepystar");
+        s.get("depth", depth);
+        s.get("level", level);
+        if (depth < 1) depth = 1;
+        level = std::min(std::max(level, 1), depth);
+        s.get("seen_tut", seen_tut);
+        s.get("flat", flat_play);
     }
     void save()
     {
-        nvs_handle_t h;
-        if (nvs_open("sleepystar", NVS_READWRITE, &h) != ESP_OK) return;
-        nvs_set_u16(h, "depth", uint16_t(depth));
-        nvs_set_u16(h, "level", uint16_t(level));
-        nvs_set_u8(h, "seen_tut", seen_tut);
-        nvs_set_u8(h, "flat", flat_play);
-        nvs_commit(h);
-        nvs_close(h);
+        wc::Store s("sleepystar", wc::Store::Write);
+        s.set("depth", depth);
+        s.set("level", level);
+        s.set("seen_tut", seen_tut);
+        s.set("flat", flat_play);
     }
     void saveBest(int n, int used)
     {
-        nvs_handle_t h;
-        if (nvs_open("sleepystar", NVS_READWRITE, &h) != ESP_OK) return;
+        wc::Store s("sleepystar", wc::Store::Write);
         char key[16];
         snprintf(key, sizeof(key), "best_%d", n);
-        uint8_t prev = 255;
-        nvs_get_u8(h, key, &prev);
-        if (used < prev) nvs_set_u8(h, key, uint8_t(std::min(used, 250)));
-        nvs_commit(h);
-        nvs_close(h);
+        int prev = 255;
+        s.get(key, prev);
+        if (used < prev) s.set(key, used);
     }
 
     bool loadAssets()
@@ -784,13 +778,11 @@ struct Star::State {
 
     void banner(Canvas &cv, const char *top, const char *mid, const char *bottom, uint8_t col)
     {
-        const int h = bottom ? 40 : 30;
-        cv.fillRect(20, 96, CW - 40, h, c_panel);
-        cv.fillRect(20, 96, CW - 40, 2, col);
-        cv.fillRect(20, 96 + h - 2, CW - 40, 2, col);
-        cv.textCentered(int(C), 108, top, col, 2, true);
-        if (mid) cv.textCentered(int(C), 122, mid, c_text, 1, false);
-        if (bottom) cv.textCentered(int(C), 131, bottom, c_awake, 1, true);
+        games::ui::BannerStyle style{c_panel, col, c_text, c_awake};
+        style.top_scale = 2;
+        style.bars = true;
+        style.bottom_bold = true;
+        games::ui::banner(cv, int(C), 96, CW - 40, top, mid, bottom, col, style);
     }
 
     void draw(Engine &e, Gfx &g)
