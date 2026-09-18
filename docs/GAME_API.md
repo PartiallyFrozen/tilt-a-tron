@@ -132,10 +132,13 @@ typedef struct {
     void (*draw)(void);                   /* once per frame, after update */
     void (*leave)(void);                  /* another app took over, or the watch is sleeping */
     void (*unload)(void);                 /* being removed from memory; release anything */
+    void (*redraw)(void);                 /* optional: the console needs a frame anyway */
     bool (*keep_awake)(void);             /* optional, may be NULL */
 } tat_game_t;
 
 extern const tat_game_t tat_game;
+/* A game with files of its own also declares this and points the descriptor at it. */
+extern const tat_asset_t tat_assets[];
 ```
 
 `begin` is the only place the game receives the API table. It stores the pointer; the OS
@@ -144,8 +147,11 @@ guarantees it stays valid until `unload`.
 ### 4.2 What the OS provides
 
 **The header is real now:** `components/tat_api/include/tat/tat_api.h`, with the console's
-side in `tat_host.cpp`. PIN DROP is written against it and nothing else. Three things
-changed from the sketch below once a real game used it:
+side in `tat_host.cpp`. PIN DROP and SKY JUMP are written against it and nothing else.
+Every change below was found by writing one of them, not by design review — which is the
+argument for porting real games early rather than freezing the API on paper.
+
+From PIN DROP (API 1.0):
 
 - **`rgb(r, g, b)` is an API call, not a macro.** The panel stores RGB565 byte-swapped, and
   a macro baked that into the game - every colour came out wrong. How a pixel is packed is
@@ -156,11 +162,27 @@ changed from the sketch below once a real game used it:
 - **`redraw` was added to the game descriptor**, for games that only draw when something
   changed. Without it a screenshot over Wi-Fi catches a black frame.
 
+From SKY JUMP (API 1.1):
+
+- **`canvas_banner()` was added.** The panel a game drops over the play area to say GAME
+  OVER lived inside the games component, out of a package's reach, so every packaged game
+  would have rolled its own. It now sits beside the pause menu in the console, for the same
+  reason the pause menu does.
+- **A descriptor's accent colour is three plain bytes**, not a `tat_color_t`. A descriptor
+  exists before the game has an api pointer to call `rgb()` with, so the old field asked
+  games to hand-pack the panel's byte order — the one thing `rgb()` exists to prevent.
+- **`tat_asset_t` holds an end pointer, not a length.** The difference of two linker symbols
+  is not a constant expression in C, so with a length a built-in game could not write its
+  own asset table down. (The C++ version got away with it; C does not.)
+- **Assets come from a table the build supplies**, declared as `extern const tat_asset_t
+  tat_assets[]`. Linked into the firmware for a built-in game, supplied by the loader for an
+  installed one; the game asks `api->asset()` by name and never learns which.
+
 The sketch that follows is kept for the shape of the thing; the header is the truth.
 
 ```c
 #define TAT_API_MAJOR 1
-#define TAT_API_MINOR 0
+#define TAT_API_MINOR 1
 
 typedef uint16_t tat_color_t;              /* RGB565, panel byte order */
 typedef struct tat_canvas tat_canvas_t;    /* opaque */
@@ -459,9 +481,12 @@ Each phase leaves a working watch.
 3. The watch-face renderer (§3), so faces are real content.
 4. Retire USB mass storage (§8).
 5. Spike the game loader (§6). Decides A or B.
-6. OS side of the game ABI against the built-in games — no loading yet. Proves the API is
-   sufficient before anything depends on it.
+1. ~~OS side of the game ABI against the built-in games — no loading yet~~ **done: PIN DROP
+   and SKY JUMP run through `tat::HostedGame` and touch nothing else. Between them they
+   cover circles, sprite sheets, a per-frame palette gradient, scaled sprites and assets,
+   which is most of what a game can ask for.**
 7. Sky Jump as the first real package, end to end: build tool, install, run, uninstall.
+   Its source is already package-shaped — only `jump_builtin.c` knows how it was built.
 8. Convert the rest, one at a time.
 9. Repartition (one USB reflash); ship the OS plus a starter set.
 10. Hold-to-uninstall on the watch.

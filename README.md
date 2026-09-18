@@ -81,7 +81,8 @@ wraps `idf.py` with the ESP-IDF 5.5.5 environment (`C:\Espressif`), e.g.
 | `tools/make_default_theme.py` | Regenerates `themes/Default` PNGs |
 | `tools/tatlink.py` | Reference client for the USB link: list, send and fetch files, back up, format |
 | `components/net` | Wi-Fi join/scan, saved credentials, OTA HTTP server, update-mode flag |
-| `components/games` | The seven games: Breakout, Marble Maze, Grand Prix, Sky Jump, Tilt-a-tris, Sleepy Star, Pocket Watch |
+| `components/games` | The games: Breakout, Marble Maze, Grand Prix, Sky Jump, Tilt-a-tris, Sleepy Star, Pin Drop, Pocket Watch. Pin Drop and Sky Jump are written against `tat_api.h` alone (`docs/GAME_API.md`) |
+| `components/tat_api` | The contract between the console and a game, and the console's side of it |
 | `components/link` | The USB link: the framed protocol over the serial port that the manager app speaks (`docs/GAME_API.md`) |
 | `components/audio` | Chiptune synth through the ES8311 codec |
 | `main/` | App registry (carousel order) + `BenchGame` bring-up/calibration app |
