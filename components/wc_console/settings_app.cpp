@@ -87,12 +87,6 @@ void SettingsApp::activate(wc::Engine &e, int item)
         Theme::get().setActive(names[next]);
         return;   // generation bump repaints the whole screen
     }
-    case DEBUG_MODE:
-        // Switches what the USB port is (flashing/logs vs. the theme drive): needs a restart.
-        if (storage_on_computer()) return;   // eject the drive first; restarting now would corrupt it
-        storage_set_usb_drive_enabled(!storage_usb_drive_enabled());
-        esp_restart();
-        return;
     case WIFI: {
         const bool on = !net_enabled();
         char ssid[33];
@@ -166,10 +160,6 @@ void SettingsApp::drawRow(wc::Gfx &g, int item, int y)
         ui::rowAt(g, y, "THEME", name.c_str());
         break;
     }
-    case DEBUG_MODE:
-        ui::rowAt(g, y, "USB DRIVE", storage_usb_drive_enabled() ? "ON" : "OFF",
-                  storage_usb_drive_enabled() ? ui::ACCENT : ui::DIM);
-        break;
     case WIFI: {
         const char *value = "OFF";
         wc::Color color = ui::DIM;

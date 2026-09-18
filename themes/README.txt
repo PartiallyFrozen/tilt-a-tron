@@ -36,7 +36,7 @@ theme.json colors are "#RRGGBB":
   danger       errors
 
 Design templates
-- The Guide folder on this drive shows exactly where things land:
+- The Guide folder here shows exactly where things land:
     guide-home.png    home screen: app icon, app name, dots, hint
     guide-menus.png   settings / pause menus: title, rows, buttons
     guide-icon.png    one app icon, 210 x 210
@@ -49,4 +49,4 @@ Tips
 - PNG only. Bigger pictures are shrunk to fit; smaller ones are centered.
 - The background can be called background.png, or just be the biggest PNG in the folder.
 - Icons can sit next to theme.json instead of in icons/ if you prefer.
-- Eject the drive before unplugging; the new files load when you do.
+- Send themes with tools/tatlink.py over USB; the console reloads them by itself.

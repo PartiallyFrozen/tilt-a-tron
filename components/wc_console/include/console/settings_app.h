@@ -1,5 +1,5 @@
 // Console settings (scrollable): brightness, theme, Wi-Fi on/off, network, auto off,
-// USB drive, motion sensor calibration, firmware update, version.
+// motion sensor calibration, firmware update, version.
 #pragma once
 
 #include "console/console.h"
@@ -57,7 +57,7 @@ public:
     void draw(wc::Engine &e, wc::Gfx &g) override;
 
 private:
-    enum Item { BRIGHTNESS, VOLUME, THEME, GAMES, WIFI, NETWORK, AUTO_OFF, CALIBRATE, DEBUG_MODE, UPDATE, VERSION, ITEM_COUNT };
+    enum Item { BRIGHTNESS, VOLUME, THEME, GAMES, WIFI, NETWORK, AUTO_OFF, CALIBRATE, UPDATE, VERSION, ITEM_COUNT };
     void activate(wc::Engine &e, int item);
     void drawRow(wc::Gfx &g, int item, int y);
 

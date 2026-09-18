@@ -43,7 +43,6 @@ private:
     ota_status_t ota_{};
     int drawn_pct_ = -1;
     float done_t_ = 0;
-    bool eject_note_ = false;   // "eject the drive" shown on the Done screen
     std::vector<uint32_t> ring_px_;   // rim pixels for the progress ring
     std::vector<uint16_t> ring_ang_;  // their angle from 12 o'clock, clockwise
     uint16_t ring_drawn_ = 0;

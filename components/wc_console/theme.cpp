@@ -461,7 +461,6 @@ bool Theme::needsReload() const { return storage_generation() != storage_gen_ &&
 
 bool Theme::poll()
 {
-    storage_service();
     if (!needsReload()) return false;
     loadActive();
     return true;
@@ -469,7 +468,6 @@ bool Theme::poll()
 
 void Theme::reloadWithProgress(wc::Engine &e)
 {
-    storage_service();
     if (!needsReload()) return;
     storage_gen_ = storage_generation();
     std::string want = name_;

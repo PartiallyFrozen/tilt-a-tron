@@ -176,13 +176,10 @@ extern "C" void app_main(void)
         return;
     }
 
-    // The Tilt-a-tron drive (themes). With Settings > USB DRIVE on it's also a USB
-    // drive on a computer; off (default), the USB port stays free for flashing and logs.
-    const bool usb_drive = storage_usb_drive_enabled();
+    // Themes and other files. Only the watch touches this filesystem; a computer sends
+    // files over the USB link rather than being handed the whole drive.
     console::crumb("storage");
-    if (storage_init(usb_drive) != ESP_OK) ESP_LOGE(TAG, "storage unavailable, using the built-in look");
-    ESP_LOGI(TAG, "usb drive %s, usb power %s", usb_drive ? "on (USB = drive)" : "off (USB = flashing/logs)",
-             pmu_usb_power() ? "yes" : "no");
+    if (storage_init() != ESP_OK) ESP_LOGE(TAG, "storage unavailable, using the built-in look");
 
     // If the last run ended badly, say so on screen and leave a note on the drive.
     console::reportCrashIfAny(engine);
@@ -285,6 +282,7 @@ extern "C" void app_main(void)
         return storage_builtin_icon(id, png, len);
     });
     link_set_fs_root(STORAGE_ROOT);
+    link_set_changed_hook(storage_changed);
     link_start();
 
     engine.setHome(launcher);
@@ -293,10 +291,8 @@ extern "C" void app_main(void)
     // to save on USB power - meanwhile sleeping drops the USB port, which cuts off the
     // manager app and anyone flashing it. Also stays awake for a Wi-Fi update or an open
     // app session. Double-clicking PWR still sleeps it deliberately.
-    engine.setKeepAwakeHook(
-        [] { return pmu_usb_power() || storage_on_computer() || net_busy() || link_session_active(); });
-    engine.setBusyHook([] { return storage_on_computer() || net_transfer_active(); });
-    net_set_reboot_guard(storage_on_computer);
+    engine.setKeepAwakeHook([] { return pmu_usb_power() || net_busy() || link_session_active(); });
+    engine.setBusyHook(net_transfer_active);
     engine.setAutoOffSeconds(console::autoOffSeconds());
     engine.run(launcher);
 }

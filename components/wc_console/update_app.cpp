@@ -65,7 +65,7 @@ void UpdateApp::update(Engine &e, float dt)
 
     // BOOT is "back to menu" everywhere. The engine handles it when there's a home
     // app; update mode has none, so leave by rebooting into the console.
-    if (!back_ && (in.pressed & wc::BTN_A) && !busy && !storage_on_computer()) esp_restart();
+    if (!back_ && (in.pressed & wc::BTN_A) && !busy) esp_restart();
 
     switch (st_) {
     case St::JoinSaved:
@@ -111,12 +111,7 @@ void UpdateApp::update(Engine &e, float dt)
 
     case St::Done:
         done_t_ += dt;
-        // Restarting while a computer has the drive open corrupts it: wait for the eject.
-        if (done_t_ > 1.5f && !storage_on_computer()) esp_restart();
-        if (storage_on_computer() != eject_note_) {
-            eject_note_ = storage_on_computer();
-            dirty_ = true;
-        }
+        if (done_t_ > 1.5f) esp_restart();
         break;
 
     case St::Failed:
@@ -204,8 +199,7 @@ void UpdateApp::draw(Engine &e, Gfx &g)
     case St::Ready: drawReady(g); break;
     case St::Done:
         g.textCentered(C, C - 20, "UPDATED!", ui::GO, 5, true);
-        if (eject_note_) g.textCentered(C, C + 30, "EJECT THE DRIVE TO RESTART", ui::ACCENT, 2, true);
-        else g.textCentered(C, C + 30, "RESTARTING", ui::DIM, 2, true);
+        g.textCentered(C, C + 30, "RESTARTING", ui::DIM, 2, true);
         break;
     case St::Failed:
         g.textCentered(C, C - 40, "UPDATE FAILED", ui::DANGER, 3, true);

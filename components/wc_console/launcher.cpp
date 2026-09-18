@@ -89,15 +89,7 @@ void Launcher::update(Engine &e, float dt)
     const auto &in = e.input();
     ges_.update(in.touch);
 
-    // Plugged into a computer: the drive belongs to them, so say so and wait.
-    const bool on_computer = storage_on_computer();
-    if (on_computer != on_computer_) {
-        on_computer_ = on_computer;
-        full_ = true;
-    }
-    if (on_computer) return;
-
-    // Drive came back (maybe with new theme files): reload, showing progress.
+    // New files may have arrived over the USB link: reload, showing progress.
     Theme::get().reloadWithProgress(e);
     if (Theme::get().generation() != theme_gen_) {
         theme_gen_ = Theme::get().generation();
@@ -172,23 +164,8 @@ void Launcher::drawIcons(Gfx &g, int shift)
     }
 }
 
-bool Launcher::keepAwake() const { return storage_on_computer(); }
-
 void Launcher::draw(Engine &e, Gfx &g)
 {
-    if (on_computer_) {
-        if (!full_) return;
-        full_ = false;
-        drawn_shift_ = 1 << 30;   // repaint the carousel when the drive comes back
-        g.clear(wc::colors::black);
-        g.textCentered(Gfx::CX, 150, "CONNECTED", ui::VALUE, 4, true);
-        g.textCentered(Gfx::CX, 196, "TO COMPUTER", ui::VALUE, 3, true);
-        g.textCentered(Gfx::CX, 252, "ADD THEMES TO", ui::DIM, 2, true);
-        g.textCentered(Gfx::CX, 278, "THE Theme FOLDER", ui::DIM, 2, true);
-        g.textCentered(Gfx::CX, 330, "EJECT WHEN DONE", ui::ACCENT, 2, true);
-        return;
-    }
-
     const int shift = int(std::lround(anim_));
 
     if (full_) {

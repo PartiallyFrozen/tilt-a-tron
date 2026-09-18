@@ -10,9 +10,6 @@
 #include "esp_partition.h"
 #include "esp_vfs_fat.h"
 #include "nvs.h"
-#include "tinyusb.h"
-#include "tinyusb_default_config.h"
-#include "tinyusb_msc.h"
 #include "wear_levelling.h"
 
 static const char *TAG = "storage";
@@ -218,34 +215,6 @@ static void seed_defaults(void)
                      _binary_guide_icon_png_end);
 }
 
-static void on_msc_event(tinyusb_msc_storage_handle_t handle, tinyusb_msc_event_t *event, void *arg)
-{
-    switch (event->id) {
-    case TINYUSB_MSC_EVENT_MOUNT_START:
-        s_ready = false;   // switching owner: nobody should touch files right now
-        break;
-    case TINYUSB_MSC_EVENT_MOUNT_COMPLETE:
-        if (event->mount_point == TINYUSB_MSC_STORAGE_MOUNT_APP) {
-            // File writes happen in storage_service() on the app task: this callback
-            // runs on the USB driver's small stack.
-            s_seed_pending = true;
-            s_on_computer = false;
-            s_ready = true;
-            s_generation++;
-            ESP_LOGI(TAG, "drive back with the console");
-        } else {
-            s_on_computer = true;
-            ESP_LOGI(TAG, "drive opened on a computer");
-        }
-        break;
-    case TINYUSB_MSC_EVENT_MOUNT_FAILED:
-    case TINYUSB_MSC_EVENT_FORMAT_FAILED:
-        ESP_LOGE(TAG, "drive mount failed (event %d)", event->id);
-        break;
-    default: break;
-    }
-}
-
 // A never-used partition reads as all 0xFF. Only such a partition may be
 // formatted automatically; a damaged one keeps its data for a computer to repair.
 static bool partition_blank(void)
@@ -262,7 +231,7 @@ static bool partition_blank(void)
     return true;
 }
 
-esp_err_t storage_init(bool usb_drive)
+esp_err_t storage_init(void)
 {
     const bool blank = partition_blank();
     if (blank) ESP_LOGI(TAG, "blank drive: formatting");
@@ -272,7 +241,7 @@ esp_err_t storage_init(bool usb_drive)
         .allocation_unit_size = 0,
     };
 
-    if (!usb_drive) {
+    {
         esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(STORAGE_ROOT, "storage", &mount, &s_wl);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "mount failed: %s", esp_err_to_name(err));
@@ -283,9 +252,9 @@ esp_err_t storage_init(bool usb_drive)
         ESP_LOGI(TAG, "drive: %llu KB, %llu KB free", total / 1024, free_bytes / 1024);
         if (total == 0 || (mkdir(STORAGE_THEMES, 0775) != 0 && errno != EEXIST)) {
             if (!blank) {
-                // Damaged, but it has data: leave it for a computer's disk check
-                // (plug in with DEBUG MODE off) rather than wipe the themes.
-                ESP_LOGE(TAG, "drive damaged (errno %d): not formatting, plug into a computer to repair", errno);
+                // Damaged, but it has data: back it up with tools/tatlink.py --backup and
+                // then --format, rather than wiping somebody's themes here.
+                ESP_LOGE(TAG, "storage damaged (errno %d): not formatting, back it up and format it", errno);
                 return ESP_FAIL;
             }
             ESP_LOGW(TAG, "drive unusable (errno %d), formatting", errno);
@@ -301,44 +270,9 @@ esp_err_t storage_init(bool usb_drive)
         s_generation++;
         return ESP_OK;
     }
-
-    const esp_partition_t *part =
-        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
-    if (!part) return ESP_ERR_NOT_FOUND;
-    esp_err_t err = wl_mount(part, &s_wl);
-    if (err != ESP_OK) return err;
-
-    const tinyusb_msc_driver_config_t driver = {.callback = on_msc_event};
-    if ((err = tinyusb_msc_install_driver(&driver)) != ESP_OK) return err;
-
-    tinyusb_msc_storage_handle_t handle;
-    const tinyusb_msc_storage_config_t cfg = {
-        .medium.wl_handle = s_wl,
-        .fat_fs = {.base_path = (char *)STORAGE_ROOT, .config = mount},
-        .mount_point = TINYUSB_MSC_STORAGE_MOUNT_APP,
-    };
-    if ((err = tinyusb_msc_new_storage_spiflash(&cfg, &handle)) != ESP_OK) return err;
-
-    tinyusb_msc_mount_point_t mp;
-    if (tinyusb_msc_get_storage_mount_point(handle, &mp) == ESP_OK && mp == TINYUSB_MSC_STORAGE_MOUNT_APP) {
-        seed_defaults();
-        s_ready = true;
-        s_generation++;
-    }
-
-    const tinyusb_config_t usb = TINYUSB_DEFAULT_CONFIG();
-    if ((err = tinyusb_driver_install(&usb)) != ESP_OK) return err;
-    ESP_LOGI(TAG, "USB drive ready");
-    return ESP_OK;
 }
 
-void storage_service(void)
-{
-    if (!s_seed_pending || !s_ready) return;
-    s_seed_pending = false;
-    seed_defaults();
-}
-
+void storage_changed(void) { s_generation++; }
 esp_err_t storage_format(void)
 {
     const esp_err_t err = esp_vfs_fat_spiflash_format_rw_wl(STORAGE_ROOT, "storage");
@@ -362,23 +296,4 @@ uint32_t storage_generation(void) { return s_generation; }
 // Settings > USB DRIVE. Off (the default) keeps the USB port as the flashing/log
 // port and never starts the USB drive; on, plugging in shows the theme drive.
 // (Replaces the old inverted DEBUG MODE switch; its saved value is ignored.)
-bool storage_usb_drive_enabled(void)
-{
-    nvs_handle_t h;
-    uint8_t v = 0;
-    if (nvs_open("console", NVS_READONLY, &h) == ESP_OK) {
-        nvs_get_u8(h, "usb_drive", &v);
-        nvs_close(h);
-    }
-    return v;
-}
-
-void storage_set_usb_drive_enabled(bool on)
-{
-    nvs_handle_t h;
-    if (nvs_open("console", NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u8(h, "usb_drive", on);
-    nvs_commit(h);
-    nvs_close(h);
-}
 

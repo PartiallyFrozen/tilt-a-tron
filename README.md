@@ -29,7 +29,7 @@ The script installs `esptool` the first time, then asks you to put the watch in
 install mode: unplug it, hold the small **BOOT** button by the USB port, plug it
 in, let go after 2 seconds. It writes the bootloader, partition table and app
 (about 15 s), and the watch restarts into Tilt-a-tron. `-Erase` wipes everything
-first (settings, Wi-Fi, the theme drive). After that, updates can go over Wi-Fi.
+first (settings, Wi-Fi, themes). After that, updates can go over Wi-Fi.
 
 Maintainers: after building, `.\tools\make_release.ps1` refreshes `firmware/`
 (binaries + `manifest.json` with offsets and the build hash) so the installer
@@ -47,7 +47,7 @@ Needs ESP-IDF 5.5.5 (`C:\Espressif`, installed with EIM). One command:
 ```
 
 It installs over **Wi-Fi** if the watch answers (about 5 s; needs Settings > WI-FI ON),
-otherwise over **USB** if it's plugged in (Settings > USB DRIVE off, the default). It pauses the Pal
+otherwise over **USB** if it's plugged in. It pauses the Pal
 engine's USB poller automatically, and says what to do if it can't reach the watch.
 
 **Verification uses the build's unique hash** (`sha` in `/status`, the ELF SHA-256),
@@ -57,7 +57,7 @@ incremental builds.
 
 Recovery, in order of escalation:
 - A build that crashes 3 boots in a row drops into **safe mode**: themes, sound and
-  the drive are skipped, Wi-Fi is forced on, and the update screen waits for a fix.
+  storage are skipped, Wi-Fi is forced on, and the update screen waits for a fix.
 - A crash during sound start-up skips sound on the next boot.
 - New firmware goes into the idle app slot; if it can't even bring the screen up,
   the bootloader rolls back to the previous build.
@@ -75,9 +75,9 @@ wraps `idf.py` with the ESP-IDF 5.5.5 environment (`C:\Espressif`), e.g.
 | `components/board` | Hardware layer (C): QSPI display + TE vsync, touch, IMU, buttons, pin map |
 | `components/engine` | Engine (C++): `Gfx` renderer, `Presenter` frame pipeline, `Input` (debounce, click/long press), `Gestures`, `Polar`, `Engine` loop + app switching |
 | `components/wc_console` | Console shell: `Launcher` carousel, `SettingsApp`, `UpdateApp` (Wi-Fi setup + OTA), shared `ui.h` widgets, app icons |
-| `components/storage` | The Tilt-a-tron drive: 16 MB FAT at `/data`, USB mass-storage (TinyUSB), seeds `Theme/Default` |
+| `components/storage` | 16 MB FAT at `/data` for themes and game data; seeds `Theme/Default`. Only the watch touches it |
 | `components/lodepng` | PNG decoder for themes (zlib license) |
-| `themes/` | Source of the built-in Default theme (embedded in firmware, copied to the drive) |
+| `themes/` | Source of the built-in Default theme (embedded in firmware, written to storage on first boot) |
 | `tools/make_default_theme.py` | Regenerates `themes/Default` PNGs |
 | `tools/tatlink.py` | Reference client for the USB link: list, send and fetch files, back up, format |
 | `components/net` | Wi-Fi join/scan, saved credentials, OTA HTTP server, update-mode flag |
@@ -90,11 +90,11 @@ wraps `idf.py` with the ESP-IDF 5.5.5 environment (`C:\Espressif`), e.g.
 ## Themes
 
 Ready-made themes live in `themes/` (BeachVibez, CPU, SkaterGirl, Spaceportal,
-Tiltatron-8bit): copy a folder into the watch's `Theme` drive and pick it in
+Tiltatron-8bit): send a folder to the watch's `Theme` folder and pick it in
 Settings > THEME. `Default` is built into the firmware.
 
 
-Themes are plain files on the Tilt-a-tron drive, so anyone can make one:
+Themes are plain files in the watch's storage, so anyone can make one:
 
 ```
 README.txt            what each file is
@@ -103,7 +103,7 @@ Guide/                design templates (where icons/rows/titles land)
   guide-menus.png     settings / pause menu zones
   guide-icon.png      one app icon, 210x210
 Theme/
-  Default/            built-in look, copied onto the drive on first boot
+  Default/            built-in look, written on first boot
     theme.json        colors: background text label dim panel box value accent go danger
     background.png    466x466 (any PNG in the folder works), behind home + menus
     icons/<app>.png   210x210 app icons (breakout.png, settings.png)
@@ -114,16 +114,20 @@ Menu rows and buttons are filled with the theme's `panel` color and text on the
 background gets a drop shadow, so busy artwork stays readable. Oversized images
 are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the templates.
 
-- **Settings → USB DRIVE ON** (restarts): plugging into a computer shows the
-  Tilt-a-tron drive. Copy `Default`, rename it, edit PNGs/colors, eject. The console
-  reloads the theme as soon as the drive is ejected.
+- **Send one to the watch** over USB, with it plugged in and awake:
+
+  ```bash
+  python tools/tatlink.py --send "themes/BeachVibez" "Theme/BeachVibez"
+  ```
+
+  The console notices and reloads on its own; no restart, no ejecting, nothing to switch
+  on first. `--ls` shows what is there and `--backup` copies it all back to your computer.
 - **Settings → THEME** cycles through the folders.
 - Missing files fall back to the built-in look. PNGs are decoded once at load
   (~300 ms) into RGB565 + alpha; drawing is straight copies.
-- **USB DRIVE OFF** (the default): the USB port is the flashing/log port instead of
-  a drive; themes still load from the drive. Recovery flashing always works with
-  BOOT held while plugging in.
-- The drive's `README.txt` (from `themes/README.txt`) documents sizes for theme makers.
+- The watch is never handed its filesystem as a USB drive. That is deliberate: it used to
+  be, and a restart while Windows still had it mounted cost a set of themes.
+- `themes/README.txt` documents the sizes for theme makers.
 
 ## Console navigation
 
@@ -136,7 +140,7 @@ are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the tem
   download) → the screen dims for 10 s, then powers down. Any touch cancels.
 - **BOOT** (the small key by the USB port) returns home from any app (handled by the engine).
 - **Settings** (scrollable): brightness · theme · Wi-Fi on/off · network (scan + on-screen
-  keyboard) · auto off (1/2/5/10 min/never) · USB drive · update · version.
+  keyboard) · auto off (1/2/5/10 min/never) · games · calibrate · update · version.
 - Wi-Fi is **off by default**. When on, it connects in the background at boot with
   modem power-save and reconnects with backoff; games keep running on core 1.
 
@@ -146,7 +150,6 @@ are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the tem
   the app and its saves come back when you turn it on again
 - **CALIBRATE**: a one-minute walkthrough (lay it flat, spin it half a turn, check the bubble
   level) that measures this watch's motion sensor at rest and corrects every game's tilt
-- **USB DRIVE**: off = the USB port is for charging, flashing and logs; on = it's the theme drive
 - The watch never dozes off while something is talking to it over Wi-Fi: it stays awake during
   an update or upload and for two minutes after any request to its web server
 
