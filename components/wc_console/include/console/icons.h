@@ -11,5 +11,6 @@ void maze(wc::Color *buf, int r);
 void racer(wc::Color *buf, int r);
 void jump(wc::Color *buf, int r);
 void tiltatris(wc::Color *buf, int r);
+void clock(wc::Color *buf, int r);
 
 }  // namespace console::icons

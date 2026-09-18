@@ -236,6 +236,15 @@ Handy for checking a game without picking the watch up.
 - Score, level and the next piece live in the core. **Swipe left** menu (sound, new
   game, best) · **BOOT** home. Best score is saved
 
+## Pocket Watch (Clock)
+
+- Five faces, **tap** to cycle: Pocket (brass, numerals, sweeping seconds, date window),
+  Retro LCD (seven-segment digits, day and date), Hopper Sky (sky and sun/moon follow
+  the time of day, Hopper hops every second), Tacho (minutes on a rev counter, hours
+  on a small dial) and Rings (Tilt-a-tris wedges fill for seconds, minutes, hours)
+- Time syncs from NTP whenever Wi-Fi is on; otherwise **swipe left** > SET TIME
+- Menu: FACE · 12H/24H · TIME ZONE (whole hours from UTC) · SET TIME
+
 ## Bench app
 
 Hold BOOT as the screen turns on. **Tilt** rolls the ball, **touch** drags the dot,

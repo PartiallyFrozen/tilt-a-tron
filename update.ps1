@@ -171,7 +171,7 @@ if (-not $port) {
     Write-Host ""
     Write-Host "Can't reach the watch. Any one of these will do:" -ForegroundColor Yellow
     Write-Host "  - Wi-Fi: wake it, and make sure Settings > WI-FI is ON."
-    Write-Host "  - USB:   Settings > DEBUG MODE ON, plug it into this PC, and restart the watch."
+    Write-Host "  - USB:   plug it into this PC with Settings > USB DRIVE off (the default) and wake it."
     Write-Host "  - Always works: unplug it, hold BOOT, plug it back in, release after 2 s."
     exit 1
 }

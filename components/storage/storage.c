@@ -36,6 +36,7 @@ EMBED(maze_png)
 EMBED(racer_png)
 EMBED(jump_png)
 EMBED(tiltatris_png)
+EMBED(clock_png)
 EMBED(guide_home_png)
 EMBED(guide_menus_png)
 EMBED(guide_icon_png)
@@ -70,6 +71,7 @@ bool storage_builtin_icon(const char *id, const uint8_t **png, size_t *len)
         {"racer", _binary_racer_png_start, _binary_racer_png_end},
         {"jump", _binary_jump_png_start, _binary_jump_png_end},
         {"tiltatris", _binary_tiltatris_png_start, _binary_tiltatris_png_end},
+        {"clock", _binary_clock_png_start, _binary_clock_png_end},
     };
     for (size_t i = 0; i < sizeof(icons) / sizeof(icons[0]); i++) {
         if (strcmp(icons[i].id, id) != 0) continue;
@@ -199,6 +201,7 @@ static void seed_defaults(void)
     seed_default_file("icons/racer.png", _binary_racer_png_start, _binary_racer_png_end);
     seed_default_file("icons/jump.png", _binary_jump_png_start, _binary_jump_png_end);
     seed_default_file("icons/tiltatris.png", _binary_tiltatris_png_start, _binary_tiltatris_png_end);
+    seed_default_file("icons/clock.png", _binary_clock_png_start, _binary_clock_png_end);
     records_save();
     unlink(STORAGE_THEMES "/Default/icons/ringdrop.png");   // the game was renamed
 

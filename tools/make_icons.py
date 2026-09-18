@@ -278,6 +278,42 @@ def tiltatris_icon():
     finish(img, "tiltatris")
 
 
+def clock_icon():
+    img = canvas((0, 0, 0))
+    c = 26
+    px = img.load()
+    gold, gold_d, cream, ink, red = (214, 170, 60), (140, 100, 30), (244, 234, 205), (40, 30, 24), (220, 40, 40)
+    for yy in range(L):
+        for xx in range(L):
+            dx, dy = xx + 0.5 - c, yy + 0.5 - c
+            d = math.hypot(dx, dy) / 25
+            if d > 1:
+                continue
+            col = cream
+            if d > 0.86:
+                col = gold
+            elif d > 0.78:
+                col = gold_d
+            elif d > 0.70:
+                a = math.atan2(dy, dx)
+                col = ink if (a + math.pi) % (math.pi / 6) < 0.09 else cream
+            px[xx, yy] = col + (255,)
+    # Crown.
+    rect(img, c - 2, 1, 5, 4, gold_d)
+    rect(img, c - 1, 0, 3, 3, gold)
+    # Hands: hour to 10, minute to 2.
+    def hand(angle, length, w, col):
+        sx, sy = math.sin(angle), -math.cos(angle)
+        for k in range(int(length * 10)):
+            t = k / 10
+            for o in range(-(w // 2), w // 2 + 1):
+                rect(img, int(c + sx * t - sy * o), int(c + sy * t + sx * o), 1, 1, col)
+    hand(-math.pi / 3, 10, 3, ink)
+    hand(math.pi / 3, 15, 2, ink)
+    disc(img, c, c, 1.6, red)
+    finish(img, "clock")
+
+
 def main():
     jump_icon()
     racer_icon()
@@ -285,6 +321,7 @@ def main():
     breakout_icon()
     settings_icon()
     tiltatris_icon()
+    clock_icon()
 
 
 if __name__ == "__main__":
