@@ -315,8 +315,14 @@ game is one `.c` file plus, if it ships files, a `_builtin.c` naming them.
 | `e.presenter()`, `e.input()`, `e.goHome()` | `T->canvas_present(cv)`, `T->input()`, `T->go_home()` |
 | `_binary_x_png_start` in the game | a `tat_assets[]` table in `_builtin.c`; the game calls `T->asset("x.png", &len)` |
 | `std::vector<Thing> things` | `Thing things[MAX]; int n_things;` and swap-with-last removal |
+| a big array as a plain member | `T->alloc()` in `begin`, `T->free()` in `unload` |
 
-Three things that bite every time:
+Four things that bite every time:
+
+- **Large state is not free because it is static.** Grand Prix's track came to 20 KB of
+  plain members, which land in internal RAM — the scarce kind, and the kind Wi-Fi needs.
+  The free internal heap went from 48 KB to 23 KB and the watch stopped answering. Anything
+  measured in kilobytes belongs in `alloc()`, which is what a package would have to use.
 
 - **Removing from a fixed array.** `a[i] = a[--n]` moves the last element into the hole, so
   the loop must **not** advance `i` afterwards — or must `break` immediately. Both ports had
@@ -325,6 +331,9 @@ Three things that bite every time:
   stopping cleanly to dropping the newest thing on the floor.
 - **Anything `const` and file-scope must be a constant expression in C.** C++ will fold
   things C will not — the difference of two linker symbols being the one that caught us.
+- **Check the old save namespace before choosing an `id`.** The descriptor's `id` *is* the
+  save namespace. Sleepy Star's was `sleepystar`, not `star`; calling it the obvious thing
+  would have put every player quietly back on level 1.
 
 Build it in by adding the source to `components/games/CMakeLists.txt` and renaming the
 symbols a package would export, so several games can share one firmware:
@@ -529,7 +538,10 @@ Each phase leaves a working watch.
    which is most of what a game can ask for.**
 7. Sky Jump as the first real package, end to end: build tool, install, run, uninstall.
    Its source is already package-shaped — only `jump_builtin.c` knows how it was built.
-8. Convert the rest, one at a time.
+1. ~~Convert the rest, one at a time~~ **done: all seven games are on the API and nothing
+   in `components/games` includes an engine header. Pocket Watch is deliberately not one of
+   them — it draws a full-screen settings page and needs the wall clock, the time zone and
+   the network, which is a watch face's business (§3) rather than a game's.**
 9. Repartition (one USB reflash); ship the OS plus a starter set.
 10. Hold-to-uninstall on the watch.
 
