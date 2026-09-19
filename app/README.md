@@ -58,6 +58,11 @@ On Windows it is a GUI binary, so a shell will not wait for it unless you pipe i
 
 ## A file to hand someone
 
+Ready-made builds for Windows, macOS and Linux are on the
+[releases page](https://github.com/PartiallyFrozen/tilt-a-tron/releases/latest). Pushing a tag like `v0.8.0` makes one: `.github/workflows/manager.yml`
+builds all three, packages them and publishes the release, with its text taken from
+`.github/release-notes/<tag>.md` if that exists. To build one yourself:
+
 ```bash
 dotnet publish -c Release -r win-x64 -o publish
 ```

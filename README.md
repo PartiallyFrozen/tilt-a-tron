@@ -67,8 +67,9 @@ installers match the source.
 
 <p align="center"><img src="site/img/manager.png" alt="The manager: the watch's games on the left, your library on the right" width="85%"></p>
 
-A desktop app (`app/`, C# and Avalonia; Windows, macOS, Linux; one self-contained file) that
-talks to the watch over USB. The watch is on the left and **your library** is on the right:
+**[Download it from the latest release](https://github.com/PartiallyFrozen/tilt-a-tron/releases/latest)** - Windows, macOS and Linux, one self-contained
+file each, nothing to install. It is a desktop app (`app/`, C# and Avalonia) that talks to the
+watch over USB. The watch is on the left and **your library** is on the right:
 a plain folder of `.tat` files in your documents. Drag a game from one to the other, or drop
 `.tat` files in from anywhere.
 
