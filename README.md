@@ -27,7 +27,7 @@ your own.
 <td align="center"><img src="site/img/star.png" width="150"><br><b>SLEEPY STAR</b><br><sub>A laser falls straight down. Turn rings of gaps and mirrors to wake the star.</sub></td>
 <td align="center"><img src="site/img/pindrop.png" width="150"><br><b>PIN DROP</b><br><sub>Steer a falling ball through the pins into the hole. The rim is live.</sub></td>
 <td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>A run down a shaft seen head on. Find the gap in every ring; shoot the mines.</sub></td>
-<td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>An endless rooftop skate run. Tip to push, tap to ollie, grind the rails.</sub></td>
+<td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>A rooftop skate run with one life. Turn the watch to push, tap to ollie; the faster you go, the wider the gaps.</sub></td>
 <td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then touch them in the same order. One more each round, for as long as you can remember.</sub></td>
 </tr>
 </table>
@@ -365,11 +365,21 @@ Handy for checking a game without picking the watch up.
 
 ## Skater Girlz controls
 
-- A side-on rooftop skate run that never ends and never repeats
-- **Tip forward** to push, **tip back** to slow · **tap** to ollie, **hold** for more air ·
-  land on a rail from above to grind it
-- Miss a gap and the run is over; clip a bin and you lose your speed, which costs more than
-  it sounds like. **Swipe left** menu · **BOOT** home. Best distance is saved
+- A rooftop skate run at sunset, side on, with one life. It never ends and never repeats
+- **Turn the watch right**, like a wheel, to push - the further the harder; **turn it left**
+  to brake; upright she coasts and slowly gathers speed. It is the control Grand Prix steers
+  with, pointed the way she is going. TILT in the menu sets how far you have to turn
+- **Tap** to ollie, and **keep your finger down** for more air. How long a held ollie keeps
+  rising grows with her speed - and so do the gaps, which are laid out from how fast she is
+  going so that every one of them can be made
+- Miss a gap and the run is over. Clip the side of a building and the run is over (catch the
+  edge by a few pixels and she rides on). Hit a bin and she stumbles, the bin goes flying, and
+  she loses a third of her speed - a disaster, or the only brake there is when you need one
+- Land on a rail from above to grind it: +5 m and a little speed back. Tap to pop off
+- The score is metres. **Swipe left** menu (sound, tilt, new run, best) · **BOOT** home
+- The mechanics are Canabalt's - speed that only builds, jump height by how long you hold,
+  obstacles that cost speed rather than lives - learned from the MIT-licensed source of its
+  HaxeFlixel port. None of its code or art is here; the tilt and the rails are ours
 
 ## Echo controls
 

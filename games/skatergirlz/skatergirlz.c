@@ -1,17 +1,28 @@
-// SKATER GIRLZ - a side-on skate run that never ends.
+// SKATER GIRLZ - a rooftop skate run at sunset that ends the first time you get it wrong.
 //
-// She rides left to right across a rooftop street. Tip the watch forward to push faster
-// and back to slow down, tap to ollie, and land on a rail from above to grind it. Miss a
-// gap and the run is over; clip a bin and you lose your speed, which costs you more than
-// it sounds like.
+// She skates left to right across the roofs of a city. Turn the watch to the right, like a
+// wheel, to push; turn it left to brake; tap to ollie and hold for more air. Speed is the
+// whole game: the faster she goes the faster the metres come, and the wider the gaps
+// between the roofs get. Miss a gap and she is gone. Clip the side of a building and she is gone. Hit a bin
+// and she stumbles and loses a third of her speed - which hurts, unless slowing down was
+// what you wanted.
 //
-//   tip forward - push; tip back to slow
-//   tap         - ollie; hold for more air
+//   turn right  - push, the further the harder (turn left to brake)
+//   tap         - ollie; keep your finger down for more air, and more at speed
+//   land on a rail from above to grind it; tap to pop off
 //   swipe left  - pause menu
 //
-// Side on, not from above. The first version of this was top-down, which was my
-// misreading of the handoff: its speed model is named after Canabalt, and its gaps, rails
-// and grinds are all side-scroller ideas. A skate run reads as a skate run from the side.
+// The mechanics are Canabalt's, and deliberately: a run that only ever speeds up, jumps
+// whose height is how long you hold, obstacles that cost speed rather than lives, roofs
+// laid out from how fast you are going so that every gap can be made, and one life. They
+// are taken from reading the MIT-licensed source of the HaxeFlixel port
+// (github.com/ninjamuffin99/canabalt-hf, (c) Finji); no code or art from it is here. What
+// this adds is the tilt - in Canabalt you cannot choose your speed, and here you can - and
+// the rails.
+//
+// An earlier version had three lives, put her back on the roof when she fell, let her
+// scramble up walls, and made hitting a bin a silent multiplication. Every one of those
+// took the consequence out of a mistake, and a runner with no consequences is a screensaver.
 //
 // Written against tat_api.h alone. Built as a package with tools/mktat.py.
 #include <math.h>
@@ -26,69 +37,82 @@ static const tat_api_t *T;
 #define CW ((TAT_SCREEN + SCALE - 1) / SCALE)   /* 233 */
 #define PI 3.14159265f
 
-// Where things sit on the canvas. She rides a third of the way across, so there is room
-// to read what is coming without losing sight of what is underneath her. The round screen
-// cuts the corners off, so the ground sits high enough that the drop below it still shows.
-#define SKATER_X 74
-#define GROUND_Y 148          /* canvas y of street level */
-#define FALL_LIMIT (-52.0f)   /* below this, down a gap, the run is over */
+// She rides a quarter of the way across: at speed, what is coming matters more than what
+// has been. The camera follows the roofline so that the roof she is on sits at ROOF_LINE.
+#define SKATER_X 58
+#define ROOF_LINE 156
 
-#define MAX_SLABS 18
-#define MAX_RAILS 6
-#define LIVES 3
+// Speeds are canvas pixels a second; the screen is 233 wide.
+#define V_START 70.0f
+#define V_MIN 52.0f
+#define V_MAX 270.0f
+#define BRAKE 130.0f          /* what turning hard left takes off, per second */
 
-#define MAX_SPEED 108.0f      /* world units a second */
-#define MIN_SPEED 26.0f       /* she never quite stops; a stopped skater is not a game */
-#define ACCEL 64.0f
-#define GRAVITY 420.0f
-#define OLLIE_V 132.0f
-#define OLLIE_HOLD_V 196.0f
-#define RAIL_SNAP 5.0f        /* how close to the top counts as landing on it */
+#define GRAVITY 620.0f
+#define JUMP_V 158.0f
+#define FALL_MAX 170.0f
+#define JUMP_KICK_S 0.08f     /* the first instant of a jump is softer, so a tap is a hop */
+#define COYOTE_S 0.07f        /* how long after rolling off an edge a jump still counts */
+#define LIP 5.0f              /* feet this far below a roof's edge still catch it */
+#define HARD_LANDING_S 0.45f  /* this long at terminal velocity and the landing is a stumble:
+                                 a real drop, not an ordinary ollie coming back down */
+
+#define MAX_ROOFS 8
+#define MAX_BINS 3
+#define MAX_PARTS 40
+#define MAX_FLYERS 4
 
 typedef struct {
-    float x0, x1;   /* world span */
-    float top;      /* height of the surface above street level */
-    bool cone;      /* a bin sitting on it, near the right-hand end */
-    float cone_x;
-} Slab;
+    float x0, x1, y;          /* world span, and the height of the roof (y grows downward) */
+    uint32_t look;            /* what decides its windows, colour and clutter */
+    int n_bins;
+    float bin_x[MAX_BINS];
+    bool bin_up[MAX_BINS];    /* still standing */
+    bool rail;
+    float rail_x0, rail_x1, rail_y;
+} Roof;
 
-typedef struct {
-    float x0, x1, top;
-    bool used;      /* scored already, so one rail pays once per grind */
-} Rail;
+typedef struct { float x, y, vx, vy, life; uint8_t col; } Part;
+typedef struct { float x, y, vx, vy, spin; bool alive; } Flyer;   /* a bin that has been hit */
 
-typedef enum { READY, SKATING, OVER } Phase;
+typedef enum { READY, SKATING, BAILING, OVER } Phase;
+typedef enum { DIED_GAP, DIED_WALL } Death;
 
 static struct {
     tat_canvas_t *cv;
 
-    /* palette */
-    uint8_t c_sky[4], c_far, c_near, c_street, c_street2, c_kerb, c_void;
-    uint8_t c_rail, c_rail_leg, c_cone, c_cone2;
-    uint8_t c_skin, c_hair, c_shirt, c_jeans, c_board, c_wheel, c_shadow;
-    uint8_t c_text, c_dim, c_accent, c_danger, c_panel;
+    uint8_t c_sky[6], c_sun, c_far, c_far_lit, c_near, c_near_lit;
+    uint8_t c_wall[2], c_wall_edge, c_roof, c_lip, c_glass, c_lit, c_clutter;
+    uint8_t c_rail, c_rail_leg, c_bin, c_bin_lid;
+    uint8_t c_skin, c_hair, c_shirt, c_jeans, c_board, c_wheel, c_shoe;
+    uint8_t c_text, c_dim, c_accent, c_danger, c_go, c_panel, c_dust, c_spark, c_streak;
 
-    /* the run */
     Phase phase;
     float phase_t;
-    float x;              /* how far along she is */
-    float y, vy;          /* height above street level */
-    float speed;
-    bool airborne;
-    bool grinding;
-    float air_t;          /* how long this jump has lasted, for the style points */
-    int score, bonus, best;
-    int lives;
-    int combo;
+    Death death;
+
+    float x, y, vy, v;        /* y is her feet */
+    float cam_y;
+    bool grounded, grinding;
+    float jump_t;             /* >= 0 while a held jump is still rising, else -1 */
+    float coyote;
+    float fall_t;             /* time spent at terminal velocity */
+    float stumble_t;
+    float push_t;             /* where she is in the pushing stride */
+    float shake;
+    float anim_t;
+    float grind_tick;
+    int grind_bonus;          /* metres of credit from rails */
+    int best;
+    int sens;                 /* tilt sensitivity, 0..2 */
 
     float grav_x, grav_y, grav_z;
-    float pitch, pitch_neutral;
+    float roll, push;         /* push: -1 full brake .. +1 full push */
 
-    Slab slabs[MAX_SLABS];
-    int n_slabs;
-    Rail rails[MAX_RAILS];
-    int n_rails;
-    float built_to;       /* world x that the street has been laid up to */
+    Roof roofs[MAX_ROOFS];
+    int n_roofs;
+    Part parts[MAX_PARTS];
+    Flyer flyers[MAX_FLYERS];
 
     uint32_t seed;
     bool dirty;
@@ -104,31 +128,46 @@ static float frand(float lo, float hi)
     return lo + (hi - lo) * ((g.seed >> 8 & 0xFFFF) / 65535.0f);
 }
 
-/* world x to canvas x: she stays put and the street moves past her */
-static int sx_of(float wx) { return SKATER_X + (int)(wx - g.x); }
-/* height above street level to canvas y */
-static int sy_of(float h) { return GROUND_Y - (int)h; }
+static uint32_t hash(uint32_t a, uint32_t b)
+{
+    uint32_t h = a * 2654435761u ^ (b + 0x9E3779B9u + (a << 6) + (a >> 2));
+    h ^= h >> 15;
+    h *= 2246822519u;
+    return h ^ (h >> 13);
+}
+
+static int sx_of(float wx) { return SKATER_X + (int)floorf(wx - g.x); }
+static int sy_of(float wy)
+{
+    const int jolt = g.shake > 0 ? (int)(sinf(g.anim_t * 90.0f) * g.shake * 2.5f) : 0;
+    return (int)floorf(wy - g.cam_y) + jolt;
+}
+
+static int metres(void) { return (int)(g.x / 10.0f) + g.grind_bonus; }
 
 // ---------------------------------------------------------------- sound
 
-static void tone1(float f0, float f1, uint16_t ms, uint8_t wave, float vol, uint16_t delay)
+static void tone1(float f0, float f1, int ms, int wave, float vol, int delay)
 {
-    const tat_tone_t t = {f0, f1, ms, wave, vol, delay};
+    const tat_tone_t t = {f0, f1, (uint16_t)ms, (uint8_t)wave, vol, (uint16_t)delay};
     T->tone(&t);
 }
-
-static void sfx_ollie(void) { tone1(260, 640, 70, TAT_TRIANGLE, 0.45f, 0); }
+static void sfx_push(void) { tone1(95, 70, 45, TAT_NOISE, 0.22f, 0); }
+static void sfx_ollie(void) { tone1(240, 620, 70, TAT_TRIANGLE, 0.45f, 0); }
 static void sfx_land(void) { tone1(150, 90, 55, TAT_NOISE, 0.4f, 0); }
-static void sfx_grind(void) { tone1(140, 200, 150, TAT_NOISE, 0.32f, 0); }
-static void sfx_clip(void) { tone1(210, 80, 120, TAT_NOISE, 0.6f, 0); }
+static void sfx_grind(void) { tone1(900, 700, 60, TAT_NOISE, 0.25f, 0); }
 static void sfx_start(void) { tone1(440, 880, 110, TAT_TRIANGLE, 0.6f, 0); }
-
-static void sfx_fall(void)
+static void sfx_bin(void)
 {
-    tone1(700, 90, 420, TAT_TRIANGLE, 0.6f, 0);
-    tone1(200, 60, 240, TAT_NOISE, 0.5f, 220);
+    tone1(180, 60, 160, TAT_NOISE, 0.7f, 0);
+    tone1(120, 70, 120, TAT_SQUARE, 0.5f, 0);
 }
-
+static void sfx_wall(void)
+{
+    tone1(90, 40, 260, TAT_NOISE, 0.8f, 0);
+    tone1(70, 45, 300, TAT_SQUARE, 0.6f, 0);
+}
+static void sfx_fall(void) { tone1(760, 90, 520, TAT_TRIANGLE, 0.6f, 0); }
 static void sfx_over(void)
 {
     tone1(392, 0, 150, TAT_SQUARE, 0.6f, 0);
@@ -136,359 +175,611 @@ static void sfx_over(void)
     tone1(247, 0, 320, TAT_SQUARE, 0.6f, 300);
 }
 
-// ---------------------------------------------------------------- the street
+// ---------------------------------------------------------------- bits that fly about
 
-// Lay another slab of street, sometimes after a gap, sometimes at a different height, and
-// put a rail or a bin on it now and then. Everything is generated just ahead of what can
-// be seen, so the run never repeats and never has to be stored.
-static void extend(void)
+static void puff(float x, float y, float vx, float vy, float life, uint8_t col)
 {
-    while (g.built_to < g.x + 320.0f) {
-        if (g.n_slabs >= MAX_SLABS) {
-            // Drop the oldest, which is long behind her by now.
-            memmove(&g.slabs[0], &g.slabs[1], sizeof(Slab) * (MAX_SLABS - 1));
-            g.n_slabs--;
+    for (int i = 0; i < MAX_PARTS; i++)
+        if (g.parts[i].life <= 0) {
+            g.parts[i] = (Part){x, y, vx, vy, life, col};
+            return;
         }
-        const float r = frand(0, 1);
-        // A gap you have to ollie. Kept inside what a held ollie clears at cruising speed,
-        // which is about seventy units: anything wider is a death sentence, not a jump.
-        float gap = 0;
-        if (r < 0.30f && g.built_to > 260.0f) gap = frand(26.0f, 54.0f);
+}
 
-        const float len = frand(70.0f, 150.0f);
-        float top = 0;
-        if (frand(0, 1) < 0.26f) top = frand(12.0f, 26.0f);   /* a raised block */
+static void dust(int n)
+{
+    for (int i = 0; i < n; i++)
+        puff(g.x + frand(-6, 4), g.y - 1, frand(-50, 10) - g.v * 0.2f, frand(-40, -5), frand(0.2f, 0.45f), g.c_dust);
+}
 
-        Slab *s = &g.slabs[g.n_slabs++];
-        s->x0 = g.built_to + gap;
-        s->x1 = s->x0 + len;
-        s->top = top;
-        s->cone = false;
-        s->cone_x = 0;
-        // A bin sits on flat street only, never on a block you have just had to hop onto.
-        if (top == 0 && len > 95.0f && frand(0, 1) < 0.42f) {
-            s->cone = true;
-            s->cone_x = s->x0 + frand(40.0f, len - 20.0f);
-        }
-        g.built_to = s->x1;
+// ---------------------------------------------------------------- the jump
 
-        /* a rail floating over the middle of a long flat slab */
-        if (top == 0 && len > 110.0f && frand(0, 1) < 0.55f) {
-            if (g.n_rails >= MAX_RAILS) {
-                memmove(&g.rails[0], &g.rails[1], sizeof(Rail) * (MAX_RAILS - 1));
-                g.n_rails--;
-            }
-            Rail *rl = &g.rails[g.n_rails++];
-            rl->x0 = s->x0 + frand(24.0f, 44.0f);
-            rl->x1 = rl->x0 + frand(46.0f, 84.0f);
-            if (rl->x1 > s->x1 - 14.0f) rl->x1 = s->x1 - 14.0f;
-            rl->top = frand(17.0f, 25.0f);
-            rl->used = false;
-        }
+// How long a held jump keeps rising. It grows with speed, which is the rule that makes the
+// game hang together: the gaps grow with speed too, and this is what lets her clear them.
+static float jump_limit(float v) { return clampf(0.11f + (v / V_MAX) * 0.27f, 0.11f, 0.36f); }
+
+// How high a full jump gets at this speed: the held climb, then what is left of the throw.
+static float jump_rise(float v) { return JUMP_V * jump_limit(v) + JUMP_V * JUMP_V / (2 * GRAVITY); }
+
+// ---------------------------------------------------------------- the roofs
+
+// The next roof is laid out from how fast she is going right now, so that whatever speed
+// the player has chosen, the gap in front of them can be made: between 40% and 100% of
+// about half a second's travel, against a jump that at any speed lasts longer than that.
+// The wider the gap, the less the far roof is allowed to be above this one.
+static void add_roof(void)
+{
+    if (g.n_roofs >= MAX_ROOFS) {
+        memmove(&g.roofs[0], &g.roofs[1], sizeof(Roof) * (MAX_ROOFS - 1));
+        g.n_roofs--;
+    }
+    const Roof *last = &g.roofs[g.n_roofs - 1];
+    Roof *r = &g.roofs[g.n_roofs++];
+    memset(r, 0, sizeof(*r));
+
+    const float reach = g.v * 0.5625f;
+    const float how_wide = frand(0, 1);
+    float gap = reach * (0.4f + 0.6f * how_wide);
+    if (gap < 20) gap = 20;
+
+    const float up = jump_rise(g.v) * 0.5f * (1.0f - how_wide);
+    float dy = frand(-up, 38.0f);
+    if (fabsf(dy) < 5) dy = dy < 0 ? -6 : 8;   /* a step, not a crack */
+
+    float min_w = CW - gap;
+    if (min_w < 110) min_w = 110;
+    r->x0 = last->x1 + gap;
+    r->x1 = r->x0 + frand(min_w, min_w * 2.6f);
+    r->y = last->y + dy;
+    r->look = hash(g.seed, (uint32_t)r->x0);
+
+    const float w = r->x1 - r->x0;
+    // Bins stand clear of where she lands and of where she has to take off.
+    const int want = w < 170 ? 0 : (int)frand(0, 1.0f + w / 150.0f);
+    for (int i = 0; i < want && r->n_bins < MAX_BINS; i++) {
+        const float bx = r->x0 + frand(70.0f, w - 60.0f);
+        bool clear = true;
+        for (int k = 0; k < r->n_bins; k++) clear = clear && fabsf(r->bin_x[k] - bx) > 46.0f;
+        if (!clear) continue;
+        r->bin_x[r->n_bins] = bx;
+        r->bin_up[r->n_bins++] = true;
+    }
+    if (w > 200 && frand(0, 1) < 0.55f) {
+        r->rail = true;
+        r->rail_x0 = r->x0 + frand(60.0f, w - 150.0f);
+        r->rail_x1 = r->rail_x0 + frand(60.0f, 110.0f);
+        r->rail_y = r->y - frand(15.0f, 22.0f);
     }
 }
 
-/* the height of the street under `wx`, or a miss if she is over a gap */
-static bool ground_at(float wx, float *top)
+static void extend(void)
 {
-    for (int i = 0; i < g.n_slabs; i++)
-        if (wx >= g.slabs[i].x0 && wx <= g.slabs[i].x1) {
-            *top = g.slabs[i].top;
-            return true;
-        }
-    return false;
+    while (g.roofs[g.n_roofs - 1].x1 < g.x + CW + 80.0f) add_roof();
 }
 
-static Rail *rail_at(float wx)
+static Roof *roof_at(float wx)
 {
-    for (int i = 0; i < g.n_rails; i++)
-        if (wx >= g.rails[i].x0 && wx <= g.rails[i].x1) return &g.rails[i];
+    for (int i = 0; i < g.n_roofs; i++)
+        if (wx >= g.roofs[i].x0 && wx <= g.roofs[i].x1) return &g.roofs[i];
     return NULL;
 }
 
 static void start_run(void)
 {
+    const int best = g.best, sens = g.sens;
+    tat_canvas_t *cv = g.cv;
+    // Everything about a run goes, the palette and settings stay.
     g.x = 0;
-    g.y = 0;
+    g.y = ROOF_LINE;
     g.vy = 0;
-    g.speed = MIN_SPEED;
-    g.airborne = false;
+    g.v = V_START;
+    g.cam_y = 0;
+    g.grounded = true;
     g.grinding = false;
-    g.air_t = 0;
-    g.score = g.bonus = 0;
-    g.combo = 0;
-    g.lives = LIVES;
-    g.n_slabs = 0;
-    g.n_rails = 0;
-    g.built_to = -120.0f;
-    // A long clear run-up: the first thing she meets should not be a gap.
-    Slab *s = &g.slabs[g.n_slabs++];
-    s->x0 = -120.0f;
-    s->x1 = 260.0f;
-    s->top = 0;
-    s->cone = false;
-    g.built_to = s->x1;
+    g.jump_t = -1;
+    g.coyote = g.fall_t = g.stumble_t = g.push_t = g.shake = g.grind_tick = 0;
+    g.grind_bonus = 0;
+    g.push = 0;
+    memset(g.parts, 0, sizeof(g.parts));
+    memset(g.flyers, 0, sizeof(g.flyers));
+    g.n_roofs = 0;
+    Roof *r = &g.roofs[g.n_roofs++];
+    memset(r, 0, sizeof(*r));
+    r->x0 = -160.0f;
+    r->x1 = 380.0f;   /* a long clear run-up: the first thing she meets is not a gap */
+    r->y = ROOF_LINE;
+    r->look = hash(g.seed, 1);
     extend();
+    g.cv = cv;
+    g.best = best;
+    g.sens = sens;
     g.phase = READY;
     g.phase_t = 0;
     g.dirty = true;
 }
 
-static void wipe_out(bool fell)
+static void die(Death how)
 {
-    g.lives--;
-    g.combo = 0;
-    g.grinding = false;
-    if (fell) sfx_fall();
-    if (g.lives > 0) {
-        // Put her back on the last solid ground rather than starting the street again:
-        // losing a life should cost the run its flow, not its progress.
-        float top = 0;
-        float probe = g.x;
-        for (int i = 0; i < 400 && !ground_at(probe, &top); i++) probe -= 4.0f;
-        g.x = probe - 30.0f;
-        ground_at(g.x, &top);
-        g.y = top;
-        g.vy = 0;
-        g.airborne = false;
-        g.speed = MIN_SPEED;
+    g.death = how;
+    g.phase = BAILING;
+    g.phase_t = 0;
+    g.grounded = g.grinding = false;
+    g.jump_t = -1;
+    if (how == DIED_WALL) {
+        g.v = 0;
+        g.vy = -60;
+        g.shake = 1.0f;
+        sfx_wall();
+        for (int i = 0; i < 10; i++)
+            puff(g.x + 5, g.y - frand(2, 18), frand(-90, -10), frand(-80, 20), frand(0.3f, 0.6f), g.c_dust);
     } else {
-        g.phase = OVER;
-        g.phase_t = 0;
-        if (g.score > g.best) {
-            g.best = g.score;
-            T->save_set("best", g.best);
-        }
-        sfx_over();
+        sfx_fall();
     }
+}
+
+static void stumble(float keep)
+{
+    g.v *= keep;
+    if (g.v < V_MIN) g.v = V_MIN;
+    g.stumble_t = 0.6f;
+    g.shake = 0.6f;
 }
 
 // ---------------------------------------------------------------- skating
 
-static void step(const tat_input_t *in, float dt)
+// The control is the one GRAND PRIX steers with: the watch turned like a wheel. She is
+// heading right, so turning it right is pushing on and turning it left is digging in. It was
+// tipping the watch forward at first, which is a throttle for a car seen from behind, not
+// for someone crossing the screen sideways - the turn points the way she is going.
+static void read_tilt(const tat_input_t *in, float dt)
 {
-    // Tipping the watch away from you is the push. Gravity gives the angle, so there is
-    // nothing to drift, and whatever angle she was being held at when the run started is
-    // taken as cruising.
-    const float k = 1.0f - expf(-dt / 0.12f);
+    // Gravity gives the angle, so there is nothing to drift. Upright is coasting.
+    const float k = 1.0f - expf(-dt / 0.10f);
     g.grav_x += (in->tilt.ax - g.grav_x) * k;
     g.grav_y += (in->tilt.ay - g.grav_y) * k;
     g.grav_z += (in->tilt.az - g.grav_z) * k;
-    g.pitch = atan2f(g.grav_z, sqrtf(g.grav_x * g.grav_x + g.grav_y * g.grav_y));
+    // Lying flat there is no "down" to read, so hold the last angle.
+    if (g.grav_x * g.grav_x + g.grav_y * g.grav_y > 0.09f) g.roll = atan2f(g.grav_x, g.grav_y);
+    static const float RANGE[3] = {0.80f, 0.55f, 0.36f};   /* radians of turn to flat out */
+    float s = g.roll / RANGE[g.sens];
+    const float dead = 0.10f;
+    s = fabsf(s) < dead ? 0 : (s - copysignf(dead, s)) / (1 - dead);
+    g.push = clampf(s, -1.0f, 1.0f);
+}
 
-    const float want = clampf(0.30f + (g.pitch - g.pitch_neutral) * 1.9f, 0.0f, 1.0f);
-    const float target = MIN_SPEED + want * (MAX_SPEED - MIN_SPEED);
-    g.speed += clampf(target - g.speed, -ACCEL * 1.4f * dt, ACCEL * dt);
-    g.speed = clampf(g.speed, MIN_SPEED, MAX_SPEED);
+// Testing a runner over Wi-Fi, where a tap arrives a second late, needs something that can
+// jump on time. Built only when SK_AUTOPILOT is defined, which no shipped build does: it
+// jumps at the end of each roof and holds for as long as the gap needs, and ignores bins
+// and rails, so those get hit and landed on by chance.
+#ifdef SK_AUTOPILOT
+static Roof *roof_at(float wx);
+static void autopilot(bool *pressed, bool *down)
+{
+    static bool holding;
+    const Roof *r = roof_at(g.x);
+    if (g.grounded && r && r->x1 - g.x < g.v * 0.06f + 4.0f) holding = true;
+    if (holding && g.jump_t < 0 && !g.grounded && !g.grinding) holding = false;
+    *pressed = holding && (g.grounded || g.grinding);
+    *down = holding;
+}
+#endif
 
-    /* the ollie */
-    if (in->touch.pressed && !g.airborne) {
-        g.vy = OLLIE_V;
-        g.airborne = true;
-        g.grinding = false;
-        g.air_t = 0;
-        sfx_ollie();
+static void step(const tat_input_t *in, float dt)
+{
+    read_tilt(in, dt);
+    bool pressed = in->touch.pressed, down = in->touch.down;
+#ifdef SK_AUTOPILOT
+    autopilot(&pressed, &down);
+#endif
+
+    // Speed. Left alone she gathers it slowly, and the faster she is going the slower it
+    // comes. Turning right is pushing, and is worth nearly four times that; turning left is
+    // dragging a foot. The dead zone around upright is coasting.
+    float gather = g.v < 100 ? 22.0f : g.v < 160 ? 14.0f : g.v < 220 ? 9.0f : 5.0f;
+    const bool rolling = g.grounded && !g.grinding;
+    if (g.push > 0.02f) {
+        if (rolling) g.v += gather * (0.6f + 3.2f * g.push) * dt;
+    } else if (g.push < -0.02f) {
+        if (rolling) g.v += BRAKE * g.push * dt;
+    } else if (rolling) {
+        g.v += gather * 0.6f * dt;
     }
-    // Keeping your finger down through the first part of the jump gets you higher, which
-    // is how a wide gap or a high rail becomes reachable.
-    if (in->touch.down && g.vy > 0 && g.vy < OLLIE_HOLD_V) g.vy += 620.0f * dt;
+    g.v = clampf(g.v, V_MIN, V_MAX);
 
-    g.x += g.speed * dt;
-
-    float top = 0;
-    const bool over_ground = ground_at(g.x, &top);
-    Rail *rl = rail_at(g.x);
-
-    if (g.airborne || g.grinding) {
-        const float prev_y = g.y;
-        if (!g.grinding) {
-            g.vy -= GRAVITY * dt;
-            g.y += g.vy * dt;
-            g.air_t += dt;
-        }
-
-        /* coming down onto a rail from above is a grind */
-        if (rl && g.vy <= 0 && prev_y >= rl->top - RAIL_SNAP && g.y <= rl->top + RAIL_SNAP) {
-            g.y = rl->top;
-            g.vy = 0;
-            g.airborne = false;
-            if (!g.grinding) {
-                g.grinding = true;
-                g.combo++;
-                if (!rl->used) {
-                    rl->used = true;
-                    g.bonus += 60 * (g.combo < 5 ? g.combo : 5);
-                }
-                sfx_grind();
-            }
-        } else if (g.grinding && !rl) {
-            /* run off the end of it */
-            g.grinding = false;
-            g.airborne = true;
-            g.vy = 20.0f;
-        } else if (!g.grinding && over_ground && g.vy <= 0 && g.y <= top) {
-            g.y = top;
-            g.vy = 0;
-            g.airborne = false;
-            // Style for a long one. A hop over a crack is not worth the same as clearing
-            // a whole gap, and the air time is what tells them apart.
-            if (g.air_t > 0.35f) g.bonus += (int)(g.air_t * 60.0f);
-            sfx_land();
-        } else if (!over_ground && g.y < FALL_LIMIT) {
-            wipe_out(true);
-            return;
-        }
-        if (g.grinding) g.bonus += (int)(90.0f * dt) * (g.combo < 5 ? g.combo : 5);
+    // The pushing stride, for the picture and the sound: quicker the harder she pushes.
+    if (rolling && g.push > 0.02f && g.stumble_t <= 0) {
+        const float before = g.push_t;
+        g.push_t += dt * (1.3f + 1.6f * g.push);
+        if ((int)before != (int)g.push_t) sfx_push();
     } else {
-        /* on the deck: follow the street, and walk off the edge of it */
-        if (!over_ground) {
-            g.airborne = true;
-            g.vy = 0;
-        } else if (g.y < top) {
-            // Ran into the side of a raised block rather than landing on it: that costs
-            // speed, the same as a bin, and she scrambles up.
-            g.speed *= 0.5f;
-            g.combo = 0;
-            g.y = top;
-            sfx_clip();
+        g.push_t = floorf(g.push_t) + 0.0f;
+    }
+
+    // The ollie: from the roof, from a rail, or a moment after rolling off an edge.
+    if (g.coyote > 0) g.coyote -= dt;
+    if (pressed && (g.grounded || g.grinding || g.coyote > 0)) {
+        g.jump_t = 0;
+        g.grounded = g.grinding = false;
+        g.coyote = 0;
+        sfx_ollie();
+        dust(3);
+    }
+    if (g.jump_t >= 0) {
+        g.jump_t += dt;
+        if (!down || g.jump_t > jump_limit(g.v)) g.jump_t = -1;
+        else g.vy = g.jump_t < JUMP_KICK_S ? -JUMP_V * 0.65f : -JUMP_V;
+    }
+
+    const float prev_y = g.y, prev_front = g.x + 5.0f;
+    g.x += g.v * dt;
+
+    if (g.grinding) {
+        Roof *r = roof_at(g.x);
+        if (!r || !r->rail || g.x > r->rail_x1) {
+            g.grinding = false;   /* off the end, with a little pop */
+            g.vy = -45.0f;
         } else {
-            g.y = top;
+            g.y = r->rail_y;
+            g.grind_tick += dt;
+            if (g.grind_tick > 0.09f) {
+                g.grind_tick = 0;
+                sfx_grind();
+                puff(g.x - 6, g.y, frand(-120, -40), frand(-70, -10), 0.25f, g.c_spark);
+                puff(g.x + 4, g.y, frand(-100, -20), frand(-50, 10), 0.2f, g.c_spark);
+            }
+        }
+    } else if (!g.grounded) {
+        g.vy += GRAVITY * dt;
+        if (g.vy >= FALL_MAX) {
+            g.vy = FALL_MAX;
+            g.fall_t += dt;
+        }
+        g.y += g.vy * dt;
+    }
+
+    // The side of a building. If her feet are only just below its edge she catches the lip
+    // and rides on - being robbed by three pixels is not difficulty - but lower than that
+    // and it is a wall, and walls do not move.
+    const float front = g.x + 5.0f;
+    for (int i = 0; i < g.n_roofs; i++) {
+        const Roof *r = &g.roofs[i];
+        if (prev_front < r->x0 && front >= r->x0) {
+            if (g.y > r->y + LIP) {
+                g.x = r->x0 - 5.0f;
+                // Clipping the edge is hitting a wall. Meeting it a long way down is having
+                // missed the gap, whatever she ran into afterwards.
+                die(g.y > r->y + 34.0f ? DIED_GAP : DIED_WALL);
+                g.v = 0;
+                return;
+            }
+            if (g.y > r->y) g.y = r->y;
         }
     }
 
-    /* bins */
-    for (int i = 0; i < g.n_slabs; i++) {
-        Slab *s = &g.slabs[i];
-        if (!s->cone) continue;
-        if (fabsf(g.x - s->cone_x) < 5.0f && g.y < s->top + 12.0f) {
-            s->cone = false;   /* knocked over; it does not catch you twice */
-            g.speed *= 0.45f;
-            g.combo = 0;
-            sfx_clip();
+    Roof *under = roof_at(g.x);
+    if (g.grounded) {
+        if (!under) {
+            g.grounded = false;   /* rolled off the edge */
+            g.vy = 0;
+            g.coyote = COYOTE_S;
+            g.fall_t = 0;
+        } else {
+            g.y = under->y;
+        }
+    } else if (!g.grinding && g.vy >= 0) {
+        // Coming down: a rail first, since it is above the roof it stands on.
+        if (under && under->rail && g.x >= under->rail_x0 && g.x <= under->rail_x1 && prev_y <= under->rail_y + 2
+            && g.y >= under->rail_y) {
+            g.y = under->rail_y;
+            g.vy = 0;
+            g.grinding = true;
+            g.fall_t = 0;
+            g.grind_tick = 1;
+            g.grind_bonus += 5;
+            T->log("grind at %d m, %.0f px/s", metres(), (double)g.v);
+            g.v = clampf(g.v + 12.0f, V_MIN, V_MAX);   /* a rail gives a little back */
+        } else if (under && prev_y <= under->y + 2 && g.y >= under->y) {
+            g.y = under->y;
+            g.vy = 0;
+            g.grounded = true;
+            sfx_land();
+            if (g.fall_t > HARD_LANDING_S) {
+                T->log("hard landing at %d m", metres());
+                stumble(0.93f);   /* came down hard */
+                dust(9);
+            } else {
+                dust(4);
+                if (g.shake < 0.25f) g.shake = 0.25f;
+            }
+            g.fall_t = 0;
         }
     }
 
+    // Bins. Hitting one is a stumble and a third of her speed, and the bin goes flying -
+    // which is a disaster at the wrong moment and the only brake there is at the right one.
+    if (under && !g.grinding && g.y > under->y - 9.0f) {
+        for (int k = 0; k < under->n_bins; k++) {
+            if (!under->bin_up[k] || fabsf(g.x + 3.0f - under->bin_x[k]) > 6.0f) continue;
+            under->bin_up[k] = false;
+            for (int f = 0; f < MAX_FLYERS; f++)
+                if (!g.flyers[f].alive) {
+                    g.flyers[f] = (Flyer){under->bin_x[k], under->y - 6, g.v * 0.9f + frand(-20, 40), frand(-150, -95),
+                                          frand(7, 13), true};
+                    break;
+                }
+            for (int i = 0; i < 8; i++)
+                puff(under->bin_x[k], under->y - frand(2, 10), frand(-30, 90), frand(-110, -20), frand(0.3f, 0.6f),
+                     i & 1 ? g.c_bin : g.c_bin_lid);
+            T->log("bin at %d m, %.0f -> %.0f px/s", metres(), (double)g.v, (double)(g.v * 0.7f));
+            stumble(0.7f);
+            sfx_bin();
+        }
+    }
+
+    // Gone below the bottom of the screen: that was the gap.
+    if (sy_of(g.y) > CW + 30) {
+        die(DIED_GAP);
+        return;
+    }
     extend();
+}
 
-    // Worked out from the distance each frame rather than added to a frame at a time: a
-    // fraction of a point sixty times a second casts to zero every time.
-    g.score = (int)(g.x * 0.35f) + g.bonus;
+static void step_world(float dt)
+{
+    g.anim_t += dt;
+    if (g.shake > 0) g.shake -= dt * 2.2f;
+    if (g.stumble_t > 0) g.stumble_t -= dt;
+
+    for (int i = 0; i < MAX_PARTS; i++) {
+        Part *p = &g.parts[i];
+        if (p->life <= 0) continue;
+        p->life -= dt;
+        p->vy += 300.0f * dt;
+        p->x += p->vx * dt;
+        p->y += p->vy * dt;
+    }
+    for (int i = 0; i < MAX_FLYERS; i++) {
+        Flyer *f = &g.flyers[i];
+        if (!f->alive) continue;
+        f->vy += 330.0f * dt;
+        f->x += f->vx * dt;
+        f->y += f->vy * dt;
+        if (sy_of(f->y) > CW + 20) f->alive = false;
+    }
+
+    // The camera follows the roofline rather than her: it looks at the roof she is on, or
+    // the one she is heading for, and it takes its time, so a jump is a jump on screen.
+    const Roof *look = roof_at(g.x);
+    if (!look)
+        for (int i = 0; i < g.n_roofs && !look; i++)
+            if (g.roofs[i].x0 > g.x) look = &g.roofs[i];
+    if (look && g.phase != BAILING) {
+        const float want = look->y - ROOF_LINE;
+        g.cam_y += (want - g.cam_y) * (1.0f - expf(-dt * 3.0f));
+    }
 }
 
 // ---------------------------------------------------------------- drawing
 
-static void draw_world(void)
+static void rect(int x, int y, int w, int h, uint8_t c) { T->canvas_fill_rect(g.cv, x, y, w, h, c); }
+
+static void draw_sky(void)
 {
-    /* sky, four bands, lightest at the horizon */
-    for (int i = 0; i < 4; i++)
-        T->canvas_fill_rect(g.cv, 0, i * (GROUND_Y / 4), CW, GROUND_Y / 4 + 1, g.c_sky[i]);
+    const int band = ROOF_LINE / 6 + 8;
+    for (int i = 0; i < 6; i++) rect(0, i * band, CW, band + 1, g.c_sky[i]);
+    rect(0, 6 * band, CW, CW - 6 * band, g.c_sky[5]);
+    T->canvas_fill_circle(g.cv, 164, 118, 26, g.c_sun);
 
-    // Two rows of rooftops behind her, the far one drifting slower. It is what makes the
-    // speed readable when the street underneath is plain.
+    // Two skylines, the far one drifting slower. With the roofs in front plain-walled, this
+    // and the streaks are what make the speed something you can see.
     for (int layer = 0; layer < 2; layer++) {
-        const float par = layer == 0 ? 0.18f : 0.42f;
-        const uint8_t col = layer == 0 ? g.c_far : g.c_near;
-        const float span = layer == 0 ? 54.0f : 38.0f;
+        const float par = layer == 0 ? 0.10f : 0.26f;
+        const uint8_t col = layer == 0 ? g.c_far : g.c_near, lit = layer == 0 ? g.c_far_lit : g.c_near_lit;
+        const int span = layer == 0 ? 46 : 34;
         const float off = g.x * par;
-        const float base = floorf(off / span) * span;
-        for (int i = -1; i < CW / (int)span + 3; i++) {
-            const float bx = base + i * span;
-            const int sx = (int)(bx - off);
-            /* a height that depends only on which building it is, so they stay put */
-            const int idx = (int)(bx / span);
-            const int h = 26 + ((idx * 37) % 40) + layer * 14;
-            T->canvas_fill_rect(g.cv, sx, GROUND_Y - h, (int)span - 5, h, col);
+        const int first = (int)floorf(off / span);
+        for (int i = -1; i < CW / span + 2; i++) {
+            const int idx = first + i;
+            const int sx = (int)(idx * span - off);
+            const uint32_t h = hash((uint32_t)idx, (uint32_t)layer + 11);
+            const int tall = 40 + (int)(h % 58) + layer * 10;
+            const int top = ROOF_LINE + 30 - tall - (int)(g.cam_y * (layer == 0 ? 0.08f : 0.2f));
+            rect(sx, top, span - 4, CW - top, col);
+            for (int wy = top + 5; wy < top + tall - 4; wy += 9)
+                for (int wx = sx + 3; wx < sx + span - 8; wx += 7)
+                    if (hash(h, (uint32_t)(wx - sx) * 31 + (uint32_t)(wy - top)) % 7 == 0) rect(wx, wy, 3, 4, lit);
         }
     }
 
-    /* the drop below the street, seen through the gaps */
-    T->canvas_fill_rect(g.cv, 0, GROUND_Y, CW, CW - GROUND_Y, g.c_void);
-
-    for (int i = 0; i < g.n_slabs; i++) {
-        const Slab *s = &g.slabs[i];
-        const int x0 = sx_of(s->x0), x1 = sx_of(s->x1);
-        if (x1 < -8 || x0 > CW + 8) continue;
-        const int y = sy_of(s->top);
-        T->canvas_fill_rect(g.cv, x0, y, x1 - x0, CW - y, g.c_street);
-        T->canvas_fill_rect(g.cv, x0, y, x1 - x0, 2, g.c_kerb);          /* the lip */
-        for (int d = x0 + 6; d < x1 - 4; d += 16)                        /* paving joints */
-            T->canvas_fill_rect(g.cv, d, y + 5, 1, 6, g.c_street2);
-
-        if (s->cone) {
-            const int cx = sx_of(s->cone_x), cy = sy_of(s->top);
-            T->canvas_fill_rect(g.cv, cx - 4, cy - 11, 8, 11, g.c_cone);
-            T->canvas_fill_rect(g.cv, cx - 5, cy - 13, 10, 3, g.c_cone2);
+    // Streaks, once she is properly moving: more of them and longer the faster she goes.
+    if (g.v > 150 && g.phase == SKATING) {
+        const int n = (int)((g.v - 150) / 14);
+        for (int i = 0; i < n; i++) {
+            const uint32_t h = hash((uint32_t)i, 77);
+            const float speed = 1.6f + (h % 100) / 60.0f;
+            const int len = 10 + (int)((g.v - 150) / 6) + (int)(h % 9);
+            const int x = CW + 40 - (int)fmodf(g.x * speed + (float)(h % 997), (float)(CW + 80));
+            const int y = 30 + (int)(h / 7 % 110);
+            rect(x, y, len, 1, g.c_streak);
         }
-    }
-
-    for (int i = 0; i < g.n_rails; i++) {
-        const Rail *r = &g.rails[i];
-        const int x0 = sx_of(r->x0), x1 = sx_of(r->x1);
-        if (x1 < -8 || x0 > CW + 8) continue;
-        const int y = sy_of(r->top);
-        T->canvas_fill_rect(g.cv, x0, y, x1 - x0, 2, g.c_rail);
-        T->canvas_fill_rect(g.cv, x0 + 1, y + 2, 2, GROUND_Y - y - 2, g.c_rail_leg);
-        T->canvas_fill_rect(g.cv, x1 - 3, y + 2, 2, GROUND_Y - y - 2, g.c_rail_leg);
     }
 }
 
+static void draw_roof(const Roof *r)
+{
+    const int x0 = sx_of(r->x0), x1 = sx_of(r->x1);
+    if (x1 < -4 || x0 > CW + 4) return;
+    const int y = sy_of(r->y);
+    const uint8_t wall = g.c_wall[r->look & 1];
+
+    // Clutter first, so it stands behind everything: tanks, vents and aerials that belong
+    // to the roof and are not in her way. They are wall-coloured on purpose - a bin, which
+    // is in her way, is the only green thing on a roof.
+    const int w = x1 - x0;
+    for (int k = 0; k < 4; k++) {
+        const uint32_t h = hash(r->look, (uint32_t)k + 3);
+        const int cx = x0 + 18 + (int)(h % (uint32_t)(w > 60 ? w - 40 : 20));
+        switch (h >> 8 & 3) {
+        case 0:   /* a water tank on legs */
+            rect(cx, y - 17, 12, 10, g.c_clutter);
+            rect(cx + 1, y - 7, 2, 7, g.c_clutter);
+            rect(cx + 9, y - 7, 2, 7, g.c_clutter);
+            break;
+        case 1:   /* an aerial */
+            rect(cx, y - 26, 1, 26, g.c_clutter);
+            rect(cx - 3, y - 22, 7, 1, g.c_clutter);
+            rect(cx - 2, y - 17, 5, 1, g.c_clutter);
+            break;
+        case 2:   /* an air conditioner */
+            rect(cx, y - 8, 14, 8, g.c_clutter);
+            rect(cx + 2, y - 6, 10, 1, wall);
+            rect(cx + 2, y - 4, 10, 1, wall);
+            break;
+        default: break;   /* and sometimes nothing */
+        }
+    }
+
+    rect(x0, y, w, CW - y + 4, wall);
+    rect(x0, y, w, 2, g.c_lip);
+    rect(x0, y + 2, w, 4, g.c_roof);
+    rect(x0, y + 6, 3, CW - y, g.c_wall_edge);   /* the face she must not meet */
+
+    // Windows, in a grid that belongs to the building and so stays put as it goes by.
+    const int first = x0 + 7;
+    for (int wy = y + 12, row = 0; wy < CW; wy += 13, row++)
+        for (int wx = first, col = 0; wx < x1 - 7; wx += 10, col++) {
+            if (wx < -6 || wx > CW) continue;
+            const bool on = hash(r->look, (uint32_t)(col * 57 + row)) % 5 == 0;
+            rect(wx, wy, 5, 7, on ? g.c_lit : g.c_glass);
+        }
+
+    if (r->rail) {
+        const int rx0 = sx_of(r->rail_x0), rx1 = sx_of(r->rail_x1), ry = sy_of(r->rail_y);
+        rect(rx0, ry, rx1 - rx0, 2, g.c_rail);
+        rect(rx0 + 2, ry + 2, 2, y - ry - 2, g.c_rail_leg);
+        rect(rx1 - 4, ry + 2, 2, y - ry - 2, g.c_rail_leg);
+        if ((rx1 - rx0) > 70) rect((rx0 + rx1) / 2 - 1, ry + 2, 2, y - ry - 2, g.c_rail_leg);
+    }
+    for (int k = 0; k < r->n_bins; k++) {
+        if (!r->bin_up[k]) continue;
+        const int bx = sx_of(r->bin_x[k]);
+        rect(bx - 4, y - 11, 8, 11, g.c_bin);
+        rect(bx - 5, y - 13, 10, 3, g.c_bin_lid);
+        rect(bx - 2, y - 9, 1, 7, g.c_bin_lid);
+        rect(bx + 1, y - 9, 1, 7, g.c_bin_lid);
+    }
+}
+
+// She is drawn from a pose, not from frames: a lean, a crouch, a board angle and a stride,
+// each of which comes straight from what she is doing. It keeps her moving between states
+// instead of snapping, and it means her hair can stream further the faster she goes.
 static void draw_skater(void)
 {
     const int x = SKATER_X;
-    const int y = sy_of(g.y);   /* the ground under her feet */
+    const int y = sy_of(g.y);
 
-    /* board */
-    T->canvas_fill_rect(g.cv, x - 8, y - 3, 16, 2, g.c_board);
-    T->canvas_fill_rect(g.cv, x - 6, y - 1, 2, 2, g.c_wheel);
-    T->canvas_fill_rect(g.cv, x + 4, y - 1, 2, 2, g.c_wheel);
+    if (g.phase == BAILING || g.phase == OVER) {
+        // Off the board: a tumbling bundle, and the board going its own way.
+        const int turn = (int)(g.phase_t * 9.0f) & 3;
+        const int bw = (turn & 1) ? 16 : 9, bh = (turn & 1) ? 9 : 16;
+        rect(x - bw / 2, y - bh, bw, bh, turn < 2 ? g.c_shirt : g.c_jeans);
+        rect(x - bw / 2 + ((turn == 1 || turn == 2) ? bw - 5 : 0), y - bh + (turn >= 2 ? bh - 5 : 0), 5, 5, g.c_skin);
+        rect(x - bw / 2 + ((turn == 1 || turn == 2) ? bw - 7 : 0), y - bh - 2 + (turn >= 2 ? bh - 3 : 0), 7, 3, g.c_hair);
+        const int bx = x + 10 + (int)(g.phase_t * 40.0f), by = y - 4 - (int)(sinf(g.phase_t * 7.0f) * 6.0f);
+        T->canvas_line(g.cv, bx - 7, by + (turn & 1 ? 3 : -3), bx + 7, by + (turn & 1 ? -3 : 3), g.c_board);
+        return;
+    }
 
-    // Crouched when she is in the air, upright when she is rolling: the whole read of an
-    // ollie is the shape changing, not the height alone.
-    const int crouch = g.airborne ? 3 : 0;
-    const int hip = y - 5 - crouch;
-    T->canvas_fill_rect(g.cv, x - 3, hip - 7, 6, 7, g.c_jeans);    /* legs */
-    T->canvas_fill_rect(g.cv, x - 4, hip - 14, 8, 7, g.c_shirt);   /* body */
-    T->canvas_fill_rect(g.cv, x - 3, hip - 19, 6, 5, g.c_skin);    /* head */
-    T->canvas_fill_rect(g.cv, x - 5, hip - 20, 4, 7, g.c_hair);    /* hair, streaming back */
-    if (g.airborne) T->canvas_fill_rect(g.cv, x + 3, hip - 13, 5, 2, g.c_skin);   /* arm out */
+    const bool air = !g.grounded && !g.grinding;
+    const float speed01 = clampf((g.v - V_MIN) / (V_MAX - V_MIN), 0, 1);
 
-    if (g.grinding)
-        for (int i = 0; i < 3; i++)
-            T->canvas_pixel(g.cv, x - 8 + (int)frand(0, 5), y + (int)frand(0, 4), g.c_accent);
+    // The board: nose up on the way up, level at the top, nose down coming in.
+    int nose = 0;
+    if (air) nose = g.vy < -40 ? -4 : g.vy > 60 ? 2 : -1;
+    if (g.grinding) nose = -1;
+    const int wobble = g.stumble_t > 0 ? (int)(sinf(g.anim_t * 38.0f) * 2.5f) : 0;
+    const int by = y - 3;
+    T->canvas_line(g.cv, x - 8, by - nose / 2 + 0, x + 8, by + nose, g.c_board);
+    T->canvas_line(g.cv, x - 8, by - nose / 2 + 1, x + 8, by + nose + 1, g.c_board);
+    rect(x - 6, by + 2 - nose / 3, 2, 2, g.c_wheel);
+    rect(x + 4, by + 2 + nose / 2, 2, 2, g.c_wheel);
+
+    // Crouch: deep at the top of an ollie and on a rail, a little when braking.
+    int crouch = air ? 4 : g.grinding ? 3 : g.push < -0.02f ? 2 : 0;
+    if (g.stumble_t > 0) crouch = 2;
+    const int lean = (int)(speed01 * 3.0f) + (g.push > 0.02f ? 1 : 0) + wobble;
+    const int hip = by - 6 + crouch;
+
+    // Legs. When she pushes, the back leg swings down and behind to the roof and up again.
+    const float stride = g.push_t - floorf(g.push_t);
+    const bool pushing = g.grounded && g.push > 0.02f && g.stumble_t <= 0 && stride < 0.55f;
+    rect(x + 1, hip, 3, by - hip, g.c_jeans);                       /* front leg, on the board */
+    if (pushing) {
+        const int reach = (int)(sinf(stride / 0.55f * PI) * 7.0f);
+        T->canvas_line(g.cv, x - 1, hip + 1, x - 4 - reach, y - 1, g.c_jeans);
+        T->canvas_line(g.cv, x - 2, hip + 1, x - 5 - reach, y - 1, g.c_jeans);
+        rect(x - 6 - reach, y - 2, 3, 2, g.c_shoe);
+    } else {
+        rect(x - 4, hip, 3, by - hip, g.c_jeans);
+    }
+    rect(x + 1, by - 2, 4, 2, g.c_shoe);
+    if (!pushing) rect(x - 5, by - 2, 4, 2, g.c_shoe);
+
+    // Body, leaning into it.
+    const int tx = x - 4 + lean;
+    rect(tx, hip - 9, 8, 9, g.c_shirt);
+    // Arms: out for balance in the air and when stumbling, swinging when pushing.
+    if (air || g.stumble_t > 0) {
+        rect(tx - 5, hip - 9 + (wobble > 0 ? 2 : 0), 5, 2, g.c_skin);
+        rect(tx + 8, hip - 8 - (wobble > 0 ? 2 : 0), 5, 2, g.c_skin);
+    } else {
+        const int swing = pushing ? (int)(sinf(stride / 0.55f * PI) * 3.0f) : 0;
+        rect(tx + 6 + swing, hip - 7, 2, 6, g.c_skin);
+        rect(tx - 1 - swing, hip - 7, 2, 5, g.c_skin);
+    }
+    // Head, and the hair, which is the speedometer: it streams out behind her in a wave
+    // that gets longer the faster she is going.
+    const int hx = tx + 1 + (lean > 1 ? 1 : 0), hy = hip - 15;
+    rect(hx, hy, 6, 6, g.c_skin);
+    rect(hx, hy - 2, 7, 3, g.c_hair);
+    const int len = 4 + (int)(speed01 * 13.0f) + (air ? 2 : 0);
+    for (int i = 0; i < len; i++) {
+        const int wave = (int)(sinf(g.anim_t * 14.0f + i * 0.7f) * (1.0f + i * 0.12f));
+        rect(hx - 1 - i, hy - 1 + wave + i / 4 - (air && g.vy > 0 ? i / 3 : 0), 1, 4 - (i * 3) / len, g.c_hair);
+    }
 }
 
 static void draw_hud(void)
 {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%d", g.score);
-    T->canvas_text_centered(g.cv, CW / 2, 14, buf, g.c_text, 1, true);
-    for (int i = 0; i < LIVES; i++)
-        T->canvas_fill_circle(g.cv, CW / 2 - (LIVES - 1) * 6 + i * 12, 27, 3,
-                              i < g.lives ? g.c_shirt : g.c_dim);
-    if (g.grinding && g.combo > 1) {
-        snprintf(buf, sizeof(buf), "GRIND X%d", g.combo < 5 ? g.combo : 5);
-        T->canvas_text_centered(g.cv, CW / 2, 44, buf, g.c_accent, 1, true);
-    }
-    if (g.best) {
-        snprintf(buf, sizeof(buf), "BEST %d", g.best);
-        T->canvas_text_centered(g.cv, CW / 2, CW - 14, buf, g.c_dim, 1, false);
-    }
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%dM", metres());
+    T->canvas_text_centered(g.cv, CW / 2, 17, buf, g.c_text, 2, true);
+
+    // Speed, as a bar: green, then gold, then red when the gaps are about to get serious.
+    const float s = clampf((g.v - V_MIN) / (V_MAX - V_MIN), 0, 1);
+    const int bw = 56, bx = CW / 2 - bw / 2, by = 30;
+    rect(bx - 1, by - 1, bw + 2, 5, g.c_panel);
+    rect(bx, by, (int)(bw * s), 3, s > 0.72f ? g.c_danger : s > 0.42f ? g.c_accent : g.c_go);
+    if (g.grinding) T->canvas_text_centered(g.cv, CW / 2, 44, "GRIND +5M", g.c_accent, 1, true);
+    else if (g.stumble_t > 0.25f) T->canvas_text_centered(g.cv, CW / 2, 44, "OOF!", g.c_danger, 1, true);
 }
 
-static void banner(const char *top, const char *sub, uint8_t col)
+static void banner(const char *top, const char *mid, const char *bottom, uint8_t col, int y)
 {
     const tat_banner_t b = {
-        .top = top, .mid = sub,
-        .top_color = col, .mid_color = g.c_text,
+        .top = top, .mid = mid, .bottom = bottom,
+        .top_color = col, .mid_color = g.c_text, .bottom_color = g.c_dim,
         .panel = g.c_panel, .border = col,
         .bars = true,
     };
-    T->canvas_banner(g.cv, CW / 2, CW / 2 - (sub ? 13 : 8), CW - 54, &b);
+    T->canvas_banner(g.cv, CW / 2, y, CW - 40, &b);
 }
 
 // ---------------------------------------------------------------- the game
 
-static void sg_begin(const tat_api_t *api)
+static uint8_t col(uint8_t r, uint8_t gg, uint8_t b) { return T->canvas_color(g.cv, T->rgb(r, gg, b)); }
+
+static void sk_begin(const tat_api_t *api)
 {
     T = api;
     memset(&g, 0, sizeof(g));
@@ -497,40 +788,53 @@ static void sg_begin(const tat_api_t *api)
         T->log("no memory for the street");
         return;
     }
-    static const uint8_t SKY[4][3] = {{44, 32, 74}, {86, 52, 106}, {162, 84, 116}, {242, 146, 110}};
-    for (int i = 0; i < 4; i++) g.c_sky[i] = T->canvas_color(g.cv, T->rgb(SKY[i][0], SKY[i][1], SKY[i][2]));
-    g.c_far = T->canvas_color(g.cv, T->rgb(76, 58, 100));
-    g.c_near = T->canvas_color(g.cv, T->rgb(52, 40, 74));
-    g.c_street = T->canvas_color(g.cv, T->rgb(62, 62, 72));
-    g.c_street2 = T->canvas_color(g.cv, T->rgb(48, 48, 58));
-    g.c_kerb = T->canvas_color(g.cv, T->rgb(150, 150, 164));
-    g.c_void = T->canvas_color(g.cv, T->rgb(14, 12, 22));
-    g.c_rail = T->canvas_color(g.cv, T->rgb(226, 232, 244));
-    g.c_rail_leg = T->canvas_color(g.cv, T->rgb(128, 134, 150));
-    g.c_cone = T->canvas_color(g.cv, T->rgb(86, 140, 96));
-    g.c_cone2 = T->canvas_color(g.cv, T->rgb(140, 190, 148));
-    g.c_skin = T->canvas_color(g.cv, T->rgb(246, 200, 164));
-    g.c_hair = T->canvas_color(g.cv, T->rgb(255, 206, 70));
-    g.c_shirt = T->canvas_color(g.cv, T->rgb(244, 72, 148));
-    g.c_jeans = T->canvas_color(g.cv, T->rgb(66, 104, 190));
-    g.c_board = T->canvas_color(g.cv, T->rgb(90, 222, 216));
-    g.c_wheel = T->canvas_color(g.cv, T->rgb(250, 250, 255));
-    g.c_shadow = T->canvas_color(g.cv, T->rgb(38, 36, 48));
-    g.c_text = T->canvas_color(g.cv, T->rgb(248, 248, 255));
-    g.c_dim = T->canvas_color(g.cv, T->rgb(124, 122, 146));
-    g.c_accent = T->canvas_color(g.cv, T->rgb(255, 214, 61));
-    g.c_danger = T->canvas_color(g.cv, T->rgb(255, 84, 92));
-    g.c_panel = T->canvas_color(g.cv, T->rgb(14, 12, 22));
+    static const uint8_t SKY[6][3] = {{36, 28, 66}, {58, 38, 92}, {100, 54, 110}, {160, 78, 116}, {222, 120, 108}, {250, 170, 110}};
+    for (int i = 0; i < 6; i++) g.c_sky[i] = col(SKY[i][0], SKY[i][1], SKY[i][2]);
+    g.c_sun = col(255, 222, 150);
+    g.c_far = col(92, 60, 108);
+    g.c_far_lit = col(190, 130, 130);
+    g.c_near = col(62, 44, 86);
+    g.c_near_lit = col(236, 176, 110);
+    g.c_wall[0] = col(40, 36, 58);
+    g.c_wall[1] = col(48, 40, 62);
+    g.c_wall_edge = col(24, 22, 38);
+    g.c_roof = col(70, 66, 92);
+    g.c_lip = col(168, 160, 190);
+    g.c_glass = col(28, 28, 46);
+    g.c_lit = col(255, 206, 110);
+    g.c_clutter = col(34, 30, 50);
+    g.c_rail = col(232, 236, 248);
+    g.c_rail_leg = col(130, 134, 154);
+    g.c_bin = col(70, 170, 96);
+    g.c_bin_lid = col(150, 226, 160);
+    g.c_skin = col(246, 200, 164);
+    g.c_hair = col(255, 206, 70);
+    g.c_shirt = col(244, 72, 148);
+    g.c_jeans = col(66, 104, 190);
+    g.c_board = col(90, 222, 216);
+    g.c_wheel = col(250, 250, 255);
+    g.c_shoe = col(250, 250, 255);
+    g.c_text = col(248, 248, 255);
+    g.c_dim = col(150, 146, 176);
+    g.c_accent = col(255, 214, 61);
+    g.c_danger = col(255, 84, 92);
+    g.c_go = col(60, 220, 120);
+    g.c_panel = col(14, 12, 22);
+    g.c_dust = col(200, 190, 200);
+    g.c_spark = col(255, 236, 140);
+    g.c_streak = col(255, 214, 190);
 
-    g.seed = (uint32_t)T->now_us();
-    T->save_get("best", &g.best, 0);
+    g.seed = (uint32_t)T->now_us() | 1u;
+    g.sens = 1;
+    T->save_get("best_m", &g.best, 0);   /* metres; the old "best" was in another unit */
+    T->save_get("sens", &g.sens, 3);
     start_run();
-    T->log("ready, best %d", g.best);
+    T->log("ready, best %d m", g.best);
 }
 
-static void sg_enter(void) { g.dirty = true; }
+static void sk_enter(void) { g.dirty = true; }
 
-static void sg_update(float dt)
+static void sk_update(float dt)
 {
     if (!g.cv) return;
     if (dt > 1.0f / 30) dt = 1.0f / 30;
@@ -542,6 +846,11 @@ static void sg_update(float dt)
         switch (T->menu_update()) {
         case 0: T->menu_toggle_sound(); break;
         case 1:
+            g.sens = (g.sens + 1) % 3;
+            T->save_set("sens", g.sens);
+            T->menu_invalidate();
+            break;
+        case 2:
             start_run();
             T->menu_close();
             break;
@@ -558,58 +867,97 @@ static void sg_update(float dt)
     g.dirty = true;
     switch (g.phase) {
     case READY:
-        if (ges->tap || (in->clicked & TAT_BTN_B)) {
-            /* however she is being held now is cruising; nobody holds a watch level */
-            g.pitch_neutral = g.pitch;
+        read_tilt(in, dt);
+        if (ges->tap) {
             g.phase = SKATING;
             g.phase_t = 0;
             sfx_start();
         }
         break;
-    case SKATING: step(in, dt); break;
+
+    case SKATING:
+        step(in, dt);
+        break;
+
+    case BAILING:
+        // The run is over; this is just watching it end. Off a wall she drops down its face.
+        g.vy += GRAVITY * dt;
+        if (g.vy > 260) g.vy = 260;
+        g.y += g.vy * dt;
+        g.x += g.v * dt;
+        if (g.v > 0) g.v *= 1.0f - dt;
+        if (g.phase_t > 1.3f || sy_of(g.y) > CW + 60) {
+            g.phase = OVER;
+            g.phase_t = 0;
+            if (metres() > g.best) {
+                g.best = metres();
+                T->save_set("best_m", g.best);
+            }
+            T->log("%d m, %s, best %d", metres(), g.death == DIED_WALL ? "wall" : "gap", g.best);
+            sfx_over();
+        }
+        break;
+
     case OVER:
-        if (g.phase_t > 0.8f && (ges->tap || (in->clicked & TAT_BTN_B))) start_run();
+        if (g.phase_t > 0.7f && ges->tap) start_run();
         break;
     }
+    step_world(dt);
 }
 
-static void sg_draw(void)
+static void sk_draw(void)
 {
     if (!g.cv) return;
 
     if (T->menu_is_open()) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%d", g.best);
+        char best[16];
+        static const char *const SENS[3] = {"GENTLE", "NORMAL", "TWITCHY"};
+        snprintf(best, sizeof(best), "%d M", g.best);
         const tat_menu_row_t rows[] = {
             T->menu_sound_row(),
+            {"TILT", SENS[g.sens], 0},
             {"NEW RUN", "GO", T->ui_color(TAT_UI_ACCENT)},
-            {"BEST", buf, T->ui_color(TAT_UI_LABEL)},
+            {"BEST", best, T->ui_color(TAT_UI_LABEL)},
         };
-        T->menu_draw(rows, 3, "PAUSED");
+        T->menu_draw(rows, 4, "PAUSED");
         return;
     }
     if (!g.dirty) return;
     g.dirty = false;
 
-    draw_world();
+    draw_sky();
+    for (int i = 0; i < g.n_roofs; i++) draw_roof(&g.roofs[i]);
+    for (int i = 0; i < MAX_FLYERS; i++) {
+        const Flyer *f = &g.flyers[i];
+        if (!f->alive) continue;
+        const int fx = sx_of(f->x), fy = sy_of(f->y);
+        const bool side = ((int)(g.anim_t * f->spin) & 1) != 0;   /* tumbling, in two frames */
+        rect(fx - (side ? 6 : 4), fy - (side ? 4 : 6), side ? 12 : 8, side ? 8 : 12, g.c_bin);
+        rect(fx - (side ? 6 : 5), fy - (side ? 4 : 7), side ? 3 : 10, side ? 8 : 3, g.c_bin_lid);
+    }
     draw_skater();
+    for (int i = 0; i < MAX_PARTS; i++) {
+        const Part *p = &g.parts[i];
+        if (p->life > 0) rect(sx_of(p->x), sy_of(p->y), p->life > 0.2f ? 2 : 1, p->life > 0.2f ? 2 : 1, p->col);
+    }
     draw_hud();
 
-    if (g.phase == READY) banner("TIP FORWARD TO PUSH", "TAP TO OLLIE", g.c_board);
-    else if (g.phase == OVER) {
-        char sub[24];
-        snprintf(sub, sizeof(sub), "SCORE %d", g.score);
-        banner("RUN OVER", sub, g.c_danger);
+    if (g.phase == READY) {
+        banner("TURN RIGHT TO PUSH", "LEFT TO BRAKE - TAP TO OLLIE", "TAP TO START", g.c_shirt, 62);
+    } else if (g.phase == OVER) {
+        char mid[32], bottom[32];
+        snprintf(mid, sizeof(mid), g.death == DIED_WALL ? "%dM, THEN A WALL" : "%dM, THEN THE GAP", metres());
+        snprintf(bottom, sizeof(bottom), "BEST %dM   TAP TO RETRY", g.best);
+        banner("WIPEOUT", mid, bottom, g.c_danger, 62);
     }
-
     T->canvas_present(g.cv);
 }
 
-static void sg_redraw(void) { g.dirty = true; }
+static void sk_redraw(void) { g.dirty = true; }
 
-static bool sg_keep_awake(void) { return g.phase == SKATING && !T->menu_is_open(); }
+static bool sk_keep_awake(void) { return (g.phase == SKATING || g.phase == BAILING) && !T->menu_is_open(); }
 
-static void sg_unload(void)
+static void sk_unload(void)
 {
     if (g.cv) T->canvas_destroy(g.cv);
     g.cv = NULL;
@@ -624,12 +972,12 @@ const tat_game_t tat_game = {
     .accent_r = 244, .accent_g = 72, .accent_b = 148,
     .assets = NULL,
     .asset_count = 0,
-    .begin = sg_begin,
-    .enter = sg_enter,
-    .update = sg_update,
-    .draw = sg_draw,
+    .begin = sk_begin,
+    .enter = sk_enter,
+    .update = sk_update,
+    .draw = sk_draw,
     .leave = NULL,
-    .unload = sg_unload,
-    .redraw = sg_redraw,
-    .keep_awake = sg_keep_awake,
+    .unload = sk_unload,
+    .redraw = sk_redraw,
+    .keep_awake = sk_keep_awake,
 };
