@@ -40,16 +40,18 @@ builds for everyone.
 | `components/board` | **The only hardware-specific code.** Display, touch, IMU, buttons, power. Port this to target another board. |
 | `components/engine` | Renderer, frame pipeline, input, the pixel `Canvas` every game draws on, saved settings |
 | `components/wc_console` | The shell: launcher, settings, themes, the shared pause menu |
-| `components/games` | The games |
+| `games/<id>/` | The games: plain C against `tat_api.h`, each built into a `.tat` package by `tools/mktat.py` |
+| `components/loader`, `components/factory` | Loading a package and running it; the factory copies a new watch is given |
+| `components/games` | Pocket Watch, the one app that is part of the firmware |
 | `components/link` | USB protocol the manager app speaks, and how files get onto a watch |
 | `components/net` | Wi-Fi, over-the-air updates, the web endpoints |
 | `app/` | The desktop manager app (C#, Avalonia) - see [app/README.md](app/README.md) |
-| `docs/GAME_API.md` | Where this is going: an OS plus games as installable files |
+| `docs/GAME_API.md` | The package format, the game API, the loader and the USB protocol |
 
 ## Tests
 
 ```bash
-./tests/run.sh      # or .	estsun.ps1 on Windows without gcc
+./tests/run.sh      # or .\tests\run.ps1 on Windows without gcc
 ```
 
 They compile the real firmware sources against stubs, so they test what ships. CI runs them
@@ -71,15 +73,36 @@ The existing code is the specification; match it. In particular:
 
 ## Adding a game
 
-Today games are compiled into the firmware: add a source file to `components/games`, a
-header in `components/games/include/games/`, and an entry in the carousel in
-`main/main.cpp`. Use `wc::Canvas` for the playfield and `console::ui::PauseMenu` for the
-pause screen so it behaves like the rest of the console — the shared feel is the point, and
-`docs/GAME_API.md` describes the contract games will move to.
+A game is a folder under `games/`, written in plain C against one header, and built into a
+`.tat` package that is installed on a running watch. It does not need a firmware build, and
+it is not compiled into one - not even the games in this repository are.
 
-Games are becoming installable files that don't need a firmware build at all. If you are
-thinking of writing one, read that document first, and say so in an issue — the API is
-still being settled and your use case should shape it.
+```
+games/mygame/
+  game.json       id, name, author, version, accent colour
+  mygame.c        includes "tat/tat_api.h" and nothing else from the console
+  icon.png        210 x 210, at most 4096 bytes. Required: tools/mktat.py will not pack without it
+  assets/*.png    sprite sheets, if any
+```
+
+```bash
+python tools/mktat.py games/mygame          # -> build/mygame.tat
+tiltatron-manager install build/mygame.tat  # it appears on the home screen; no restart
+```
+
+Start from `games/echo/echo.c` (the newest, about 500 lines) and
+[docs/GAME_API.md](docs/GAME_API.md). Use the shared pause menu (`menu_*`) and banners so it
+behaves like the rest of the console - the shared feel is the point: tilt first, big bold
+text, tap is the primary action, PWR is the secondary one, swipe left is the menu.
+
+Things the console does for you, so that a game cannot get them wrong: everything a game
+allocates is taken back when it is unloaded; a package that will not load costs a message
+on screen rather than a boot; saves live under the game's id and survive it being removed
+and reinstalled.
+
+To ship a game *with* the firmware, add its id to `FACTORY_GAMES` in
+`components/factory/CMakeLists.txt` and to the table in `factory.c`. Bump `version` in
+`game.json` when you change a game; a watch is given each build of a factory game once.
 
 ## Reporting something
 

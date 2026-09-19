@@ -1,23 +1,51 @@
 # Tilt-a-tron
 
-**Tilt-a-tron** is a pocket-watch game console built on the Waveshare **ESP32-S3-Touch-AMOLED-1.75C**
-(ESP32-S3R8, 32 MB flash, 8 MB PSRAM, 466×466 round CO5300 AMOLED over QSPI,
-CST9217 touch, QMI8658 IMU, ES8311 audio). Built on ESP-IDF 5.5.5, C++.
+<p align="center"><img src="site/img/hero.png" alt="Seven round screens: Grand Prix, Breakout, Sky Jump, the home carousel, Sleepy Star, Skater Girlz and Echo" width="100%"></p>
 
-Open source (MIT) for the Waveshare ESP32-S3-Touch-AMOLED-1.75. Building a game or
-porting it to another board is meant to be easy: see [CONTRIBUTING.md](CONTRIBUTING.md)
-and [docs/GAME_API.md](docs/GAME_API.md).
+**A pocket-watch game console you tilt, turn and tap.** Open-source firmware for the Waveshare
+**ESP32-S3-Touch-AMOLED-1.75** - a 466×466 round AMOLED with touch, a motion sensor and a speaker -
+plus ten games made for a round screen, a desktop app to manage them, and an API for writing
+your own.
+
+- **Install it from a web page** in about a minute: <https://partiallyfrozen.github.io/tilt-a-tron/>
+- **Every game is a file.** Install, remove and trade `.tat` packages; no firmware build needed.
+- **Write a game in plain C** against one header, pack it with one script, drop it on a running watch.
+- MIT licensed. Building for it, or porting it to another board, is meant to be easy:
+  [CONTRIBUTING.md](CONTRIBUTING.md) · [docs/GAME_API.md](docs/GAME_API.md)
+
+## The games
+
+<table>
+<tr>
+<td align="center" width="20%"><img src="site/img/breakout.png" width="150"><br><b>BREAKOUT</b><br><sub>Rings of bricks. Turn the watch like a wheel; the paddle stays at the bottom.</sub></td>
+<td align="center" width="20%"><img src="site/img/maze.png" width="150"><br><b>MARBLE MAZE</b><br><sub>Tilt a steel ball through generated mazes. Mind the holes.</sub></td>
+<td align="center" width="20%"><img src="site/img/racer.png" width="150"><br><b>GRAND PRIX</b><br><sub>The whole watch is the steering wheel. Tip forward for throttle.</sub></td>
+<td align="center" width="20%"><img src="site/img/jump.png" width="150"><br><b>SKY JUMP</b><br><sub>Tilt Hopper up an endless tower, from morning sky to the stars.</sub></td>
+<td align="center" width="20%"><img src="site/img/tiltatris.png" width="150"><br><b>TILT-A-TRIS</b><br><sub>Radial block-stacking. You turn the pile under the falling piece.</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="site/img/star.png" width="150"><br><b>SLEEPY STAR</b><br><sub>A laser falls straight down. Turn rings of gaps and mirrors to wake the star.</sub></td>
+<td align="center"><img src="site/img/pindrop.png" width="150"><br><b>PIN DROP</b><br><sub>Steer a falling ball through the pins into the hole. The rim is live.</sub></td>
+<td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>A run down a shaft seen head on. Find the gap in every ring; shoot the mines.</sub></td>
+<td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>An endless rooftop skate run. Tip to push, tap to ollie, grind the rails.</sub></td>
+<td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then play them back - by tipping the watch toward them.</sub></td>
+</tr>
+</table>
+
+Plus **Pocket Watch**, a clock with five faces, network time and automatic time zone - the
+one app that is part of the firmware rather than a package.
+
+<p align="center"><img src="site/img/clock.png" width="170" alt="The Pocket face: brass case, numerals, a date window"></p>
 
 ## Install (no toolchain needed)
 
 **Easiest: the browser installer at <https://partiallyfrozen.github.io/tilt-a-tron/>.** Plug the
-watch in, open the page in Chrome or Edge on a desktop, press FLASH. (The page lives in `site/`
-and is deployed by `.github/workflows/pages.yml`.)
+watch in, open the page in Chrome or Edge on a desktop, press FLASH. The first start takes about
+half a minute longer than later ones: the watch shows SETTING UP while it installs its games.
+(The page lives in `site/` and is deployed by `.github/workflows/pages.yml`.)
 
-Or from a clone of this repository:
-
-Got the same Waveshare board? The repo ships the built firmware in `firmware/`.
-You need Python 3 and a USB cable that carries data.
+Or from a clone of this repository, which ships the built firmware in `firmware/`. You need
+Python 3 and a USB cable that carries data.
 
 ```powershell
 git clone https://github.com/PartiallyFrozen/tilt-a-tron.git
@@ -29,11 +57,60 @@ The script installs `esptool` the first time, then asks you to put the watch in
 install mode: unplug it, hold the small **BOOT** button by the USB port, plug it
 in, let go after 2 seconds. It writes the bootloader, partition table and app
 (about 15 s), and the watch restarts into Tilt-a-tron. `-Erase` wipes everything
-first (settings, Wi-Fi, themes). After that, updates can go over Wi-Fi.
+first (settings, Wi-Fi, themes, games). After that, updates can go over Wi-Fi.
 
-Maintainers: after building, `.\tools\make_release.ps1` refreshes `firmware/`
-(binaries + `manifest.json` with offsets and the build hash) so the installer
-matches the source.
+Maintainers: after building, `.\tools\make_release.ps1` refreshes `firmware/` and
+`site/firmware/` (binaries plus manifests with offsets and the build hash) so both
+installers match the source.
+
+## The manager app
+
+<p align="center"><img src="site/img/manager.png" alt="The manager: the watch's games on the left, your library on the right" width="85%"></p>
+
+A desktop app (`app/`, C# and Avalonia; Windows, macOS, Linux; one self-contained file) that
+talks to the watch over USB. The watch is on the left and **your library** is on the right:
+a plain folder of `.tat` files in your documents. Drag a game from one to the other, or drop
+`.tat` files in from anywhere.
+
+- **Nothing is lost on the first click.** Taking a game off the watch *moves* it to the
+  library, and the copy is read back from disk before the watch's file is deleted. A theme is
+  copied out before it is removed. Deleting from the library itself asks twice.
+- **Installs and removals show up on the watch straight away** - no restart.
+- **Saves survive.** Scores live in the watch's settings store under the game's id, so a game
+  that goes to the library and comes back finds them where it left them.
+- The same binary is a command-line tool (`list`, `library`, `install`, `save`, `uninstall`,
+  ...), which is how all of this is tested against real hardware. See [app/README.md](app/README.md).
+
+## Write a game
+
+No game is compiled into the firmware - not even ours. They live in `games/<id>/` and are
+built by the same tool you would use:
+
+```
+games/mygame/
+  game.json       id, name, author, version, accent colour
+  mygame.c        plain C, including only "tat/tat_api.h"
+  icon.png        210 x 210, required (a home screen of blank cartridges helps nobody)
+  assets/*.png    sprite sheets, if you have any
+```
+
+```bash
+python tools/mktat.py games/mygame          # -> build/mygame.tat
+tiltatron-manager install build/mygame.tat  # onto a running watch; it appears on the home screen
+```
+
+A game gets one pointer to a table of functions - a pixel canvas, sprites, tilt and touch,
+tones, saves, the shared pause menu - and calls nothing in the console by name, which is what
+lets a package built today run on next year's firmware. It is loaded when its icon is tapped,
+never at boot, so a bad package costs a message on screen and nothing else. Read
+[docs/GAME_API.md](docs/GAME_API.md), then read `games/echo/echo.c`: it is the newest game,
+about 500 lines, and was written, installed and revised on a running watch without the
+firmware being touched.
+
+The firmware build packs the games in `games/` too (`components/factory`) and carries a
+factory copy of each, which it installs the first time it starts - or whenever it finds the
+games folder empty, because storage can be wiped and a console with nothing on it is a poor
+thing to hand someone. A game you removed stays removed.
 
 ## Build & install (developers)
 
@@ -47,8 +124,9 @@ Needs ESP-IDF 5.5.5 (`C:\Espressif`, installed with EIM). One command:
 ```
 
 It installs over **Wi-Fi** if the watch answers (about 5 s; needs Settings > WI-FI ON),
-otherwise over **USB** if it's plugged in. It pauses the Pal
-engine's USB poller automatically, and says what to do if it can't reach the watch.
+otherwise over **USB** if it's plugged in, and says what to do if it can't reach the watch.
+If something on your computer has to get out of the way of the serial port first, put it in
+`update.local.ps1`, which is run before a USB flash and is not part of the repository.
 
 **Verification uses the build's unique hash** (`sha` in `/status`, the ELF SHA-256),
 compared with the file that was sent. Don't use the `built` timestamp: it only
@@ -81,8 +159,12 @@ wraps `idf.py` with the ESP-IDF 5.5.5 environment (`C:\Espressif`), e.g.
 | `tools/make_default_theme.py` | Regenerates `themes/Default` PNGs |
 | `tools/tatlink.py` | Reference client for the USB link: list, send and fetch files, back up, format |
 | `components/net` | Wi-Fi join/scan, saved credentials, OTA HTTP server, update-mode flag |
-| `components/games` | The games: Breakout, Marble Maze, Grand Prix, Sky Jump, Tilt-a-tris, Sleepy Star, Pin Drop. Every one is written against `tat_api.h` alone and includes nothing else from the console (`docs/GAME_API.md`). Pocket Watch is still built the old way — it needs the clock and a full-screen settings page, which belong to watch faces rather than games |
+| `games/<id>/` | **The games.** Each is plain C against `tat_api.h` alone, with its art, icon and `game.json`; built into a `.tat` package by `tools/mktat.py` |
 | `components/tat_api` | The contract between the console and a game, and the console's side of it |
+| `components/loader` | Reads a package, checks it, relocates its code into PSRAM and runs it. One game is resident at a time: opening another lets go of the last, along with everything it allocated |
+| `components/factory` | Packs `games/` during the firmware build and carries a factory copy of each, installed on first start |
+| `components/games` | The one app that is part of the firmware: Pocket Watch, which needs the real-time clock, time zones and network time - none of which a game is given |
+| `app/` | The desktop manager app and its library (C#, Avalonia) |
 | `components/link` | The USB link: the framed protocol over the serial port that the manager app speaks (`docs/GAME_API.md`) |
 | `components/audio` | Chiptune synth through the ES8311 codec |
 | `main/` | App registry (carousel order) + `BenchGame` bring-up/calibration app |
@@ -135,7 +217,9 @@ are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the tem
 - **Home** is a carousel: swipe (or tap beside the icon) to browse, tap the icon to launch; PWR does nothing on its own here.
 - **Double-click PWR** on home = sleep (iris-out, light sleep, PWR wakes instantly where
   you left off). Still asleep after **AUTO OFF** (default 2 min) → powers down (deep
-  sleep); PWR then cold-boots into the carousel.
+  sleep); PWR then cold-boots into the carousel. **On USB power it naps instead**: screen
+  and motion sensor off, everything else left running, until PWR. Light sleep does not hold
+  with a cable in, and an AMOLED left lit on its charger all night is the thing to avoid.
 - **Idle auto off**: no buttons, touch or deliberate motion for the AUTO OFF time (and
   no app keeping it awake via `Game::keepAwake()`, e.g. a ball in play or a firmware
   download) → the screen dims for 10 s, then powers down. Any touch cancels.
@@ -148,7 +232,8 @@ are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the tem
 ### Settings worth knowing
 
 - **GAMES**: take any app off the home screen (HIDDEN) or put it back (ON). Nothing is deleted;
-  the app and its saves come back when you turn it on again
+  the app and its saves come back when you turn it on again. Removing a game for real is the
+  manager app's job, and it keeps a copy
 - **CALIBRATE**: a one-minute walkthrough (lay it flat, spin it half a turn, check the bubble
   level) that measures this watch's motion sensor at rest and corrects every game's tilt
 - The watch never dozes off while something is talking to it over Wi-Fi: it stays awake during
@@ -182,21 +267,9 @@ Default to what's fun on a watch you hold: tilt, gravity, momentum, juice.
   (`ESP_WIFI_IRAM_OPT` off, `SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY`) so internal RAM
   stays free for display DMA buffers.
 
-## Adding a game
+## How games draw
 
-```cpp
-class MyGame : public wc::Game {
-    void begin(wc::Engine &e) override { /* once */ }
-    void enter(wc::Engine &e) override { /* each time it's opened; screen is black */ }
-    void update(wc::Engine &e, float dt) override { /* e.input() ... */ }
-    void draw(wc::Engine &e, wc::Gfx &g) override { /* erase old, draw new */ }
-};
-```
-
-Register it in `main/main.cpp`'s `apps[]` with a name, accent color and an icon
-function (see `wc_console/icons.cpp`).
-
-### Pixel canvas and sprite sheets (how all the games draw now)
+### Pixel canvas and sprite sheets
 
 Games draw on a `wc::Canvas`: a small 8-bit palette picture (233x233 at 2x or
 155x155 at 3x, in PSRAM) that the presenter scales straight into the display's DMA
@@ -206,7 +279,7 @@ millisecond, so games repaint every frame and run at the display's 60 Hz limit;
 can change per frame for free (sky gradients, tints).
 
 Sprites are plain PNGs under `games/<game>/assets/`, packed into the game's `.tat` by
-`tools/mktat.py` and loaded with `Canvas::loadSheet(sheet, png, len, fw, fh)`
+`tools/mktat.py` and loaded with `sheet_load(canvas, png, len, fw, fh)`
 (frames side by side, alpha < 128 = transparent). Edit them in any image editor;
 `tools/make_sprites.py` regenerates the originals from letter grids and
 `tools/preview_sheets.py <game>` tiles them for a look. `Polar` (per-pixel
@@ -275,6 +348,38 @@ Handy for checking a game without picking the watch up.
 - **PWR** or the RST button starts the level over · **swipe left** menu (level, sound,
   flat play with the gyro, reset) · built from `docs/SLEEPY_STAR_SPEC.md`
 
+## Pin Drop controls
+
+- A ball falls through a field of pins; **turn the watch** and gravity follows the real world,
+  exactly like tilting a board in your hands. Steer it into the one hole
+- The rim is live: touch it and the ball is gone. A round board has no safe corner
+- Later levels put bombs on the field. **Swipe left** menu · **BOOT** home. Progress is saved
+
+## Starfall controls
+
+- The shaft is seen head on: the middle of the screen is far away and the rim is right in
+  front of you. Barriers come as rings with one gap each
+- **Turn the watch** to move your ship round the rim into the gap · **tap** to shoot the mines
+- **Swipe left** menu (sound, new run, best) · **BOOT** home. Best score is saved
+
+## Skater Girlz controls
+
+- A side-on rooftop skate run that never ends and never repeats
+- **Tip forward** to push, **tip back** to slow · **tap** to ollie, **hold** for more air ·
+  land on a rail from above to grind it
+- Miss a gap and the run is over; clip a bin and you lose your speed, which costs more than
+  it sounds like. **Swipe left** menu · **BOOT** home. Best distance is saved
+
+## Echo controls
+
+- Four pads, up, right, down and left. Watch them light up, then play the run back; it grows
+  by one each round and plays faster as it grows
+- **TILT** (default): tip the watch toward a pad to press it, and come back to level between
+  presses. "Level" is however you are holding it when your turn starts. **TOUCH**: tap the pads
+- **PWR** switches control · a mistake costs one of three lives and the round plays again;
+  **STRICT** in the menu makes the first mistake the last · round 20 gets a fanfare
+- **Swipe left** menu (sound, control, strict, new game, best) · **BOOT** home
+
 ## Pocket Watch (Clock)
 
 - Five faces, **tap** to cycle: Pocket (brass, numerals, sweeping seconds, date window),
@@ -291,9 +396,12 @@ Hold BOOT as the screen turns on. **Tilt** rolls the ball, **touch** drags the d
 
 ## Roadmap
 
-- More games in the carousel
-- Game store (way later): download games over Wi-Fi. Groundwork in place: background
-  Wi-Fi, saved network, OTA slots, 23 MB `storage` partition for game data.
+- Watch faces and themes as packages, in the same `.tat` container as games
+- A way to remove a game on the watch itself, without the app
+- Game store (way later): download the same `.tat` files over Wi-Fi instead of copying them
+  over USB. Groundwork in place: packages, the loader, background Wi-Fi, OTA slots.
+- Known and unsolved: the watch sends slowly over Wi-Fi (5-15 KB/s) and receives slowly over
+  USB (~9 KB/s). Neither gets in the way of playing; both are worth someone's afternoon.
 
 ## Licence
 

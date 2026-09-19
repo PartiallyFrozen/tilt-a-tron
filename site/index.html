@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tilt-a-tron installer</title>
-<meta name="description" content="Install Tilt-a-tron, a pocket-watch game console, on a Waveshare ESP32-S3-Touch-AMOLED-1.75 straight from your browser.">
+<title>Tilt-a-tron - a pocket-watch game console</title>
+<meta name="description" content="Tilt-a-tron is an open-source pocket-watch game console for the Waveshare ESP32-S3-Touch-AMOLED-1.75: ten games made for a round screen, installed straight from your browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
@@ -53,6 +53,15 @@
   .card { padding: 16px; background: var(--disc); border-top: 4px solid var(--edge); }
   .card h3 { font-size: 11px; color: var(--pink); margin: 0 0 10px; }
   .card p { margin: 0; color: var(--dim); font-size: 15px; }
+  .hero { display: block; width: 100%; max-width: 980px; margin: 8px auto 0; image-rendering: auto; }
+  .shot { display: block; width: 100%; max-width: 860px; margin: 0 auto; border: 4px solid var(--edge); image-rendering: auto; }
+  .lead { color: var(--dim); max-width: 760px; margin: 0 0 18px; }
+  pre { margin: 14px 0 0; padding: 14px; background: #0a0a14; border-left: 4px solid var(--gold); color: var(--text);
+        font-family: "Courier New", monospace; font-size: 14px; line-height: 1.45; overflow-x: auto; image-rendering: auto; }
+  .links { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 22px; }
+  .links a { font-family: "Press Start 2P", monospace; font-size: 10px; text-decoration: none; padding: 12px 14px;
+             color: var(--text); background: var(--plate); box-shadow: 0 4px 0 #14182a; }
+  .links a:hover { background: var(--edge); }
   footer { margin-top: 64px; text-align: center; color: var(--dim); font-size: 14px; }
 </style>
 </head>
@@ -61,7 +70,9 @@
   <header>
     <h1>TILT-A-TRON</h1>
     <p class="tag">A pocket-watch game console for the Waveshare ESP32-S3-Touch-AMOLED-1.75 round display.
-      Tilt it, turn it, tap it. Install it from this page in about a minute.</p>
+      Tilt it, turn it, tap it. Ten games made for a round screen, and every one of them is a file
+      you can take off, put back, trade - or write yourself. Install it from this page in about a minute.</p>
+    <img class="hero" src="img/hero.png" alt="Seven round screens: Grand Prix, Breakout, Sky Jump, the home carousel, Sleepy Star, Skater Girlz and Echo">
 
     <div class="install">
       <div class="px">INSTALL FROM YOUR BROWSER</div>
@@ -81,7 +92,7 @@
       <li><div class="n">2</div><div><b>Plug the watch in with a USB-C cable that carries data.</b><br><span>Many charging cables are power-only. If no device shows up in the list, try another cable.</span></div></li>
       <li><div class="n">3</div><div><b>Press FLASH TILT-A-TRON and pick the port</b> (it shows as "USB JTAG/serial debug unit" or a COM port).<br><span>It writes the bootloader, partition table and firmware. About a minute.</span></div></li>
       <li><div class="n">4</div><div><b>If it can't connect:</b> unplug, hold the small <b>BOOT</b> button by the USB port, plug back in, let go after 2 seconds, and try again.<br><span>That forces install mode and always works, whatever is on the board.</span></div></li>
-      <li><div class="n">5</div><div><b>Done.</b> The watch restarts into the home carousel.<br><span>Swipe to pick a game, tap to play, BOOT goes home, double-click PWR to sleep. Turn Wi-Fi on in Settings for clock sync and over-the-air updates.</span></div></li>
+      <li><div class="n">5</div><div><b>Done.</b> The first start shows SETTING UP for about half a minute while the watch installs its games, then the home carousel.<br><span>Swipe to pick a game, tap to play, BOOT goes home, double-click PWR to sleep. Turn Wi-Fi on in Settings for clock sync and over-the-air updates.</span></div></li>
     </ol>
   </section>
 
@@ -90,11 +101,46 @@
     <div class="games">
       <div class="game"><img src="img/breakout.png" alt="Round Breakout: rings of bricks around a core"><h3>BREAKOUT</h3><p>Rings of bricks. Turn the watch like a wheel; the paddle stays at the bottom.</p></div>
       <div class="game"><img src="img/maze.png" alt="Marble Maze: a steel ball in a wooden labyrinth"><h3>MARBLE MAZE</h3><p>Tilt a steel ball through generated mazes. Mind the holes.</p></div>
-      <div class="game"><img src="img/racer.png" alt="Grand Prix: an F1 car seen from behind on a road"><h3>GRAND PRIX</h3><p>The whole watch is the steering wheel. Tip forward for throttle.</p></div>
-      <div class="game"><img src="img/jump.png" alt="Sky Jump: a round character bouncing up platforms"><h3>SKY JUMP</h3><p>Tilt Hopper up an endless tower, from morning sky to the stars.</p></div>
+      <div class="game"><img src="img/racer.png" alt="Grand Prix: an F1 car seen from behind on the grid"><h3>GRAND PRIX</h3><p>The whole watch is the steering wheel. Tip forward for throttle.</p></div>
+      <div class="game"><img src="img/jump.png" alt="Sky Jump: grassy ledges climbing into a blue sky"><h3>SKY JUMP</h3><p>Tilt Hopper up an endless tower, from morning sky to the stars.</p></div>
       <div class="game"><img src="img/tiltatris.png" alt="Tilt-a-tris: wedge pieces falling onto a round pile"><h3>TILT-A-TRIS</h3><p>Radial block-stacking. The piece hangs from "up"; you turn the pile under it.</p></div>
       <div class="game"><img src="img/star.png" alt="Sleepy Star: a laser and rings of walls around a star"><h3>SLEEPY STAR</h3><p>A laser falls straight down. Turn rings of gaps and mirrors to wake the star.</p></div>
-      <div class="game"><img src="img/clock.png" alt="Pocket Watch: a retro LCD clock face"><h3>POCKET WATCH</h3><p>Five faces, network time, automatic time zone.</p></div>
+      <div class="game"><img src="img/pindrop.png" alt="Pin Drop: a red ball among pins and bombs on a round board"><h3>PIN DROP</h3><p>Steer a falling ball through the pins into the hole. The rim is live.</p></div>
+      <div class="game"><img src="img/starfall.png" alt="Starfall: looking down a shaft at a ring with one gap"><h3>STARFALL</h3><p>A run down a shaft seen head on. Find the gap in every ring; shoot the mines.</p></div>
+      <div class="game"><img src="img/skatergirlz.png" alt="Skater Girlz: a skater on a rooftop at sunset, a gap ahead"><h3>SKATER GIRLZ</h3><p>An endless rooftop skate run. Tip to push, tap to ollie, grind the rails.</p></div>
+      <div class="game"><img src="img/echo.png" alt="Echo: four coloured pads, one lit"><h3>ECHO</h3><p>Watch the pads light up, then play them back - by tipping the watch toward them.</p></div>
+      <div class="game"><img src="img/clock.png" alt="Pocket Watch: a brass pocket-watch face"><h3>POCKET WATCH</h3><p>Five faces, network time, automatic time zone. The one app built into the firmware.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>THE MANAGER APP</h2>
+    <p class="lead">A desktop app for Windows, macOS and Linux. The watch is on the left and your library - a plain
+      folder of game files - is on the right. Drag a game from one to the other. Taking a game off the watch moves
+      it to the library instead of deleting it, installs show up on the watch without a restart, and your scores
+      are still there when a game comes back. It is built from <code>app/</code> in the repository, and every change
+      produces ready-made builds for all three systems under the repository's Actions tab.</p>
+    <img class="shot" src="img/manager.png" alt="The manager app: the watch's games on the left, the library on the right">
+  </section>
+
+  <section>
+    <h2>WRITE YOUR OWN</h2>
+    <p class="lead">No game is compiled into the firmware - not even ours. A game is a folder of plain C written
+      against one header, an icon, and a few PNGs. One script packs it into a single <b>.tat</b> file, and the
+      manager drops it onto a running watch.</p>
+<pre>games/mygame/
+  game.json      id, name, author, version, accent colour
+  mygame.c       includes "tat/tat_api.h" and nothing else
+  icon.png       210 x 210
+  assets/*.png   sprite sheets
+
+python tools/mktat.py games/mygame
+tiltatron-manager install build/mygame.tat</pre>
+    <div class="links">
+      <a href="https://github.com/PartiallyFrozen/tilt-a-tron">SOURCE ON GITHUB</a>
+      <a href="https://github.com/PartiallyFrozen/tilt-a-tron/blob/master/docs/GAME_API.md">THE GAME API</a>
+      <a href="https://github.com/PartiallyFrozen/tilt-a-tron/blob/master/games/echo/echo.c">A WHOLE GAME, 500 LINES</a>
+      <a href="https://github.com/PartiallyFrozen/tilt-a-tron/actions/workflows/manager.yml">MANAGER APP BUILDS</a>
     </div>
   </section>
 
@@ -102,14 +148,15 @@
     <h2>GOOD TO KNOW</h2>
     <div class="grid2">
       <div class="card"><h3>WHICH BOARD</h3><p>Waveshare ESP32-S3-Touch-AMOLED-1.75 (466&times;466 round AMOLED, CO5300 display, CST9217 touch, QMI8658 IMU, 32&nbsp;MB flash). Other boards won't work with this firmware.</p></div>
-      <div class="card"><h3>YOUR DATA</h3><p>Installing keeps the watch's settings, Wi-Fi and themes. Choose "erase" in the install dialog only if you want a factory-fresh start.</p></div>
-      <div class="card"><h3>THEMES</h3><p>Make a folder with a 466&times;466 background.png, send it over USB with <code>tools/tatlink.py</code>, and pick it in Settings. The watch reloads it on its own.</p></div>
+      <div class="card"><h3>YOUR DATA</h3><p>Installing keeps the watch's settings, Wi-Fi, themes, games and scores. Choose "erase" in the install dialog only if you want a factory-fresh start.</p></div>
+      <div class="card"><h3>THEMES</h3><p>Make a folder with a 466&times;466 background.png, send it with the manager app, and pick it in Settings. The watch reloads it on its own. Six ready-made ones are in the repository.</p></div>
+      <div class="card"><h3>ON THE CHARGER</h3><p>Double-click PWR to sleep. Plugged in, the screen goes dark and stays dark while Wi-Fi and USB keep working, so an AMOLED left charging overnight is not left lit.</p></div>
       <div class="card"><h3>UPDATES</h3><p>Come back to this page any time to install the latest build, or update over Wi-Fi from the source repository.</p></div>
     </div>
   </section>
 
   <footer>
-    <p>Tilt-a-tron is open firmware for a hobby board. Not affiliated with Waveshare or Espressif.<br>
+    <p>Tilt-a-tron is open firmware for a hobby board, MIT licensed. Not affiliated with Waveshare or Espressif.<br>
       Flashing is powered by <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a>.</p>
   </footer>
 </main>
