@@ -28,7 +28,7 @@ your own.
 <td align="center"><img src="site/img/pindrop.png" width="150"><br><b>PIN DROP</b><br><sub>Steer a falling ball through the pins into the hole. The rim is live.</sub></td>
 <td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>A run down a shaft seen head on. Find the gap in every ring; shoot the mines.</sub></td>
 <td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>An endless rooftop skate run. Tip to push, tap to ollie, grind the rails.</sub></td>
-<td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then play them back - by tipping the watch toward them.</sub></td>
+<td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then touch them in the same order. One more each round; twenty to win.</sub></td>
 </tr>
 </table>
 
@@ -105,7 +105,7 @@ tones, saves, the shared pause menu - and calls nothing in the console by name, 
 lets a package built today run on next year's firmware. It is loaded when its icon is tapped,
 never at boot, so a bad package costs a message on screen and nothing else. Read
 [docs/GAME_API.md](docs/GAME_API.md), then read `games/echo/echo.c`: it is the newest game,
-about 500 lines, and was written, installed and revised on a running watch without the
+about 450 lines, and was written, installed and revised on a running watch without the
 firmware being touched.
 
 The firmware build packs the games in `games/` too (`components/factory`) and carries a
@@ -373,13 +373,12 @@ Handy for checking a game without picking the watch up.
 
 ## Echo controls
 
-- Four pads, up, right, down and left. Watch them light up, then play the run back; it grows
-  by one each round and plays faster as it grows
-- **TILT** (default): tip the watch toward a pad to press it, and come back to level between
-  presses. "Level" is however you are holding it when your turn starts. **TOUCH**: tap the pads
-- **PWR** switches control · a mistake costs one of three lives and the round plays again;
-  **STRICT** in the menu makes the first mistake the last · round 20 gets a fanfare
-- **Swipe left** menu (sound, control, strict, new game, best) · **BOOT** home
+- Four pads. The watch plays a pattern - WATCH - and then it is YOUR GO: **touch the pads**
+  in the same order. Get it right and the pattern grows by one and plays a little faster
+- Touch a wrong pad, or take more than 8 seconds over one, and you lose. Round 20 wins
+- That is all of it, on purpose: the one game here that does not use tilt. A first version
+  pressed pads by tipping the watch toward them, and it was clever and no fun
+- **Swipe left** menu (sound, new game, best) · **BOOT** home. Best round is saved
 
 ## Pocket Watch (Clock)
 

@@ -90,7 +90,7 @@ python tools/mktat.py games/mygame          # -> build/mygame.tat
 tiltatron-manager install build/mygame.tat  # it appears on the home screen; no restart
 ```
 
-Start from `games/echo/echo.c` (the newest, about 500 lines) and
+Start from `games/echo/echo.c` (the newest, about 450 lines) and
 [docs/GAME_API.md](docs/GAME_API.md). Use the shared pause menu (`menu_*`) and banners so it
 behaves like the rest of the console - the shared feel is the point: tilt first, big bold
 text, tap is the primary action, PWR is the secondary one, swipe left is the menu.
