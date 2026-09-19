@@ -215,12 +215,16 @@ void Launcher::draw(Engine &e, Gfx &g)
     if (full_) {
         ui::clearScreen(g);   // the theme's background carries any branding
         ui::shadowText(g, Gfx::CX, Gfx::CY + 112, app(sel_).name, app(sel_).accent, 4);
-        // "3 OF 11" rather than a row of dots. Dots were fine for eight built-in games and
+        // "3/11" rather than a row of dots. Dots were fine for eight built-in games and
         // stop being fine the moment somebody installs a few: at twenty they are wider than
         // the screen, and past about a dozen nobody is counting them anyway. Text costs the
         // same few characters whether there are four games or four hundred.
+        //
+        // And "12/13" rather than "12 OF 13": themes paint a plate behind this spot, sized
+        // for the dots it replaced - about 90 px. Two digits either side of " OF " is 104
+        // and hung off the end of it; with a slash it is 65, and fits up to 99/99.
         char pos[32];
-        std::snprintf(pos, sizeof(pos), "%d OF %d", sel_ + 1, count());
+        std::snprintf(pos, sizeof(pos), "%d/%d", sel_ + 1, count());
         ui::shadowText(g, Gfx::CX, Gfx::CY + 152, pos, ui::DIM, 2);
         full_ = false;
         hint_dirty_ = true;
