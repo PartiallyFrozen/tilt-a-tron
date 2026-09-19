@@ -28,7 +28,7 @@ your own.
 <td align="center"><img src="site/img/pindrop.png" width="150"><br><b>PIN DROP</b><br><sub>Steer a falling ball through the pins into the hole. The rim is live.</sub></td>
 <td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>A run down a shaft seen head on. Find the gap in every ring; shoot the mines.</sub></td>
 <td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>An endless rooftop skate run. Tip to push, tap to ollie, grind the rails.</sub></td>
-<td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then touch them in the same order. One more each round; twenty to win.</sub></td>
+<td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then touch them in the same order. One more each round, for as long as you can remember.</sub></td>
 </tr>
 </table>
 
@@ -374,8 +374,11 @@ Handy for checking a game without picking the watch up.
 ## Echo controls
 
 - Four pads. The watch plays a pattern - WATCH - and then it is YOUR GO: **touch the pads**
-  in the same order. Get it right and the pattern grows by one and plays a little faster
-- Touch a wrong pad, or take more than 8 seconds over one, and you lose. Round 20 wins
+  in the same order. A pad stays lit for as long as your finger is on it, like a real button
+- Get it right and the pads cheer, then the pattern grows by one. It gets quicker every four
+  rounds, and there is no last round: it goes on for as long as you can remember it
+- Touch a wrong pad, or take longer than five beats of the pattern over one, and you lose;
+  the round you reached is your score
 - That is all of it, on purpose: the one game here that does not use tilt. A first version
   pressed pads by tipping the watch toward them, and it was clever and no fun
 - **Swipe left** menu (sound, new game, best) · **BOOT** home. Best round is saved

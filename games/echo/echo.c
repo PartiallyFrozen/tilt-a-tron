@@ -2,8 +2,9 @@
 //
 // The oldest electronic memory game there is, on a round screen. The watch shows a
 // pattern; then it is your turn; you touch the pads to play it back. Get it right and the
-// pattern grows by one. Get to round 20 and you have won. Touch a wrong pad, or take too
-// long, and you have lost.
+// pattern grows by one, for as long as you can remember it: there is no last round. Touch
+// a wrong pad, or take too long, and you have lost, and the round you reached is your score. (The rules are the classic ones, the same in every version of
+// this game; the pacing in tiers and the clock of five steps follow how the good ones do it.)
 //
 //   tap a pad   - play it
 //   swipe left  - pause menu
@@ -27,8 +28,8 @@ static const tat_api_t *T;
 #define CC (CW / 2)
 
 #define PADS 4
-#define WIN_AT 20          /* rounds to win, as on the machines this comes from */
-#define TURN_LIMIT_S 8.0f  /* how long a player may think about one press */
+#define MAX_RUN 1024       /* not a last round - just where the array ends. Nobody is getting here */
+#define LIT_PART 0.5f      /* how much of each step of the pattern a pad is lit for */
 
 // The ring the pads are cut from, in canvas pixels.
 #define R_HUB 38
@@ -37,7 +38,7 @@ static const tat_api_t *T;
 #define GAP 3.2f           /* half the width of the dark cross between pads */
 
 enum { UP, RIGHT, DOWN, LEFT };
-enum { READY, SHOW, INPUT, LOST, WON };
+enum { READY, SHOW, INPUT, CHEER, LOST };
 
 // What every canvas pixel is, worked out once: the picture never changes shape, only
 // colour, so a frame is one pass over this map with a fourteen-entry table.
@@ -50,15 +51,18 @@ static struct {
     uint8_t c_bg, c_hub, c_hub_ring, c_text, c_dim, c_panel, c_accent, c_danger, c_go;
     uint8_t c_pad[PADS][2][3];   // [pad][lit][body, shade, shine]
 
-    uint8_t run[WIN_AT];
+    uint8_t run[MAX_RUN];
     int len;          // how many pads this round plays
     int at;           // where playback, or the player, has got to
     int best;
+    bool new_best;    // this round beat the best there was when the game began
 
     int phase;
     float phase_t;
     int lit;          // the pad showing lit, or -1
     float lit_t;      // how much longer it stays lit
+    uint8_t mask;     // during a cheer, every pad that is lit: bit per pad
+    int cheer_step;   // the last beat of the cheer that was sounded
     float idle_t;     // how long the player has taken over this press
     bool dirty;
 } g;
@@ -74,16 +78,6 @@ static void tone1(float f0, float f1, int ms, int wave, float vol, int delay)
     T->tone(&t);
 }
 static void sfx_pad(int pad, int ms) { tone1(NOTE[pad], 0, ms, TAT_TRIANGLE, 0.7f, 0); }
-static void sfx_round(void)
-{
-    tone1(659, 0, 70, TAT_TRIANGLE, 0.45f, 0);
-    tone1(880, 0, 110, TAT_TRIANGLE, 0.45f, 80);
-}
-static void sfx_won(void)
-{
-    static const float n[] = {523, 659, 784, 1047, 784, 1047};
-    for (int i = 0; i < 6; i++) tone1(n[i], 0, i == 5 ? 320 : 110, TAT_SQUARE, 0.5f, i * 120);
-}
 static void sfx_lost(void)
 {
     tone1(110, 82, 420, TAT_SQUARE, 0.6f, 0);
@@ -93,12 +87,23 @@ static void sfx_lost(void)
 
 // ---------------------------------------------------------------- the rounds
 
-// Playback quickens as the pattern grows, the way the old machines did, but never so far
-// that the pads stop reading as separate.
+// Playback quickens as the pattern grows, in steps every four rounds the way the old
+// machines did, rather than creeping: a step is something the player notices and braces
+// for. A pad is lit for half of its step and dark for the other half, so the same pad twice
+// running reads as two flashes and not one long one.
 static float step_s(void)
 {
-    const float s = 0.62f - 0.016f * (float)g.len;
-    return s < 0.30f ? 0.30f : s;
+    static const float STEP[] = {0.80f, 0.66f, 0.54f, 0.44f};
+    const int tier = (g.len - 1) / 4;
+    return STEP[tier > 3 ? 3 : tier];
+}
+
+// How long the player may take over one press: five steps of the pattern, so the clock
+// tightens as the pattern speeds up, but never less than it takes to find a pad by eye.
+static float turn_limit_s(void)
+{
+    const float t = 5.0f * step_s();
+    return t < 3.2f ? 3.2f : t;
 }
 
 static void light(int pad, float seconds)
@@ -119,6 +124,7 @@ static void begin_show(float pause_s)
 {
     g.at = 0;
     g.lit = -1;
+    g.mask = 0;
     set_phase(SHOW);
     g.phase_t = -pause_s;   // a breath before the pattern plays
 }
@@ -126,7 +132,9 @@ static void begin_show(float pause_s)
 static void new_game(void)
 {
     g.len = 1;
-    for (int i = 0; i < WIN_AT; i++) g.run[i] = (uint8_t)(T->random() % PADS);
+    g.mask = 0;
+    g.new_best = false;
+    for (int i = 0; i < MAX_RUN; i++) g.run[i] = (uint8_t)(T->random() % PADS);
     g.lit = -1;
     set_phase(READY);
 }
@@ -152,18 +160,49 @@ static void press(int pad)
 
     // The whole pattern, right. The score is rounds completed.
     T->log("round %d done", g.len);
-    if (g.len > g.best) {
+    g.new_best = g.len > g.best;
+    if (g.new_best) {
         g.best = g.len;
         T->save_set("best", g.best);
     }
-    if (g.len == WIN_AT) {
-        sfx_won();
-        set_phase(WON);
-        return;
+    // Not straight on to the next pattern: that put the last pad out in the same instant it
+    // was lit, so the press that won the round was the one press that showed nothing. The
+    // pad gets its moment, and then the round gets a cheer.
+    g.cheer_step = -1;
+    set_phase(CHEER);
+}
+
+// The cheer: the pads chase round twice, each sounding its own note so the chase is a rising
+// arpeggio, then all four flash together. A little over a second. It is there because
+// getting a round right should feel like something, and because a beat between "I did it"
+// and "here is a longer one" is what makes the next pattern feel like a new challenge
+// rather than more of the same. Returns false once it is over.
+#define CHEER_HOLD 0.28f   /* the winning pad, lit on its own first */
+#define CHEER_BEAT 0.075f
+static bool cheer(float t)
+{
+    static const uint8_t CHASE[PADS] = {LEFT, DOWN, RIGHT, UP};   // low note to high
+    if (t < CHEER_HOLD) return true;   // press() lit the pad; leave it be
+    const int beat = (int)((t - CHEER_HOLD) / CHEER_BEAT);
+    const int chase_beats = 2 * PADS, flash_beats = 6, total = chase_beats + flash_beats;
+    if (beat >= total) return false;
+    uint8_t mask = 0;
+    if (beat < chase_beats) {
+        const int pad = CHASE[beat % PADS];
+        mask = (uint8_t)(1u << pad);
+        if (beat != g.cheer_step) tone1(NOTE[pad] * (beat < PADS ? 1.0f : 2.0f), 0, 70, TAT_TRIANGLE, 0.5f, 0);
+    } else {
+        const int f = beat - chase_beats;          // on on off on on off
+        mask = (f % 3) < 2 ? 0x0F : 0;
+        if (f % 3 == 0 && beat != g.cheer_step) tone1(1047, 1319, 120, TAT_SQUARE, 0.4f, 0);
     }
-    sfx_round();
-    g.len++;
-    begin_show(0.7f);
+    g.cheer_step = beat;
+    if (mask != g.mask || g.lit >= 0) {
+        g.mask = mask;
+        g.lit = -1;
+        g.dirty = true;
+    }
+    return true;
 }
 
 // Which pad a point on the screen belongs to, or -1.
@@ -220,9 +259,11 @@ static void draw_pads(void)
     uint8_t color[RG_COUNT];
     color[RG_NONE] = g.c_bg;
     color[RG_HUB] = g.c_hub;
-    color[RG_HUB_RING] = g.lit >= 0 ? g.c_pad[g.lit][1][0] : g.c_hub_ring;
-    for (int p = 0; p < PADS; p++)
-        for (int part = 0; part < 3; part++) color[RG_PAD + p * 3 + part] = g.c_pad[p][g.lit == p][part];
+    color[RG_HUB_RING] = g.lit >= 0 ? g.c_pad[g.lit][1][0] : g.mask == 0x0F ? g.c_accent : g.c_hub_ring;
+    for (int p = 0; p < PADS; p++) {
+        const bool lit = g.lit == p || (g.mask & (1u << p));
+        for (int part = 0; part < 3; part++) color[RG_PAD + p * 3 + part] = g.c_pad[p][lit][part];
+    }
 
     uint8_t *px = T->canvas_pixels(g.cv);
     const int n = CW * CW;
@@ -235,9 +276,11 @@ static void draw_hub(void)
 {
     char buf[8];
     snprintf(buf, sizeof(buf), "%d", g.len);
-    T->canvas_text_centered(g.cv, CC, CC - 6, buf, g.c_text, 4, true);
+    T->canvas_text_centered(g.cv, CC, CC - 6, buf, g.c_text, g.len < 100 ? 4 : 3, true);
     if (g.phase == SHOW) T->canvas_text_centered(g.cv, CC, CC + 20, "WATCH", g.c_dim, 1, true);
     else if (g.phase == INPUT) T->canvas_text_centered(g.cv, CC, CC + 20, "YOUR GO", g.c_go, 1, true);
+    else if (g.phase == CHEER)
+        T->canvas_text_centered(g.cv, CC, CC + 20, g.new_best ? "NEW BEST!" : "NICE!", g.c_accent, 1, true);
 }
 
 // ---------------------------------------------------------------- the game
@@ -320,7 +363,10 @@ static void ec_update(float dt)
     }
 
     g.phase_t += dt;
-    if (g.lit >= 0 && (g.lit_t -= dt) <= 0) {
+    const bool cheering = g.phase == CHEER;
+    // Like a real button: a pad the player is pressing stays lit until they let go.
+    const bool held = g.phase == INPUT && g.lit >= 0 && in->touch.down && pad_at(in->touch.x, in->touch.y) == g.lit;
+    if (!cheering && !held && g.lit >= 0 && (g.lit_t -= dt) <= 0) {
         g.lit = -1;
         g.dirty = true;
     }
@@ -342,8 +388,8 @@ static void ec_update(float dt)
             }
         } else if (due >= g.at) {
             // The next pad, never "the pad that is due": a slow frame must not skip one.
-            sfx_pad(g.run[g.at], (int)(step * 1000 * 0.7f));
-            light(g.run[g.at], step * 0.7f);
+            sfx_pad(g.run[g.at], (int)(step * 1000 * LIT_PART));
+            light(g.run[g.at], step * LIT_PART);
             g.at++;
         }
         break;
@@ -351,7 +397,7 @@ static void ec_update(float dt)
 
     case INPUT:
         g.idle_t += dt;
-        if (g.idle_t > TURN_LIMIT_S) {
+        if (g.idle_t > turn_limit_s()) {
             lose();
             break;
         }
@@ -363,8 +409,14 @@ static void ec_update(float dt)
         }
         break;
 
+    case CHEER:
+        if (!cheer(g.phase_t)) {
+            if (g.len < MAX_RUN) g.len++;
+            begin_show(0.35f);
+        }
+        break;
+
     case LOST:
-    case WON:
         if (g.phase_t > 1.0f && ges->tap) new_game();
         break;
     }
@@ -405,9 +457,6 @@ static void ec_draw(void)
         snprintf(mid, sizeof(mid), "YOU GOT TO ROUND %d", g.len);
         snprintf(bottom, sizeof(bottom), "BEST %d   TAP TO PLAY", g.best);
         banner("YOU LOSE", mid, bottom, g.c_danger);
-    } else if (g.phase == WON) {
-        snprintf(mid, sizeof(mid), "ALL %d ROUNDS", WIN_AT);
-        banner("YOU WIN!", mid, "TAP TO PLAY AGAIN", g.c_accent);
     }
 
     T->canvas_present(g.cv);
@@ -415,7 +464,10 @@ static void ec_draw(void)
 
 static void ec_redraw(void) { g.dirty = true; }
 
-static bool ec_keep_awake(void) { return (g.phase == SHOW || g.phase == INPUT) && !T->menu_is_open(); }
+static bool ec_keep_awake(void)
+{
+    return (g.phase == SHOW || g.phase == INPUT || g.phase == CHEER) && !T->menu_is_open();
+}
 
 static void ec_unload(void)
 {

@@ -1,7 +1,7 @@
 {
     "name":  "Tilt-a-tron",
-    "version":  "0.8.1",
-    "build":  "37bb5b7daa7d73e9",
+    "version":  "0.8.2",
+    "build":  "71b9fc279a595e22",
     "new_install_prompt_erase":  true,
     "builds":  [
                    {
