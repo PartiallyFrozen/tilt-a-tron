@@ -1,4 +1,4 @@
-﻿// STARFALL - a run down a shaft, where the way out is always somewhere round the edge.
+// STARFALL - a run down a shaft, where the way out is always somewhere round the edge.
 //
 // The screen is round, so the game is a tunnel seen head on: the middle of the screen is
 // far away and the rim is right in front of you. Everything approaches by sweeping outward

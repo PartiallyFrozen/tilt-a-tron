@@ -128,7 +128,17 @@ static esp_err_t screen_get(httpd_req_t *req)
     }
     httpd_resp_set_type(req, png[0] == 'B' ? "image/bmp" : "image/png");   // BMP when memory is short
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    const esp_err_t err = httpd_resp_send(req, (const char *)png, n);
+    // A picture is a hundred times the size of anything else this server sends, and this
+    // board sends slowly (5-15 KB/s measured; why is not yet known - the log shows the Wi-Fi
+    // driver failing to get transmit buffers). Sent whole, one stall past the send timeout
+    // left the client with half a PNG. In pieces, with the radio out of power save and a
+    // longer timeout, it is still slow but it arrives.
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    esp_err_t err = ESP_OK;
+    for (size_t at = 0; at < n && err == ESP_OK; at += 4096)
+        err = httpd_resp_send_chunk(req, (const char *)png + at, n - at < 4096 ? n - at : 4096);
+    if (err == ESP_OK) err = httpd_resp_send_chunk(req, NULL, 0);
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
     free(png);
     return err;
 }
@@ -347,6 +357,7 @@ esp_err_t ota_server_start(void)
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 8192;
     cfg.recv_wait_timeout = 15;
+    cfg.send_wait_timeout = 20;   // the default 5 s is shorter than a bad patch of Wi-Fi
     cfg.max_uri_handlers = 12;
     esp_err_t err = httpd_start(&s_server, &cfg);
     if (err != ESP_OK) return err;

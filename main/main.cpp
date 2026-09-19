@@ -1,6 +1,7 @@
-﻿#include "board/board.h"
+#include "board/board.h"
 #include "bench_game.h"
 #include "console/console.h"
+#include "console/ui.h"
 #include "console/icons.h"
 #include "console/calibrate_app.h"
 #include "console/launcher.h"
@@ -34,9 +35,6 @@
 #include "storage/storage.h"
 
 static const char *TAG = "main";
-
-// Games built against tat_api.h. The build renames each one's descriptor so several can
-// live in one firmware; a loaded package will simply export "tat_game".
 
 static wc::Engine *s_engine;
 // The carousel's table: whatever games are installed, then the two apps that are part of
@@ -341,7 +339,25 @@ extern "C" void app_main(void)
     // been wiped. Nothing is run; these are files being copied.
     s_table_lock = xSemaphoreCreateMutex();
     console::crumb("factory");
-    if (const int seeded = factory_seed()) ESP_LOGI(TAG, "installed %d factory games", seeded);
+    // On a new watch this takes the best part of half a minute and is the first thing its
+    // screen ever shows, straight after someone has flashed it from a web page and is
+    // wondering whether that worked. A black screen would tell them it had not.
+    static wc::Engine *setup_ui;
+    setup_ui = &engine;
+    const int seeded = factory_seed([](const char *name, int done, int total) {
+        wc::Gfx &g = setup_ui->gfx();
+        const int cx = wc::Gfx::CX;
+        g.clear(wc::colors::black);
+        g.textCentered(cx, 150, "SETTING UP", wc::colors::white, 4, true);
+        g.textCentered(cx, 198, "INSTALLING GAMES", console::ui::DIM, 2, true);
+        const int bar_w = 300, bar_x = cx - bar_w / 2, bar_y = 236;
+        g.rect(bar_x, bar_y, bar_w, 20, console::ui::BOX);
+        g.fillRect(bar_x + 2, bar_y + 2, (bar_w - 4) * done / total, 16, console::ui::GO);
+        g.textCentered(cx, 284, name, console::ui::ACCENT, 3, true);
+        setup_ui->presenter().present(g);
+        setup_ui->presenter().flush();
+    });
+    if (seeded) ESP_LOGI(TAG, "installed %d factory games", seeded);
 
     // If the last run ended badly, say so on screen and leave a note on the drive.
     console::reportCrashIfAny(engine);

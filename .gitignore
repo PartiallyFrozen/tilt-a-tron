@@ -17,3 +17,6 @@ tests/out/
 # Backups pulled off a watch. Somebody's own themes and saves - their files, not this
 # project's, and this repo is public.
 backups/
+
+# per-machine hook for update.ps1
+update.local.ps1

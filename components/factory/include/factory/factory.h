@@ -14,10 +14,15 @@ extern "C" {
 // removed stays removed - unless the
 // folder is empty, which is what a wiped drive looks like, and then they all come back.
 // Returns how many files were written.
-int factory_seed(void);
+//
+// `progress` may be NULL. It is called just before each game is written, and only then -
+// writing is slow (a couple of seconds a game), and on a new watch this is the first
+// thing that ever happens on its screen, so whoever calls this should say something.
+typedef void (*factory_progress_fn)(const char *name, int done, int total);
+int factory_seed(factory_progress_fn progress);
 
 // Put back every factory game that is not installed. For Settings > GAMES > RESTORE.
-int factory_restore(void);
+int factory_restore(factory_progress_fn progress);
 
 // Where a game sits among the ones the watch came with, or -1 if it is not one of them.
 // The home screen keeps these in this order however the filesystem happens to list them.

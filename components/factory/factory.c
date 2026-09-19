@@ -69,7 +69,7 @@ static const loader_entry_t *find(const loader_entry_t *list, int n, const char 
 }
 
 // everything: put back whatever is missing, whether or not it was seeded before.
-static int install(bool everything)
+static int install(bool everything, factory_progress_fn progress)
 {
     if (!storage_ready()) return 0;
     mkdir(loader_games_dir(), 0775);   // fine if it is already there
@@ -112,6 +112,7 @@ static int install(bool everything)
             // different build under this id is somebody's own work and is left alone.
             want = installed->stamp != game.stamp && firmware_copy_is_new && installed->version <= game.version;
         }
+        if (want && progress) progress(game.name, i, N_GAMES);
         if (want && write_package(&game, i)) written++;
         if (remember && firmware_copy_is_new) {
             nvs_erase_key(nvs, game.id);   // the old 16-bit entry cannot be overwritten in place
@@ -127,8 +128,8 @@ static int install(bool everything)
     return written;
 }
 
-int factory_seed(void) { return install(false); }
-int factory_restore(void) { return install(true); }
+int factory_seed(factory_progress_fn progress) { return install(false, progress); }
+int factory_restore(factory_progress_fn progress) { return install(true, progress); }
 
 int factory_order(const char *id)
 {

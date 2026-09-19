@@ -307,9 +307,13 @@ static void draw_hub(void)
         float bx = g.tip_x / PRESS_G, by = g.tip_y / PRESS_G;
         const float m = sqrtf(bx * bx + by * by);
         if (m > 1) bx /= m, by /= m;
-        const float reach = R_IN + 8;
-        T->canvas_fill_circle(g.cv, CC + (int)(bx * reach), CC + (int)(by * reach), 5, g.c_panel);
-        T->canvas_fill_circle(g.cv, CC + (int)(bx * reach), CC + (int)(by * reach), 4, g.c_cursor);
+        // At rest the bead would sit on the round number, so it only appears once the
+        // watch is properly tipped - by which point it has rolled clear of the digits.
+        if (m > 0.45f) {
+            const float reach = R_IN + 8;
+            T->canvas_fill_circle(g.cv, CC + (int)(bx * reach), CC + (int)(by * reach), 5, g.c_panel);
+            T->canvas_fill_circle(g.cv, CC + (int)(bx * reach), CC + (int)(by * reach), 4, g.c_cursor);
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-﻿"""Capture the watch's USB serial console to a file (for catching panics).
+"""Capture the watch's USB serial console to a file (for catching panics).
 
     python tools/serial_capture.py COM4 build/serial.log 60
 """

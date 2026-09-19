@@ -33,7 +33,9 @@ struct Host {
     tat_input_t input{};
     tat_gestures_t ges{};
 
-    // What the running game has taken, so unloading it gives everything back.
+    // What the resident game has taken, so unloading it gives everything back. One game
+    // at a time owns these lists: whoever loads packages keeps it that way.
+    HostedGame *owner = nullptr;
     std::vector<void *> allocations;
     std::vector<wc::Canvas *> canvases;
     std::vector<wc::Sheet *> sheets;
@@ -338,10 +340,34 @@ void snapshot(wc::Engine &e)
 
 const tat_api_t *api() { return &s_api; }
 
+void HostedGame::unload()
+{
+    if (s.owner != this) return;
+    s.game = &g_;
+    if (g_.unload) g_.unload();
+    // A game is asked to tidy up, not trusted to. Anything still on the lists is a leak in
+    // the game, and it stops here rather than costing the next game its memory.
+    const size_t left = s.allocations.size() + s.canvases.size() + s.sheets.size();
+    if (left) ESP_LOGW(TAG, "%s left %u things behind; freed", g_.id ? g_.id : "?", unsigned(left));
+    for (wc::Sheet *sheet : s.sheets) {
+        sheet->release();
+        delete sheet;
+    }
+    for (wc::Canvas *c : s.canvases) delete c;
+    for (void *p : s.allocations) heap_caps_free(p);
+    s.sheets.clear();
+    s.canvases.clear();
+    s.allocations.clear();
+    s.menu.close();
+    s.owner = nullptr;
+    s.game = nullptr;
+}
+
 void HostedGame::begin(wc::Engine &e)
 {
     s.engine = &e;
     s.game = &g_;
+    s.owner = this;
     if (g_.magic != TAT_GAME_MAGIC) {
         ESP_LOGE(TAG, "%s is not a game", g_.id ? g_.id : "?");
         return;

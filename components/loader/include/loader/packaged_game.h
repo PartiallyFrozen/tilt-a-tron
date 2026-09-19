@@ -29,10 +29,13 @@ public:
 
 private:
     bool load();
+    void unload();
+    bool ready(wc::Engine &e);
 
     loader_entry_t entry_;
     loader_game_t *pkg_ = nullptr;
     HostedGame *hosted_ = nullptr;
+    bool begun_hosted_ = false;       // the game has had its begin() since it was last loaded
     const char *failure_ = nullptr;   // what to say when it would not load
     bool drawn_failure_ = false;
 };

@@ -34,7 +34,9 @@ $manifest = [ordered]@{
     flash = [ordered]@{ mode = $args.flash_settings.flash_mode; freq = $args.flash_settings.flash_freq; size = $args.flash_settings.flash_size }
     files = $files
 }
-$manifest | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $out "manifest.json")
+# Written without a byte-order mark, which Set-Content -Encoding utf8 would add and which
+# trips up anything that reads JSON strictly.
+[IO.File]::WriteAllText((Join-Path $out "manifest.json"), ($manifest | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding($false)))
 # The browser installer (site/) gets its own copy plus an ESP Web Tools manifest.
 $site = Join-Path $root "site"
 $siteFw = Join-Path $site "firmware"

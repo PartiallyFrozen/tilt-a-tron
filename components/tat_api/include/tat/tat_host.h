@@ -14,6 +14,11 @@ const tat_api_t *api();
 class HostedGame : public wc::Game {
 public:
     explicit HostedGame(const tat_game_t &game) : g_(game) {}
+    ~HostedGame() override { unload(); }
+
+    // Tell the game it is going, then give back whatever it took and did not return:
+    // memory, canvases, sprite sheets. Safe to call twice, and on a game that never began.
+    void unload();
 
     void begin(wc::Engine &e) override;
     void enter(wc::Engine &e) override;

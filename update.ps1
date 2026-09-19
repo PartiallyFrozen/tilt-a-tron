@@ -203,8 +203,11 @@ if (-not $port) {
     Write-Host "  - Always works: unplug it, hold BOOT, plug it back in, release after 2 s."
     exit 1
 }
-# The Pal engine polls Espressif serial ports and would grab this one mid-flash.
-try { [void](Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:8790/api/usb/pause?seconds=600" -TimeoutSec 2) } catch {}
+# Anything on this computer that has to get out of the way before the port is used - a
+# program that polls serial ports, say - goes in update.local.ps1, which is yours and is
+# not part of the repository.
+$local = Join-Path $PSScriptRoot "update.local.ps1"
+if (Test-Path $local) { try { . $local } catch { Write-Host "update.local.ps1: $_" -ForegroundColor Yellow } }
 Write-Host "Flashing over USB ($port) ..."
 $ErrorActionPreference = "Continue"
 $out = powershell -ExecutionPolicy Bypass -File "$PSScriptRoot\idf.ps1" -p $port flash 2>&1 | ForEach-Object { "$_" }
