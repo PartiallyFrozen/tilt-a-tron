@@ -23,6 +23,7 @@
 #include "games/clock.h"
 #include "tat/tat_host.h"
 #include "loader/loader.h"
+#include "loader/packaged_game.h"
 #include "net/net.h"
 #include "link/link.h"
 #include "nvs_flash.h"
@@ -246,7 +247,7 @@ extern "C" void app_main(void)
     static console::UpdateApp updater(&settings);
     static console::CalibrateApp calibrate(&settings);
     settings.setScreens(&wifi_setup, &updater, &calibrate);
-    static const console::App apps[] = {
+    static const console::App builtin[] = {
         {"breakout", "BREAKOUT", wc::rgb(0xff, 0xd2, 0x3f), console::icons::breakout, &breakout},
         {"maze", "MARBLE MAZE", wc::rgb(222, 178, 112), console::icons::maze, &maze},
         {"racer", "GRAND PRIX", wc::rgb(255, 70, 70), console::icons::racer, &racer},
@@ -255,15 +256,36 @@ extern "C" void app_main(void)
         {"star", "SLEEPY STAR", wc::rgb(255, 217, 61), console::icons::star, &star},
         {"pindrop", "PIN DROP", wc::rgb(228, 62, 96), console::icons::pindrop, &pindrop},
         {"clock", "CLOCK", wc::rgb(214, 170, 60), console::icons::clock, &clock_app},
-        {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings},
     };
-    static console::Launcher launcher(apps, sizeof(apps) / sizeof(apps[0]));
-    static console::AppsApp games_screen(&settings, apps, sizeof(apps) / sizeof(apps[0]));
+    constexpr int kBuiltin = sizeof(builtin) / sizeof(builtin[0]);
+
+    // Installed packages go on the end of the carousel, before Settings. Only their headers
+    // are read here - names and colours, a few hundred bytes each. No game's code is
+    // touched until its icon is tapped.
+    static loader_entry_t installed[LOADER_MAX_GAMES];
+    const int n_installed = loader_scan(installed, LOADER_MAX_GAMES);
+
+    static console::App apps[kBuiltin + LOADER_MAX_GAMES + 1];
+    int n_apps = 0;
+    for (int i = 0; i < kBuiltin; i++) apps[n_apps++] = builtin[i];
+
+    static tat::PackagedGame *packaged[LOADER_MAX_GAMES];
+    for (int i = 0; i < n_installed; i++) {
+        packaged[i] = new tat::PackagedGame(installed[i]);
+        apps[n_apps++] = {installed[i].id, installed[i].name,
+                          wc::rgb(installed[i].accent_r, installed[i].accent_g, installed[i].accent_b),
+                          console::icons::package, packaged[i]};
+        ESP_LOGI(TAG, "carousel: %s (installed)", installed[i].name);
+    }
+    apps[n_apps++] = {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings};
+
+    static console::Launcher launcher(apps, n_apps);
+    static console::AppsApp games_screen(&settings, apps, n_apps);
     settings.setGamesScreen(&games_screen);
     // GET /input: remote control for testing without touching the watch.
     //   app=N (0 = home)  tap=x,y  swipe=x0,y0,x1,y1  hold=x,y,ms  btn=a|b[,ms]  tilt=ax,ay,az|off
     s_apps = apps;
-    s_app_count = sizeof(apps) / sizeof(apps[0]);
+    s_app_count = n_apps;
     // GET /tilt: the sensor, the saved correction, and what a game actually sees. Enough
     // to tell "the sensor is off", "the correction is wrong" and "the game is wrong" apart
     // without having to guess from how it feels in the hand.

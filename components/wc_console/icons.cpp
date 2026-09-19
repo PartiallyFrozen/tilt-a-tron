@@ -217,6 +217,30 @@ void star(Color *buf, int r)
     });
 }
 
+void package(Color *buf, int r)
+{
+    // A cartridge seen face on: a dark shell with a label and a row of contacts. Anything
+    // installed that did not bring its own icon gets this, so the home screen says where
+    // the game came from without needing words.
+    static constexpr Color EDGE = rgb(70, 74, 92), SHELL = rgb(52, 58, 76), SHELL_HI = rgb(78, 86, 110),
+                           LABEL = rgb(228, 232, 240), INK = rgb(120, 128, 148), PIN = rgb(226, 182, 64);
+    forEach(buf, r, [&](float nd, float, float x, float y) -> Color {
+        if (nd > 0.955f) return EDGE;
+        if (x < -0.62f || x > 0.62f || y < -0.70f || y > 0.72f) return EDGE;
+        if (y > 0.40f) {   // the contacts along the bottom edge
+            const int slot = int((x + 0.62f) * 10.0f);
+            return (slot % 2 == 0) ? PIN : SHELL;
+        }
+        if (x > -0.46f && x < 0.46f && y > -0.52f && y < 0.20f) {
+            // the paper label, with a couple of lines of nothing in particular on it
+            if (y > -0.16f && y < -0.10f && x > -0.34f && x < 0.30f) return INK;
+            if (y > 0.00f && y < 0.06f && x > -0.34f && x < 0.12f) return INK;
+            return LABEL;
+        }
+        return y < -0.58f ? SHELL_HI : SHELL;
+    });
+}
+
 void pindrop(Color *buf, int r)
 {
     // Fallback only (the real icon is a PNG): a cream board, pegs, a ball and the hole.

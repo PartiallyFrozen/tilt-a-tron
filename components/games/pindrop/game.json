@@ -1,6 +1,6 @@
 {
-  "id": "pindrop",
-  "name": "PIN DROP",
+  "id": "pindroppkg",
+  "name": "PIN DROP PKG",
   "author": "Tilt-a-tron",
   "version": 1,
   "api_major": 1,

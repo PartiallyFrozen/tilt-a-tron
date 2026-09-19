@@ -14,5 +14,8 @@ void tiltatris(wc::Color *buf, int r);
 void clock(wc::Color *buf, int r);
 void star(wc::Color *buf, int r);
 void pindrop(wc::Color *buf, int r);
+// For a game that arrived as a package and brought no icon of its own. A cartridge, so
+// that "this one was installed" is something you can see on the home screen.
+void package(wc::Color *buf, int r);
 
 }  // namespace console::icons

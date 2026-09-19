@@ -171,11 +171,13 @@ void Launcher::draw(Engine &e, Gfx &g)
     if (full_) {
         ui::clearScreen(g);   // the theme's background carries any branding
         ui::shadowText(g, Gfx::CX, Gfx::CY + 112, app(sel_).name, app(sel_).accent, 4);
-        const int dots_w = (count() - 1) * 20;
-        for (int i = 0; i < count(); i++) {
-            const int x = Gfx::CX - dots_w / 2 + i * 20;
-            g.fillCircle(x, Gfx::CY + 152, i == sel_ ? 6 : 4, i == sel_ ? ui::TEXT : ui::BOX);
-        }
+        // "3 OF 11" rather than a row of dots. Dots were fine for eight built-in games and
+        // stop being fine the moment somebody installs a few: at twenty they are wider than
+        // the screen, and past about a dozen nobody is counting them anyway. Text costs the
+        // same few characters whether there are four games or four hundred.
+        char pos[32];
+        std::snprintf(pos, sizeof(pos), "%d OF %d", sel_ + 1, count());
+        ui::shadowText(g, Gfx::CX, Gfx::CY + 152, pos, ui::DIM, 2);
         full_ = false;
         hint_dirty_ = true;
         drawn_shift_ = 1 << 30;

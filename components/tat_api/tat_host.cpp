@@ -351,6 +351,8 @@ void HostedGame::begin(wc::Engine &e)
                  TAT_API_MAJOR, TAT_API_MINOR);
         return;
     }
+    ESP_LOGI(TAG, "%s: begin=%p enter=%p update=%p draw=%p", g_.id ? g_.id : "?", (void *)g_.begin,
+             (void *)g_.enter, (void *)g_.update, (void *)g_.draw);
     if (g_.begin) g_.begin(&s_api);
 }
 

@@ -39,12 +39,22 @@ SEC_SHOT = b"SHOT"
 LINKER_SCRIPT = """\
 /* One contiguous image at zero: literals, code, read-only data, data, then bss. Every
  * distance inside the image is what the linker assumed, so the loader can drop it
- * anywhere and only the absolute references need fixing. */
+ * anywhere and only the absolute references need fixing.
+ *
+ * The literal pool gets its own output section, and that is not cosmetic. --emit-relocs
+ * writes each addend relative to the INPUT section, so an output section only relocates
+ * correctly when it begins with the input section the addends are counted from. With
+ * literals and code sharing one .text, every function pointer came out short by the size
+ * of the literal pool - and pointed at the middle of some other function.
+ *
+ * Literals still have to sit at a LOWER address than the code that reads them, because
+ * l32r only reaches backwards, so the order stays: literals, then text. */
 ENTRY(tat_game)
 SECTIONS
 {
   . = 0;
-  .text : ALIGN(4) { *(.literal .literal.*) *(.text .text.*) }
+  .literal : ALIGN(4) { *(.literal .literal.*) }
+  .text : ALIGN(4) { *(.text .text.*) }
   .rodata : ALIGN(4) { *(.rodata .rodata.*) *(.srodata .srodata.*) }
   .data : ALIGN(4) { *(.data .data.*) *(.sdata .sdata.*) }
   .bss (NOLOAD) : ALIGN(4) { *(.bss .bss.*) *(.sbss .sbss.*) *(COMMON) }
@@ -101,6 +111,19 @@ def build_code(game_dir, work, verbose=False):
             print("  " + " ".join(cmd))
         subprocess.run(cmd, check=True)
         objs.append(obj)
+
+    # Merge everything into one object first. Same reason the literal pool is kept separate
+    # below: an addend is relative to its input section, so only the input section that
+    # lands at the start of an output section relocates correctly. With one object there is
+    # one input .text, one .rodata and one .bss, and each of them starts its own output
+    # section - which keeps a game of several source files as correct as a game of one.
+    if len(objs) > 1:
+        merged = os.path.join(work, "all.o")
+        cmd = [ld, "-r", "-o", merged] + objs
+        if verbose:
+            print("  " + " ".join(cmd))
+        subprocess.run(cmd, check=True)
+        objs = [merged]
 
     script = os.path.join(work, "game.ld")
     with open(script, "w") as f:
