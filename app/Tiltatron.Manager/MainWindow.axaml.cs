@@ -18,13 +18,16 @@ public partial class MainWindow : Window
 {
     Watch? _watch;
     string? _selected;          // the theme folder currently picked, if any
+    string? _selectedGame;      // the installed game currently picked, by its id
     readonly List<Border> _themeCards = new();
+    readonly List<Border> _gameCards = new();
 
     public MainWindow()
     {
         // Generated from the XAML: loads it and hands us the x:Name'd controls.
         InitializeComponent();
         ConnectButton.Click += (_, _) => _ = ConnectAsync();
+        InstallGameButton.Click += (_, _) => _ = InstallGameAsync();
         SendThemeButton.Click += (_, _) => _ = SendThemeAsync();
         BackupButton.Click += (_, _) => _ = BackUpAsync();
         RemoveButton.Click += (_, _) => _ = RemoveAsync();
@@ -61,7 +64,9 @@ public partial class MainWindow : Window
     {
         if (_watch is not { } w) return;
         _selected = null;
+        _selectedGame = null;
         _themeCards.Clear();
+        _gameCards.Clear();
         ContentPanel.Children.Clear();
 
         var games = await Task.Run(() => w.Games());
@@ -91,6 +96,57 @@ public partial class MainWindow : Window
     }
 
     // ------------------------------------------------------------------ actions
+
+    /// <summary>
+    /// Installing a game is writing its file to the games folder - there is no separate
+    /// install command, and the watch picks it up next time it starts. The header is read
+    /// here first so that a file which is not a package, or is built for a firmware this
+    /// watch does not have, is refused on this side rather than after a slow transfer.
+    /// </summary>
+    async Task InstallGameAsync()
+    {
+        if (_watch is not { } w) return;
+        var picked = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Pick a game to install",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("Tilt-a-tron game") { Patterns = new[] { "*.tat" } },
+            },
+        });
+        if (picked.Count == 0) return;
+        var local = picked[0].Path.LocalPath;
+
+        TatPackage pkg;
+        try
+        {
+            pkg = TatPackage.Read(local);
+        }
+        catch (Exception e)
+        {
+            SetBusy($"that file is not a game: {e.Message}");
+            return;
+        }
+        if (!pkg.RunsOn(w.GameApi.Major, w.GameApi.Minor))
+        {
+            SetBusy($"{pkg.Name} needs game API {pkg.ApiMajor}.{pkg.ApiMinor}; "
+                    + $"this watch has {w.GameApi.Major}.{w.GameApi.Minor}");
+            return;
+        }
+
+        // Always under the game's own id, so removing it later is just deleting that name.
+        var remote = $"Games/{pkg.Id}.tat";
+        await RunAsync($"installing {pkg.Name}", () =>
+        {
+            w.MakeFolder("Games");
+            w.WriteFile(remote, File.ReadAllBytes(local), (done, total) =>
+                Report($"{pkg.Name}  {done / 1024} of {total / 1024} KB",
+                       total == 0 ? 0 : done * 100.0 / total));
+        });
+        SetBusy($"{pkg.Name} installed - restart the watch to see it on the home screen");
+        await RefreshAsync();
+    }
 
     async Task SendThemeAsync()
     {
@@ -145,9 +201,22 @@ public partial class MainWindow : Window
 
     async Task RemoveAsync()
     {
-        if (_watch is not { } w || _selected is null) return;
-        var name = _selected;
-        await RunAsync($"removing {name}", () => w.Delete($"Theme/{name}"));
+        if (_watch is not { } w) return;
+        if (_selectedGame is { } id)
+        {
+            // Uninstalling is deleting the file. The game's saves stay in the watch's
+            // settings store, so installing it again finds your scores where you left them.
+            await RunAsync($"removing {id}", () => w.Delete($"Games/{id}.tat"));
+            SetBusy("removed - restart the watch to take it off the home screen");
+        }
+        else if (_selected is { } name)
+        {
+            await RunAsync($"removing {name}", () => w.Delete($"Theme/{name}"));
+        }
+        else
+        {
+            return;
+        }
         await RefreshAsync();
     }
 
@@ -187,9 +256,10 @@ public partial class MainWindow : Window
 
     void EnableActions(bool on)
     {
+        InstallGameButton.IsEnabled = on;
         SendThemeButton.IsEnabled = on;
         BackupButton.IsEnabled = on;
-        RemoveButton.IsEnabled = on && _selected is not null;
+        RemoveButton.IsEnabled = on && (_selected is not null || _selectedGame is not null);
     }
 
     static TextBlock Heading(string text) => new()
@@ -200,9 +270,9 @@ public partial class MainWindow : Window
         Foreground = new SolidColorBrush(Color.Parse("#7FE8FF")),
     };
 
-    static Control GameTile(GameEntry g, byte[]? iconPng)
+    Control GameTile(GameEntry g, byte[]? iconPng)
     {
-        var stack = new StackPanel { Width = 78, Spacing = 3, Margin = new Avalonia.Thickness(0, 0, 8, 8) };
+        var stack = new StackPanel { Width = 78, Spacing = 3 };
         if (iconPng is not null)
         {
             try
@@ -235,7 +305,32 @@ public partial class MainWindow : Window
             TextAlignment = TextAlignment.Center,
             Foreground = new SolidColorBrush(Color.Parse("#8A97C0")),
         });
-        return stack;
+
+        var card = new Border
+        {
+            BorderBrush = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Avalonia.Thickness(2),
+            CornerRadius = new Avalonia.CornerRadius(3),
+            Padding = new Avalonia.Thickness(4),
+            Margin = new Avalonia.Thickness(0, 0, 8, 8),
+            Child = stack,
+        };
+        // Only an installed game can be picked, because only an installed game can be
+        // removed. A built-in is part of the firmware and the most you can do is hide it.
+        if (!g.BuiltIn)
+        {
+            card.PointerPressed += (_, _) =>
+            {
+                _selectedGame = g.Id;
+                _selected = null;
+                foreach (var c in _themeCards) c.BorderBrush = new SolidColorBrush(Colors.Transparent);
+                foreach (var c in _gameCards)
+                    c.BorderBrush = new SolidColorBrush(c == card ? Color.Parse("#FFD93D") : Colors.Transparent);
+                RemoveButton.IsEnabled = true;
+            };
+            _gameCards.Add(card);
+        }
+        return card;
     }
 
     static uint FolderSize(Watch w, string path)
@@ -273,6 +368,8 @@ public partial class MainWindow : Window
         card.PointerPressed += (_, _) =>
         {
             _selected = name;
+            _selectedGame = null;
+            foreach (var c in _gameCards) c.BorderBrush = new SolidColorBrush(Colors.Transparent);
             foreach (var c in _themeCards)
                 c.BorderBrush = new SolidColorBrush(c == card ? Color.Parse("#FFD93D") : Colors.Transparent);
             RemoveButton.IsEnabled = true;

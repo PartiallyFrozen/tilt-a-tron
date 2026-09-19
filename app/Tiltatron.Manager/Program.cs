@@ -52,6 +52,33 @@ static class Program
                         Console.WriteLine($"  theme: {t.Name}");
                     return 0;
                 }
+                case "install" when args.Length == 2:
+                {
+                    // Exactly what the Install button does: read the header, refuse it here
+                    // if it is not a game this watch can run, then write the file under the
+                    // game's own id so uninstalling later is just deleting that name.
+                    var pkg = TatPackage.Read(args[1]);
+                    using var w = Connect();
+                    if (!pkg.RunsOn(w.GameApi.Major, w.GameApi.Minor))
+                    {
+                        Console.Error.WriteLine($"{pkg.Name} needs game API {pkg.ApiMajor}.{pkg.ApiMinor}; "
+                                                + $"this watch has {w.GameApi.Major}.{w.GameApi.Minor}");
+                        return 1;
+                    }
+                    Console.WriteLine($"installing {pkg.Name} ({pkg.Id}) v{pkg.Version} by {pkg.Author}");
+                    w.MakeFolder("Games");
+                    w.WriteFile($"Games/{pkg.Id}.tat", File.ReadAllBytes(args[1]),
+                                (done, total) => Console.Write($"\r  {done / 1024} of {total / 1024} KB"));
+                    Console.WriteLine("\ndone - restart the watch to see it on the home screen");
+                    return 0;
+                }
+                case "uninstall" when args.Length == 2:
+                {
+                    using var w = Connect();
+                    w.Delete($"Games/{args[1]}.tat");
+                    Console.WriteLine($"removed {args[1]} - restart the watch to take it off the home screen");
+                    return 0;
+                }
                 case "send" when args.Length == 3:
                 {
                     using var w = Connect();

@@ -44,6 +44,17 @@ extern "C" const tat_game_t tat_game_breakout;
 static wc::Engine *s_engine;
 static const console::App *s_apps;
 static int s_app_count;
+// What was found in the games folder at boot, so the link can tell the app which entries
+// are files it may remove and which are part of the firmware.
+static loader_entry_t s_installed[LOADER_MAX_GAMES];
+static int s_installed_count;
+
+static const loader_entry_t *installedById(const char *id)
+{
+    for (int i = 0; i < s_installed_count; i++)
+        if (std::strcmp(s_installed[i].id, id) == 0) return &s_installed[i];
+    return nullptr;
+}
 
 extern "C" void app_main(void)
 {
@@ -262,8 +273,9 @@ extern "C" void app_main(void)
     // Installed packages go on the end of the carousel, before Settings. Only their headers
     // are read here - names and colours, a few hundred bytes each. No game's code is
     // touched until its icon is tapped.
-    static loader_entry_t installed[LOADER_MAX_GAMES];
-    const int n_installed = loader_scan(installed, LOADER_MAX_GAMES);
+    s_installed_count = loader_scan(s_installed, LOADER_MAX_GAMES);
+    const loader_entry_t *installed = s_installed;
+    const int n_installed = s_installed_count;
 
     static console::App apps[kBuiltin + LOADER_MAX_GAMES + 1];
     int n_apps = 0;
@@ -346,12 +358,13 @@ extern "C" void app_main(void)
         }
         return any;
     });
-    // The USB link: what the manager app on a computer talks to. Every app is built in
-    // for now, so it can look but not install (docs/GAME_API.md).
+    // The USB link: what the manager app on a computer talks to. Installed games live in
+    // the storage filesystem for now, so the room they have is the room storage has, and
+    // installing one is writing a file (docs/GAME_API.md).
     link_set_info_hook([](uint32_t *total, uint32_t *free_bytes, uint8_t *count) {
-        *total = 0;   // no games region yet
-        *free_bytes = 0;
-        *count = uint8_t(s_app_count);
+        *total = *free_bytes = 0;
+        storage_free_bytes(total, free_bytes);
+        *count = uint8_t(s_installed_count);
     });
     link_set_list_hook([](link_game_t *out, int max) -> int {
         int n = 0;
@@ -362,7 +375,11 @@ extern "C" void app_main(void)
             snprintf(g.id, sizeof(g.id), "%s", s_apps[i].id);
             snprintf(g.name, sizeof(g.name), "%s", s_apps[i].name);
             g.accent = s_apps[i].accent;
-            g.flags = LINK_GAME_BUILTIN | (console::appHidden(s_apps[i].id) ? LINK_GAME_HIDDEN : 0);
+            g.flags = console::appHidden(s_apps[i].id) ? LINK_GAME_HIDDEN : 0;
+            // An installed game is a file, and the app is allowed to delete it. A built-in
+            // can only be hidden, so it says so and reports no size of its own.
+            if (const loader_entry_t *e = installedById(s_apps[i].id)) g.bytes = e->size;
+            else g.flags |= LINK_GAME_BUILTIN;
         }
         return n;
     });

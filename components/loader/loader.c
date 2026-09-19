@@ -130,6 +130,17 @@ int loader_scan(loader_entry_t *out, int max)
         const tat_header_t *h;
         const tat_section_t *secs;
         if (check_package(buf, len, &h, &secs) && h->kind == KIND_GAME) {
+            // Two files claiming the same game is a real state to end up in - installing
+            // under one name over a copy that arrived under another. The id is what saves
+            // and the carousel are keyed on, so the second one is left alone rather than
+            // shown twice and given the first one's scores.
+            bool seen = false;
+            for (int k = 0; k < n && !seen; k++) seen = strcmp(out[k].id, h->id) == 0;
+            if (seen) {
+                ESP_LOGW(TAG, "%s is already installed; ignoring %s", h->id, e->d_name);
+                heap_caps_free(buf);
+                continue;
+            }
             loader_entry_t *o = &out[n++];
             memset(o, 0, sizeof(*o));
             snprintf(o->path, sizeof(o->path), "%s", path);
