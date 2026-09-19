@@ -183,6 +183,11 @@ bool Theme::builtinIcon(const std::string &app_id, Image &out)
     return loadPngBytes(png, len, app_id.c_str(), out, 232, 232);
 }
 
+bool Theme::iconFromPng(const uint8_t *png, size_t len, const char *what, Image &out)
+{
+    return png && len && loadPngBytes(png, len, what, out, 232, 232);
+}
+
 static bool parseColor(cJSON *colors, const char *key, Color &out)
 {
     const cJSON *item = cJSON_GetObjectItemCaseSensitive(colors, key);

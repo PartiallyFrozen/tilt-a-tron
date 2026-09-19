@@ -1,13 +1,13 @@
 {
-  "id": "starfall",
-  "name": "STARFALL",
+  "id": "maze",
+  "name": "MARBLE MAZE",
   "author": "Tilt-a-tron",
-  "version": 2,
+  "version": 1,
   "api_major": 1,
   "api_minor": 3,
   "accent": [
-    120,
-    240,
-    255
+    222,
+    178,
+    112
   ]
 }

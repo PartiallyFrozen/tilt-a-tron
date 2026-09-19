@@ -31,6 +31,9 @@ KIND_GAME, KIND_THEME, KIND_FACE = 1, 2, 3
 # Section types, four bytes each so a dump is readable.
 SEC_CODE = b"CODE"
 SEC_ICON = b"ICON"
+ICON_PX = 210            # what tools/make_icons.py draws, and the carousel's circle
+ICON_MAX_PX = 232        # the largest the launcher will decode
+ICON_MAX_BYTES = 4096    # LINK_MAX_PAYLOAD: one frame over USB
 SEC_ASSET = b"ASST"
 SEC_SHOT = b"SHOT"
 
@@ -63,8 +66,11 @@ SECTIONS
 """
 
 
-def find_toolchain():
+def find_toolchain(gcc=None):
     """The same compiler the firmware is built with, wherever ESP-IDF put it."""
+    if gcc:
+        # The firmware build knows exactly which compiler it is using, and says so.
+        return gcc, gcc[: gcc.rfind("gcc")] + "ld" + gcc[gcc.rfind("gcc") + 3 :]
     pats = [
         r"C:\Espressif\tools\xtensa-esp-elf\*\xtensa-esp-elf\bin\xtensa-esp32s3-elf-gcc*",
         os.path.expanduser("~/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc"),
@@ -77,9 +83,9 @@ def find_toolchain():
     sys.exit("could not find the xtensa toolchain; run this from an ESP-IDF install")
 
 
-def build_code(game_dir, work, verbose=False):
+def build_code(game_dir, work, verbose=False, gcc=None):
     """Compile every .c in the game directory and link it into one relocatable image."""
-    gcc, ld = find_toolchain()
+    gcc, ld = find_toolchain(gcc)
     os.makedirs(work, exist_ok=True)
 
     sources = sorted(glob.glob(os.path.join(game_dir, "*.c")))
@@ -104,7 +110,7 @@ def build_code(game_dir, work, verbose=False):
         # One .text per file keeps the addends meaning what they say. It costs a little
         # size, since there is no --gc-sections to drop what is unused, and a game that is
         # 19 KB does not care.
-        cmd = [gcc, "-c", "-std=gnu17", "-Os", "-mlongcalls", "-fno-merge-constants",
+        cmd = [gcc, "-c", "-std=gnu17", "-O2", "-mlongcalls", "-fno-merge-constants",
                "-I", os.path.join(ROOT, "components/tat_api/include"),
                "-o", obj, src]
         if verbose:
@@ -144,7 +150,7 @@ def section(kind, payload):
     return kind, payload, zlib.crc32(payload) & 0xFFFFFFFF
 
 
-def build_package(game_dir, out, verbose=False):
+def build_package(game_dir, out, verbose=False, gcc=None, work_root=None):
     meta_path = os.path.join(game_dir, "game.json")
     if not os.path.exists(meta_path):
         sys.exit(f"{game_dir} has no game.json")
@@ -157,17 +163,32 @@ def build_package(game_dir, out, verbose=False):
     if not meta["id"].replace("_", "").isalnum() or meta["id"] != meta["id"].lower():
         sys.exit("id must be lowercase letters, digits and underscores")
 
-    work = os.path.join(ROOT, "build", "tat", meta["id"])
-    elf = build_code(game_dir, work, verbose)
+    work = os.path.join(work_root or os.path.join(ROOT, "build", "tat"), meta["id"])
+    elf = build_code(game_dir, work, verbose, gcc)
     with open(elf, "rb") as f:
         code = f.read()
 
     sections = [section(SEC_CODE, code)]
 
+    # Every game has an icon. It was optional once, and the result was a home screen and a
+    # library full of identical blank cartridges that could only be told apart by reading.
+    # The size limit is the link's: the watch sends an icon to the app in one frame.
     icon = os.path.join(game_dir, "icon.png")
-    if os.path.exists(icon):
-        with open(icon, "rb") as f:
-            sections.append(section(SEC_ICON, f.read()))
+    if not os.path.exists(icon):
+        sys.exit(f"{game_dir} has no icon.png - every game needs one "
+                 f"(a {ICON_PX} x {ICON_PX} PNG; docs/GAME_API.md section 2)")
+    with open(icon, "rb") as f:
+        icon_png = f.read()
+    if icon_png[:8] != b"\x89PNG\r\n\x1a\n":
+        sys.exit("icon.png is not a PNG")
+    icon_w, icon_h = struct.unpack(">II", icon_png[16:24])
+    if icon_w > ICON_MAX_PX or icon_h > ICON_MAX_PX:
+        sys.exit(f"icon.png is {icon_w} x {icon_h}; the most the home screen will take is "
+                 f"{ICON_MAX_PX} x {ICON_MAX_PX}, and {ICON_PX} x {ICON_PX} is what it is drawn at")
+    if len(icon_png) > ICON_MAX_BYTES:
+        sys.exit(f"icon.png is {len(icon_png)} bytes; the limit is {ICON_MAX_BYTES}. "
+                 "Pixel art with few colours, saved as an indexed PNG, fits easily")
+    sections.append(section(SEC_ICON, icon_png))
 
     shot = os.path.join(game_dir, "shot.png")
     if os.path.exists(shot):
@@ -243,10 +264,12 @@ def main():
     ap.add_argument("game_dir", help="a directory with game.json, .c sources and assets/")
     ap.add_argument("--out", help="where to write the package")
     ap.add_argument("-v", "--verbose", action="store_true", help="show the build commands")
+    ap.add_argument("--gcc", help="the xtensa gcc to use (the firmware build passes its own)")
+    ap.add_argument("--work", help="where intermediate files go (default build/tat)")
     args = ap.parse_args()
 
     out = args.out or os.path.join(ROOT, "build", os.path.basename(args.game_dir.rstrip("/\\")) + ".tat")
-    build_package(args.game_dir, out, args.verbose)
+    build_package(args.game_dir, out, args.verbose, args.gcc, args.work)
 
 
 if __name__ == "__main__":

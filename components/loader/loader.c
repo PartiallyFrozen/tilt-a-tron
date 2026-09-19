@@ -110,6 +110,56 @@ static bool check_package(const uint8_t *buf, size_t len, const tat_header_t **h
 
 const char *loader_games_dir(void) { return GAMES_DIR; }
 
+uint8_t *loader_read_icon(const char *path, size_t *len_out)
+{
+    size_t len = 0;
+    uint8_t *buf = read_all(path, &len);
+    if (!buf) return NULL;
+
+    uint8_t *icon = NULL;
+    const tat_header_t *h;
+    const tat_section_t *secs;
+    if (check_package(buf, len, &h, &secs)) {
+        for (int i = 0; i < h->section_count && !icon; i++) {
+            if (secs[i].type != SEC_ICON || secs[i].size == 0) continue;
+            icon = heap_caps_malloc(secs[i].size, MALLOC_CAP_SPIRAM);
+            if (!icon) break;
+            memcpy(icon, buf + secs[i].offset, secs[i].size);
+            *len_out = secs[i].size;
+        }
+    }
+    heap_caps_free(buf);
+    return icon;
+}
+
+void loader_free(void *p) { heap_caps_free(p); }
+
+static void describe(const tat_header_t *h, size_t len, loader_entry_t *o)
+{
+    memset(o, 0, sizeof(*o));
+    snprintf(o->id, sizeof(o->id), "%.15s", h->id);
+    snprintf(o->name, sizeof(o->name), "%.23s", h->name);
+    snprintf(o->author, sizeof(o->author), "%.23s", h->author);
+    o->version = h->version;
+    o->api_major = h->api_major;
+    o->api_minor = h->api_minor;
+    o->accent_r = h->accent_r, o->accent_g = h->accent_g, o->accent_b = h->accent_b;
+    o->size = (uint32_t)len;
+    o->stamp = h->header_crc32;
+    // The launcher shows an unrunnable game rather than hiding it, so that someone whose
+    // watch is too old is told why instead of finding the icon simply gone.
+    o->runnable = h->api_major == TAT_API_MAJOR && h->api_minor <= TAT_API_MINOR;
+}
+
+bool loader_inspect(const uint8_t *buf, size_t len, loader_entry_t *out)
+{
+    const tat_header_t *h;
+    const tat_section_t *secs;
+    if (!check_package(buf, len, &h, &secs) || h->kind != KIND_GAME) return false;
+    describe(h, len, out);
+    return true;
+}
+
 int loader_scan(loader_entry_t *out, int max)
 {
     DIR *d = opendir(GAMES_DIR);
@@ -142,20 +192,8 @@ int loader_scan(loader_entry_t *out, int max)
                 continue;
             }
             loader_entry_t *o = &out[n++];
-            memset(o, 0, sizeof(*o));
+            describe(h, len, o);
             snprintf(o->path, sizeof(o->path), "%s", path);
-            snprintf(o->id, sizeof(o->id), "%.15s", h->id);
-            snprintf(o->name, sizeof(o->name), "%.23s", h->name);
-            snprintf(o->author, sizeof(o->author), "%.23s", h->author);
-            o->version = h->version;
-            o->api_major = h->api_major;
-            o->api_minor = h->api_minor;
-            o->accent_r = h->accent_r, o->accent_g = h->accent_g, o->accent_b = h->accent_b;
-            o->size = (uint32_t)len;
-            o->stamp = h->header_crc32;
-            // The launcher shows an unrunnable game rather than hiding it, so that someone
-            // whose watch is too old is told why instead of finding the icon simply gone.
-            o->runnable = h->api_major == TAT_API_MAJOR && h->api_minor <= TAT_API_MINOR;
             ESP_LOGI(TAG, "found %s v%u by %s (%u bytes)%s", o->name, o->version, o->author,
                      (unsigned)o->size, o->runnable ? "" : " - needs a different firmware");
         } else {

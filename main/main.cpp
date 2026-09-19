@@ -12,17 +12,21 @@
 #include "esp_heap_caps.h"
 #include "lodepng.h"
 #include "esp_log.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "games/clock.h"
 #include "tat/tat_host.h"
 #include "loader/loader.h"
+#include "factory/factory.h"
 #include "loader/packaged_game.h"
 #include "net/net.h"
 #include "link/link.h"
@@ -33,27 +37,24 @@ static const char *TAG = "main";
 
 // Games built against tat_api.h. The build renames each one's descriptor so several can
 // live in one firmware; a loaded package will simply export "tat_game".
-extern "C" const tat_game_t tat_game_pindrop;
-extern "C" const tat_game_t tat_game_jump;
-extern "C" const tat_game_t tat_game_tiltatris;
-extern "C" const tat_game_t tat_game_racer;
-extern "C" const tat_game_t tat_game_maze;
-extern "C" const tat_game_t tat_game_star;
-extern "C" const tat_game_t tat_game_breakout;
 
 static wc::Engine *s_engine;
-// The carousel's table: the built-ins, then whatever is installed, then Settings. It is
-// one fixed array so that everything holding a pointer to it keeps a good one while games
-// come and go; only the count, and what lies after the built-ins, ever changes.
+// The carousel's table: whatever games are installed, then the two apps that are part of
+// the firmware - the clock and Settings. No game is compiled in; they are all packages.
+// It is one fixed array so that everything holding a pointer to it keeps a good one while
+// games come and go; only the count and the contents ever change.
 static console::App *s_apps;
 static int s_app_count;
-static int s_builtin_count;
-static console::App s_settings_app;
+static console::App s_clock_app, s_settings_app;
 static console::AppsApp *s_games_screen;
-// What is in the games folder, as of the last look, and the game object for each.
+// What is in the games folder, as of the last look, and for each: its game object and the
+// icon it shipped. The lock is for the icons, which the link task reads to show the app.
 static loader_entry_t s_installed[LOADER_MAX_GAMES];
 static tat::PackagedGame *s_packaged[LOADER_MAX_GAMES];
+static uint8_t *s_icon[LOADER_MAX_GAMES];
+static size_t s_icon_len[LOADER_MAX_GAMES];
 static int s_installed_count;
+static SemaphoreHandle_t s_table_lock;
 
 // One look at the games folder. The results are over 4 KB, and this is asked for from three
 // places on two tasks; as statics that was 13 KB of internal RAM, which on this board is
@@ -67,28 +68,59 @@ struct GamesScan {
               heap_caps_malloc(sizeof(loader_entry_t) * LOADER_MAX_GAMES, MALLOC_CAP_SPIRAM))),
           count(found ? loader_scan(found, LOADER_MAX_GAMES) : 0)
     {
+        // The folder gives files back in whatever order the filesystem kept them, which
+        // changes as games come and go. The home screen should not reshuffle itself
+        // because of that: the games the watch came with keep their places, and the rest
+        // follow by name.
+        std::sort(found, found + count, [](const loader_entry_t &a, const loader_entry_t &b) {
+            const int fa = factory_order(a.id), fb = factory_order(b.id);
+            if ((fa >= 0) != (fb >= 0)) return fa >= 0;
+            if (fa >= 0) return fa < fb;
+            return strcasecmp(a.name, b.name) < 0;
+        });
     }
     ~GamesScan() { heap_caps_free(found); }
     GamesScan(const GamesScan &) = delete;
     GamesScan &operator=(const GamesScan &) = delete;
 };
 
+// A colour as the link protocol promises it: plain RGB565. wc::Color is not that - it is
+// kept in the display's byte order, which is the panel's business and nobody else's. The
+// app was being sent those, and showed GRAND PRIX's red as blue.
+static uint16_t wireColor(uint8_t r, uint8_t g, uint8_t b)
+{
+    return uint16_t(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
 static bool samePackage(const loader_entry_t &a, const loader_entry_t &b)
 {
     return a.stamp == b.stamp && a.size == b.size && std::strcmp(a.path, b.path) == 0;
 }
 
-// Lays the installed games and Settings into the table after the built-ins. The names in
-// the table point into s_installed, so the two are always rebuilt together.
+// Lays the installed games into the table, then the clock and Settings. The names and
+// icons in the table point into s_installed and s_icon, so they are always rebuilt together.
 static void layPackages()
 {
-    int n = s_builtin_count;
-    for (int i = 0; i < s_installed_count; i++)
+    xSemaphoreTake(s_table_lock, portMAX_DELAY);
+    for (int i = 0; i < LOADER_MAX_GAMES; i++) {
+        loader_free(s_icon[i]);
+        s_icon[i] = nullptr;
+        s_icon_len[i] = 0;
+    }
+    int n = 0;
+    for (int i = 0; i < s_installed_count; i++) {
+        s_icon[i] = loader_read_icon(s_installed[i].path, &s_icon_len[i]);
+        // A game the firmware itself carries is known not to be pretending to be another,
+        // so a theme may dress it by title as well as by id. Anything else gets id only.
+        const bool stranger = !factory_is(s_installed[i].stamp);
         s_apps[n++] = {s_installed[i].id, s_installed[i].name,
                        wc::rgb(s_installed[i].accent_r, s_installed[i].accent_g, s_installed[i].accent_b),
-                       console::icons::package, s_packaged[i], true};
+                       console::icons::package, s_packaged[i], stranger, s_icon[i], s_icon_len[i]};
+    }
+    s_apps[n++] = s_clock_app;
     s_apps[n++] = s_settings_app;
     s_app_count = n;
+    xSemaphoreGive(s_table_lock);
     if (s_games_screen) s_games_screen->setCount(n);
 }
 
@@ -120,8 +152,10 @@ static int rescanPackages()
     for (int j = 0; j < s_installed_count; j++) delete s_packaged[j];   // removed, or replaced
     for (int i = 0; i < LOADER_MAX_GAMES; i++) s_packaged[i] = nullptr;
 
+    xSemaphoreTake(s_table_lock, portMAX_DELAY);
     std::memcpy(s_installed, found, sizeof(s_installed[0]) * n);
     s_installed_count = n;
+    xSemaphoreGive(s_table_lock);
     for (int i = 0; i < n; i++) s_packaged[i] = next[i] ? next[i] : new tat::PackagedGame(s_installed[i]);
     layPackages();
     ESP_LOGI("main", "games folder changed: %d installed", n);
@@ -303,6 +337,11 @@ extern "C" void app_main(void)
 
     console::crumb("storage");
     if (storage_init() != ESP_OK) ESP_LOGE(TAG, "storage unavailable, using the built-in look");
+    // The games this watch came with, the first time it starts - or after its storage has
+    // been wiped. Nothing is run; these are files being copied.
+    s_table_lock = xSemaphoreCreateMutex();
+    console::crumb("factory");
+    if (const int seeded = factory_seed()) ESP_LOGI(TAG, "installed %d factory games", seeded);
 
     // If the last run ended badly, say so on screen and leave a note on the drive.
     console::reportCrashIfAny(engine);
@@ -319,40 +358,24 @@ extern "C" void app_main(void)
     static games::Clock clock_app;
     // Every game now talks to the console only through the table. Compiled in for the
     // moment, but nothing they do depends on that - which is the whole point.
-    static tat::HostedGame breakout(tat_game_breakout);
-    static tat::HostedGame maze(tat_game_maze);
-    static tat::HostedGame star(tat_game_star);
-    static tat::HostedGame racer(tat_game_racer);
-    static tat::HostedGame jump(tat_game_jump);
-    static tat::HostedGame tiltatris(tat_game_tiltatris);
-    static tat::HostedGame pindrop(tat_game_pindrop);
     static console::SettingsApp settings;
     static console::WifiApp wifi_setup(&settings);
     static console::UpdateApp updater(&settings);
     static console::CalibrateApp calibrate(&settings);
     settings.setScreens(&wifi_setup, &updater, &calibrate);
-    static const console::App builtin[] = {
-        {"breakout", "BREAKOUT", wc::rgb(0xff, 0xd2, 0x3f), console::icons::breakout, &breakout},
-        {"maze", "MARBLE MAZE", wc::rgb(222, 178, 112), console::icons::maze, &maze},
-        {"racer", "GRAND PRIX", wc::rgb(255, 70, 70), console::icons::racer, &racer},
-        {"jump", "SKY JUMP", wc::rgb(255, 190, 50), console::icons::jump, &jump},
-        {"tiltatris", "TILT-A-TRIS", wc::rgb(80, 220, 240), console::icons::tiltatris, &tiltatris},
-        {"star", "SLEEPY STAR", wc::rgb(255, 217, 61), console::icons::star, &star},
-        {"pindrop", "PIN DROP", wc::rgb(228, 62, 96), console::icons::pindrop, &pindrop},
-        {"clock", "CLOCK", wc::rgb(214, 170, 60), console::icons::clock, &clock_app},
-    };
-    constexpr int kBuiltin = sizeof(builtin) / sizeof(builtin[0]);
-
-    // Installed packages go on the end of the carousel, before Settings. Only their headers
-    // are read here - names and colours, a few hundred bytes each. No game's code is
-    // touched until its icon is tapped.
-    static console::App apps[kBuiltin + LOADER_MAX_GAMES + 1];
-    for (int i = 0; i < kBuiltin; i++) apps[i] = builtin[i];
+    // Every game is a package now, so the table starts empty and the firmware's own two
+    // apps go on the end. Only headers and icons are read here - no game's code is touched
+    // until its icon is tapped.
+    static console::App apps[LOADER_MAX_GAMES + 2];
     s_apps = apps;
-    s_builtin_count = kBuiltin;
+    s_clock_app = {"clock", "CLOCK", wc::rgb(214, 170, 60), console::icons::clock, &clock_app};
     s_settings_app = {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings};
 
-    s_installed_count = loader_scan(s_installed, LOADER_MAX_GAMES);
+    {
+        const GamesScan scan;
+        s_installed_count = scan.count;
+        if (scan.count) std::memcpy(s_installed, scan.found, sizeof(s_installed[0]) * scan.count);
+    }
     for (int i = 0; i < s_installed_count; i++) {
         s_packaged[i] = new tat::PackagedGame(s_installed[i]);
         ESP_LOGI(TAG, "carousel: %s (installed)", s_installed[i].name);
@@ -450,16 +473,6 @@ extern "C" void app_main(void)
     // the part of the table the launcher rewrites.
     link_set_list_hook([](link_game_t *out, int max) -> int {
         int n = 0;
-        for (int i = 0; i < s_builtin_count && n < max; i++) {
-            link_game_t &g = out[n++];
-            memset(&g, 0, sizeof(g));
-            snprintf(g.id, sizeof(g.id), "%s", s_apps[i].id);
-            snprintf(g.name, sizeof(g.name), "%s", s_apps[i].name);
-            g.accent = s_apps[i].accent;
-            // A built-in can only be hidden, never removed, so it says what it is and
-            // reports no size of its own.
-            g.flags = LINK_GAME_BUILTIN | (console::appHidden(s_apps[i].id) ? LINK_GAME_HIDDEN : 0);
-        }
         const GamesScan scan;
         const loader_entry_t *found = scan.found;
         for (int i = 0; i < scan.count && n < max; i++) {
@@ -467,13 +480,42 @@ extern "C" void app_main(void)
             memset(&g, 0, sizeof(g));
             snprintf(g.id, sizeof(g.id), "%s", found[i].id);
             snprintf(g.name, sizeof(g.name), "%s", found[i].name);
-            g.accent = wc::rgb(found[i].accent_r, found[i].accent_g, found[i].accent_b);
+            g.accent = wireColor(found[i].accent_r, found[i].accent_g, found[i].accent_b);
             g.flags = console::appHidden(found[i].id) ? LINK_GAME_HIDDEN : 0;
             g.bytes = found[i].size;
         }
+        // The clock is part of the firmware: it can be hidden, never removed, so it says
+        // what it is and reports no size of its own.
+        if (n < max) {
+            link_game_t &g = out[n++];
+            memset(&g, 0, sizeof(g));
+            snprintf(g.id, sizeof(g.id), "%s", s_clock_app.id);
+            snprintf(g.name, sizeof(g.name), "%s", s_clock_app.name);
+            g.accent = wireColor(214, 170, 60);
+            g.flags = LINK_GAME_BUILTIN | (console::appHidden(s_clock_app.id) ? LINK_GAME_HIDDEN : 0);
+        }
         return n;
     });
+    // A game's icon is the one it shipped; the clock's is the firmware's. The copy is so
+    // the link can take its time sending it while the home screen rebuilds the table.
     link_set_icon_hook([](const char *id, const uint8_t **png, size_t *len) -> bool {
+        static uint8_t *copy;
+        loader_free(copy);
+        copy = nullptr;
+        xSemaphoreTake(s_table_lock, portMAX_DELAY);
+        for (int i = 0; i < s_installed_count && !copy; i++) {
+            if (std::strcmp(s_installed[i].id, id) != 0 || !s_icon[i]) continue;
+            copy = static_cast<uint8_t *>(heap_caps_malloc(s_icon_len[i], MALLOC_CAP_SPIRAM));
+            if (copy) {
+                std::memcpy(copy, s_icon[i], s_icon_len[i]);
+                *len = s_icon_len[i];
+            }
+        }
+        xSemaphoreGive(s_table_lock);
+        if (copy) {
+            *png = copy;
+            return true;
+        }
         return storage_builtin_icon(id, png, len);
     });
     link_set_fs_root(STORAGE_ROOT);

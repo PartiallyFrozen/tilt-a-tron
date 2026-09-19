@@ -702,7 +702,7 @@ public partial class MainWindow : Window
         return card;
     }
 
-    /// <summary>The watch speaks RGB565 in the panel's byte order.</summary>
+    /// <summary>The link sends colours as plain RGB565.</summary>
     static Color Rgb565(ushort c) =>
         Color.FromRgb((byte)((c >> 11) << 3), (byte)(((c >> 5) & 0x3F) << 2), (byte)((c & 0x1F) << 3));
 }

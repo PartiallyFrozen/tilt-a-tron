@@ -1,13 +1,13 @@
 {
-  "id": "starfall",
-  "name": "STARFALL",
+  "id": "jump",
+  "name": "SKY JUMP",
   "author": "Tilt-a-tron",
-  "version": 2,
+  "version": 1,
   "api_major": 1,
   "api_minor": 3,
   "accent": [
-    120,
-    240,
-    255
+    255,
+    190,
+    50
   ]
 }

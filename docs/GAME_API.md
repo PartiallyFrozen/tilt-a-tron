@@ -52,10 +52,28 @@ offset  size  field
 24      16    id           "skyjump" — lowercase [a-z0-9_]; a game's save namespace
 40      24    name         "SKY JUMP" — what the launcher and the app show
 64      24    author       shown in the app; packages get shared, so credit travels with them
-88      2     accent       RGB565
-90      2     section_count
-92      ...   sections[], 16 bytes each: type u32, offset u32, size u32, crc32 u32
+88      3     accent       red, green, blue - plain bytes
+91      1     reserved
+92      2     section_count
+94      2     reserved
+96      ...   sections[], 16 bytes each: type u32, offset u32, size u32, crc32 u32
 ```
+
+**Every game has an `ICON` section.** `tools/mktat.py` will not pack a game without an
+`icon.png` beside its `game.json`. It was optional once, and the result was a home screen
+and a library full of identical blank cartridges. The icon is a PNG, 210 x 210 drawn in a
+circle (232 x 232 is the most the launcher will decode), and at most 4096 bytes - the watch
+sends it to the manager app in a single link frame. `tools/make_icons.py` draws the
+firmware's own on a 52 x 52 grid scaled up 4x, which is a good way to stay under the limit.
+
+**No game is part of the firmware.** The nine a new watch comes with live in `games/<id>/`
+like anyone else's, are built by the same `tools/mktat.py`, and are installed and removed
+the same way. The firmware build packs them (`components/factory`) and carries a factory
+copy of each, which it puts in place the first time it starts, or when it finds the games
+folder empty - storage can be wiped, and a watch with nothing on it is a poor thing to
+hand someone. A game its owner removed stays removed. Only the clock and Settings are
+compiled in: the clock is the watch itself, and needs the real-time clock, time zones and
+network time, none of which a game is given.
 
 | Section | Used by | Meaning |
 |---|---|---|

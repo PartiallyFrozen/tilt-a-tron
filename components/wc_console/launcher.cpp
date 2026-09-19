@@ -29,7 +29,11 @@ void Launcher::buildIcons()
     const int size = 2 * ICON_R;
     for (int i = 0; i < n_; i++) {
         Image img;
-        if (Theme::builtinIcon(apps_[i].id, img)) {
+        // A package's own icon first, then the firmware's for the apps that are part of
+        // it, and only then the one drawn in code - which for a package is the blank
+        // cartridge, and means its icon is missing or will not decode.
+        if (Theme::iconFromPng(apps_[i].icon_png, apps_[i].icon_len, apps_[i].id, img)
+            || (!apps_[i].packaged && Theme::builtinIcon(apps_[i].id, img))) {
             builtin_icons_.push_back(img);
             continue;
         }
@@ -107,8 +111,12 @@ void Launcher::enter(Engine &e)
 
 const Image &Launcher::iconFor(int app) const
 {
-    if (!apps_[app].packaged)
-        if (const Image *themed = Theme::get().icon(apps_[app].id, apps_[app].name)) return *themed;
+    // A theme dresses any app whose id it names. Matching on the title as well is kept
+    // for the apps that are part of the firmware: a title is whatever a package says it
+    // is, and "BREAKOUT" from a stranger should not pick up the theme's Breakout icon. An
+    // id cannot be borrowed that way - the watch only ever holds one game per id.
+    const char *title = apps_[app].packaged ? "" : apps_[app].name;
+    if (const Image *themed = Theme::get().icon(apps_[app].id, title)) return *themed;
     return builtin_icons_[app];
 }
 

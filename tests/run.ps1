@@ -17,7 +17,8 @@ $env:LIB = "$msvc\lib\x64;$sdkLib\ucrt\x64;$sdkLib\um\x64"
 
 New-Item -ItemType Directory -Force out | Out-Null
 $inc = @("/I.", "/Istubs", "/I..\components\link\include", "/I..\components\storage\include",
-         "/I..\components\net\include", "/I..\components\engine\include")
+         "/I..\components\net\include", "/I..\components\engine\include",
+         "/I..\components\tat_api\include")
 
 $fail = 0
 Write-Host "building..."

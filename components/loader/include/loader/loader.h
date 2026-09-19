@@ -38,6 +38,16 @@ typedef struct {
 // were found, which is also how many entries were filled in.
 int loader_scan(loader_entry_t *out, int max);
 
+// The same facts about a package that is already in memory - a factory copy carried in the
+// firmware, say. `path` is left empty. False if it is not a sound package.
+bool loader_inspect(const uint8_t *buf, size_t len, loader_entry_t *out);
+
+// A package's own icon: the PNG from its ICON section, copied out so the file can be
+// closed. NULL if it has none or is not a sound package. Give it back with loader_free().
+// Like the scan, this never touches the game's code.
+uint8_t *loader_read_icon(const char *path, size_t *len);
+void loader_free(void *p);
+
 // The folder installed packages live in, under the storage root. Sending a .tat here is
 // what installing IS - there is no separate install command, and deleting the file is
 // the uninstall.

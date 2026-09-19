@@ -1,9 +1,11 @@
 """Pixel-art app icons for the carousel, built from the games' own sprite sheets.
 
 Each icon is drawn on a 52 x 52 logical grid, scaled 4x to 208 px and set in a
-210 px circle with a dark rim, so it matches the chunky look of the games. The
-PNGs go to themes/Default/icons/ and are embedded in the firmware as the
-built-in icons.
+210 px circle with a dark rim, so it matches the chunky look of the games.
+
+A game's icon goes beside its source, as games/<id>/icon.png, and travels inside its
+package: tools/mktat.py will not pack a game without one. The two apps that are part of
+the firmware, the clock and Settings, keep theirs in themes/Default/icons/.
 
     python tools/make_icons.py
 """
@@ -14,8 +16,9 @@ import random
 from PIL import Image
 
 HERE = os.path.dirname(__file__)
-ASSETS = os.path.join(HERE, "..", "components", "games", "assets")
-OUT = os.path.join(HERE, "..", "themes", "Default", "icons")
+GAMES = os.path.join(HERE, "..", "games")
+FIRMWARE_ICONS = os.path.join(HERE, "..", "themes", "Default", "icons")
+FIRMWARE_APPS = ("clock", "settings")
 L = 52          # logical pixels across
 SCALE = 4
 ICON = 210
@@ -23,7 +26,7 @@ ICON = 210
 
 def sheet(game, name, fw=None, fh=None, frame=0):
     """One frame of a sprite sheet as RGBA."""
-    img = Image.open(os.path.join(ASSETS, game, name + ".png")).convert("RGBA")
+    img = Image.open(os.path.join(GAMES, game, "assets", name + ".png")).convert("RGBA")
     if fw is None:
         return img
     cols = img.width // fw
@@ -102,8 +105,11 @@ def finish(img, name):
     big = img.resize((L * SCALE, L * SCALE), Image.NEAREST)
     out = Image.new("RGBA", (ICON, ICON), (0, 0, 0, 0))
     out.paste(big, ((ICON - L * SCALE) // 2, (ICON - L * SCALE) // 2), big)
-    os.makedirs(OUT, exist_ok=True)
-    path = os.path.join(OUT, name + ".png")
+    if name in FIRMWARE_APPS:
+        path = os.path.join(FIRMWARE_ICONS, name + ".png")
+    else:
+        path = os.path.join(GAMES, name, "icon.png")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     out.save(path, optimize=True)
     print(f"{name}.png {os.path.getsize(path)} bytes")
 
@@ -386,7 +392,84 @@ def pindrop_icon():
     finish(img, "pindrop")
 
 
+def starfall_icon():
+    """Looking down the shaft: rings closing in, each with its one gap, and the ship at the rim."""
+    img = canvas((6, 8, 20))
+    c = L / 2
+    px = img.load()
+    rnd = random.Random(7)
+    for _ in range(26):
+        x, y = rnd.randrange(L), rnd.randrange(L)
+        px[x, y] = rnd.choice(((90, 100, 140), (150, 160, 200), (60, 70, 110))) + (255,)
+    # Far rings are small, dim and thin; the near one is wide and bright. Each has a gap,
+    # and the gaps do not line up - which is the whole game.
+    rings = ((6, 8, (44, 60, 110), 200), (11, 14, (60, 96, 170), 320), (17, 21, (90, 170, 235), 95))
+    for r0, r1, col, gap_at in rings:
+        for yy in range(L):
+            for xx in range(L):
+                dx, dy = xx + 0.5 - c, yy + 0.5 - c
+                d = math.hypot(dx, dy)
+                if not (r0 <= d < r1):
+                    continue
+                a = math.degrees(math.atan2(dy, dx)) % 360
+                off = (a - gap_at + 180) % 360 - 180
+                if abs(off) < 26:
+                    continue
+                px[xx, yy] = col + (255,)
+    disc(img, c, c, 2, (255, 240, 200))
+    # The ship, low on the rim, nose toward the centre, with its shot already away.
+    ship, ship_hi, flame = (127, 232, 255), (240, 252, 255), (255, 150, 60)
+    rect(img, 25, 40, 2, 2, ship_hi)
+    rect(img, 24, 42, 4, 3, ship)
+    rect(img, 22, 44, 8, 2, ship)
+    rect(img, 25, 46, 2, 2, flame)
+    rect(img, 25, 33, 2, 4, (255, 230, 120))
+    # A mine riding between the rings.
+    disc(img, 38, 18, 2.5, (255, 84, 92))
+    px[37, 17] = (255, 200, 204, 255)
+    finish(img, "starfall")
+
+
+def skatergirlz_icon():
+    """Sunset rooftops, and her mid-ollie over the gap between two of them."""
+    img = canvas((44, 32, 74))
+    vgradient(img, (44, 32, 74), (242, 146, 110))
+    disc(img, 37, 25, 8, (255, 214, 120))
+    # Two rows of skyline, far then near.
+    far, near = (76, 58, 100), (52, 40, 74)
+    for x, w, h in ((0, 9, 14), (9, 7, 20), (16, 10, 12), (26, 8, 17), (34, 9, 11), (43, 9, 19)):
+        rect(img, x, 40 - h, w, h, far)
+    for x, w, h in ((0, 12, 8), (12, 9, 12), (30, 10, 10), (40, 12, 7)):
+        rect(img, x, 40 - h, w, h, near)
+    # The street, with the gap she is over.
+    street, street2, kerb, void = (62, 62, 72), (48, 48, 58), (150, 150, 164), (14, 12, 22)
+    rect(img, 0, 40, L, 12, street2)
+    rect(img, 0, 40, 20, 3, street)
+    rect(img, 34, 40, 18, 3, street)
+    rect(img, 0, 39, 20, 1, kerb)
+    rect(img, 34, 39, 18, 1, kerb)
+    rect(img, 20, 39, 14, 13, void)
+    # Her: blonde, pink shirt, jeans, board tilted nose-up under her feet.
+    skin, hair, shirt, jeans = (246, 200, 164), (255, 206, 70), (244, 72, 148), (66, 104, 190)
+    board, wheel = (90, 222, 216), (250, 250, 255)
+    rect(img, 24, 17, 5, 4, skin)
+    rect(img, 23, 15, 6, 3, hair)
+    rect(img, 20, 17, 4, 5, hair)      # hair streaming back
+    rect(img, 18, 19, 3, 2, hair)
+    rect(img, 23, 21, 6, 6, shirt)
+    rect(img, 29, 22, 3, 2, skin)      # arm out for balance
+    rect(img, 23, 27, 3, 4, jeans)
+    rect(img, 27, 27, 3, 3, jeans)
+    for i in range(10):                # the deck, rising toward the nose
+        rect(img, 20 + i, 32 - i // 3, 2, 2, board)
+    rect(img, 21, 34, 2, 2, wheel)
+    rect(img, 28, 32, 2, 2, wheel)
+    finish(img, "skatergirlz")
+
+
 def main():
+    starfall_icon()
+    skatergirlz_icon()
     jump_icon()
     racer_icon()
     maze_icon()

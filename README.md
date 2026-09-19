@@ -205,8 +205,8 @@ millisecond, so games repaint every frame and run at the display's 60 Hz limit;
 `presentRotated()` rotates the canvas on the way out (Grand Prix). Palette entries
 can change per frame for free (sky gradients, tints).
 
-Sprites are plain PNGs under `components/games/assets/<game>/`, embedded by the
-`games` CMakeLists and loaded with `Canvas::loadSheet(sheet, png, len, fw, fh)`
+Sprites are plain PNGs under `games/<game>/assets/`, packed into the game's `.tat` by
+`tools/mktat.py` and loaded with `Canvas::loadSheet(sheet, png, len, fw, fh)`
 (frames side by side, alpha < 128 = transparent). Edit them in any image editor;
 `tools/make_sprites.py` regenerates the originals from letter grids and
 `tools/preview_sheets.py <game>` tiles them for a look. `Polar` (per-pixel

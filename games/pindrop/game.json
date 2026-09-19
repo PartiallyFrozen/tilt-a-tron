@@ -1,13 +1,13 @@
 {
-  "id": "starfall",
-  "name": "STARFALL",
+  "id": "pindrop",
+  "name": "PIN DROP",
   "author": "Tilt-a-tron",
-  "version": 2,
+  "version": 1,
   "api_major": 1,
   "api_minor": 3,
   "accent": [
-    120,
-    240,
-    255
+    228,
+    62,
+    96
   ]
 }

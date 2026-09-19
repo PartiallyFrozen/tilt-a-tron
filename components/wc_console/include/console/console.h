@@ -21,6 +21,9 @@ struct App {
     // the apps the theme was drawn for, and a game from a stranger picking one up means
     // the home screen can show it as something it is not.
     bool packaged = false;
+    // A package's own icon, as the PNG it shipped. Owned by whoever built the table.
+    const uint8_t *icon_png = nullptr;
+    size_t icon_len = 0;
 };
 
 // ---- brightness (persisted)

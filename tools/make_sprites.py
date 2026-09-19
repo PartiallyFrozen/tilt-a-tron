@@ -1,6 +1,6 @@
 """Generates the pixel-art sprite sheets for the games as PNG files.
 
-The PNGs under components/games/assets/ are what the firmware embeds. They can be
+The PNGs under games/<game>/assets/ are what each game's package carries. They can be
 edited in any image editor (keep the frame size and count); this script just
 gives them a first version from the letter grids below.
 
@@ -10,7 +10,7 @@ import os
 
 from PIL import Image
 
-ROOT = os.path.join(os.path.dirname(__file__), "..", "components", "games", "assets")
+ROOT = os.path.join(os.path.dirname(__file__), "..", "games")
 
 # Shared palette: one letter per colour, '.' is transparent.
 PALETTE = {
@@ -353,7 +353,7 @@ def paint_bush(px, x0, w, h):
 
 
 def racer_sheets(root):
-    out = os.path.join(root, "racer")
+    out = os.path.join(root, "racer", "assets")
     os.makedirs(out, exist_ok=True)
     fw, fh = len(CAR[0]), len(CAR)
     img, px = new_rgba(fw, fh)
@@ -417,7 +417,7 @@ def paint_flag(px, w):
 
 
 def maze_sheets(root):
-    out = os.path.join(root, "maze")
+    out = os.path.join(root, "maze", "assets")
     os.makedirs(out, exist_ok=True)
     img, px = new_rgba(16, 16)
     paint_ball(px, 16)
@@ -448,7 +448,8 @@ def sheet(frames, path):
 
 
 def main():
-    jump = os.path.join(ROOT, "jump")
+    jump = os.path.join(ROOT, "jump", "assets")
+    os.makedirs(jump, exist_ok=True)
     sheet([HOPPER, HOPPER_BLINK, HOPPER_DEAD], os.path.join(jump, "hopper.png"))
     sheet([MONSTER, MONSTER_2], os.path.join(jump, "monster.png"))
     sheet([GRASS, ICE, STONE], os.path.join(jump, "ledges.png"))

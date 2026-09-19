@@ -8,7 +8,7 @@ import sys
 from PIL import Image
 
 game = sys.argv[1] if len(sys.argv) > 1 else "jump"
-root = os.path.join(os.path.dirname(__file__), "..", "components", "games", "assets", game)
+root = os.path.join(os.path.dirname(__file__), "..", "games", game, "assets")
 names = sorted(n for n in os.listdir(root) if n.endswith(".png"))
 imgs = [Image.open(os.path.join(root, n)).convert("RGBA") for n in names]
 W = sum(i.width for i in imgs) + 6 * (len(imgs) + 1)
