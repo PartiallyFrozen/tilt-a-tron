@@ -22,6 +22,7 @@
 #include "freertos/task.h"
 #include "games/clock.h"
 #include "tat/tat_host.h"
+#include "loader/loader.h"
 #include "net/net.h"
 #include "link/link.h"
 #include "nvs_flash.h"
@@ -183,6 +184,38 @@ extern "C" void app_main(void)
 
     // Themes and other files. Only the watch touches this filesystem; a computer sends
     // files over the USB link rather than being handed the whole drive.
+    // Installed game packages. Nothing is wired into the carousel yet - this proves the
+    // loader against real packages on real storage before anything depends on it.
+    //
+    // Deliberately NOT run at boot. A package comes from a stranger, and the first version
+    // of this ran during start-up: one bad package took the watch through three crashed
+    // boots into safe mode, where it could not even be asked what went wrong. Whatever
+    // loads a package must be reachable without the console having to survive it first,
+    // and when the carousel does load games it will be on the tap, not on the way up.
+    static auto probe_packages = [] {
+        static loader_entry_t found[LOADER_MAX_GAMES];
+        const int n = loader_scan(found, LOADER_MAX_GAMES);
+        if (n == 0) {
+            ESP_LOGI(TAG, "no installed packages in %s", loader_games_dir());
+            return;
+        }
+        for (int i = 0; i < n; i++) {
+            if (!found[i].runnable) {
+                ESP_LOGW(TAG, "%s needs API %u.%u; this console has %u.%u", found[i].name,
+                         found[i].api_major, found[i].api_minor, TAT_API_MAJOR, TAT_API_MINOR);
+                continue;
+            }
+            loader_game_t *g = loader_open(found[i].path);
+            if (!g) continue;
+            const tat_game_t *d = loader_descriptor(g);
+            int assets = 0;
+            loader_assets(g, &assets);
+            ESP_LOGW(TAG, "package runs: id=%s name=%s api=%u.%u assets=%d begin=%p", d->id, d->name,
+                     d->api_major, d->api_minor, assets, (void *)d->begin);
+            loader_close(g);
+        }
+    };
+
     console::crumb("storage");
     if (storage_init() != ESP_OK) ESP_LOGE(TAG, "storage unavailable, using the built-in look");
 
@@ -192,6 +225,7 @@ extern "C" void app_main(void)
     console::crumb("theme");
     console::Theme::get().loadActive();
     console::crumb("");
+
 
     // Wi-Fi only runs if the user switched it on in Settings.
     net_start();
@@ -276,6 +310,10 @@ extern "C" void app_main(void)
             ms = 80;
             std::sscanf(p + 5, ",%d", &ms);
             s_engine->injectButton(p[4] == 'a' ? wc::BTN_A : wc::BTN_B, ms);
+            any = true;
+        }
+        if (std::strstr(q, "probe=1")) {   // try every installed package and log what happened
+            probe_packages();
             any = true;
         }
         if ((p = std::strstr(q, "tilt="))) {

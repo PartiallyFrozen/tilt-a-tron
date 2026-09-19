@@ -82,8 +82,19 @@ def build_code(game_dir, work, verbose=False):
     objs = []
     for src in sources:
         obj = os.path.join(work, os.path.basename(src)[:-2] + ".o")
-        cmd = [gcc, "-c", "-std=gnu17", "-Os", "-mlongcalls",
-               "-ffunction-sections", "-fdata-sections",
+        # -fno-merge-constants keeps string literals out of .rodata.str1.1. That section is
+        # SHF_MERGE, and the addends ld writes for a merged section under --emit-relocs do
+        # not mean what they do everywhere else - they came out negative, pointing below
+        # the section, and every string in the game arrived as rubbish while every number
+        # beside it was perfect. Ordinary sections relocate the ordinary way.
+        # No -ffunction-sections here, deliberately. With one section per function, every
+        # function pointer in the game's descriptor came out of the link as ".text + 0":
+        # --emit-relocs does not fold an input section's offset within the output section
+        # into the addend, and with a section per function that offset is the whole answer.
+        # One .text per file keeps the addends meaning what they say. It costs a little
+        # size, since there is no --gc-sections to drop what is unused, and a game that is
+        # 19 KB does not care.
+        cmd = [gcc, "-c", "-std=gnu17", "-Os", "-mlongcalls", "-fno-merge-constants",
                "-I", os.path.join(ROOT, "components/tat_api/include"),
                "-o", obj, src]
         if verbose:
@@ -156,7 +167,12 @@ def build_package(game_dir, out, verbose=False):
 
     # Header, then the section table, then the payloads. Offsets are from the file start,
     # so the watch can check a section's CRC without having parsed anything before it.
-    head_len = 92 + 16 * len(sections)
+    # 96 bytes of header, then the section table. Getting this wrong by four silently
+    # shifts every section offset and makes total_size disagree with the file, which the
+    # watch rejects with no clue as to why - so it is spelled out rather than counted.
+    HEADER_BYTES = 8 + 4 + 4 + 1 + 1 + 2 + 2 + 2 + 16 + 24 + 24 + 4 + 2 + 2
+    assert HEADER_BYTES == 96, HEADER_BYTES
+    head_len = HEADER_BYTES + 16 * len(sections)
     blobs, table, off = [], b"", head_len
     for kind, payload, crc in sections:
         table += struct.pack("<4sIII", kind, off, len(payload), crc)
@@ -176,7 +192,8 @@ def build_package(game_dir, out, verbose=False):
     body += fixed(meta["id"], 16) + fixed(meta["name"], 24) + fixed(meta["author"], 24)
     body += struct.pack("<BBBB", *(list(meta.get("accent", [255, 255, 255])) + [0]))
     body += struct.pack("<H", len(sections)) + b"\0\0"
-    assert len(body) == head_len - 12 - len(table), len(body)
+    # Everything from `kind` to the end of the fixed header: offsets 16..95.
+    assert len(body) == HEADER_BYTES - 16, len(body)
 
     # header_crc32 covers everything after itself, so a truncated or shuffled file is
     # caught before a single byte of it is trusted.
