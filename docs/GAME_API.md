@@ -445,6 +445,38 @@ That leaves ordinary work: pack the linked image into the `CODE` section, copy i
 64 KB-aligned block, zero the bss, walk `.rela.text`, map it executable, and find `tat_game`
 in the symbol table.
 
+### 6.2 Done: an installed game runs
+
+PIN DROP, packaged with `tools/mktat.py`, sent to `Games/` over the USB link, picked up by
+the launcher and played from the icon. `components/loader` is the whole of it.
+
+Three things about `--emit-relocs` cost a day between them, and all three are in the packer
+with the reason written beside them:
+
+- **An addend is relative to the INPUT section.** An output section therefore only
+  relocates correctly when it begins with the input section its addends are counted from.
+  The literal pool has to sit in front of the code (`l32r` only reaches backwards), so with
+  both in one `.text` every function pointer was short by the size of the pool and landed
+  in the middle of another function. The pool gets its own output section now.
+- **A section per function makes that offset the whole answer**, so `-ffunction-sections`
+  turns every function pointer into `.text + 0`. Packages don't use it.
+- **Merged string sections get addends that are not section-relative at all** - they came
+  out negative. `-fno-merge-constants`, and the strings arrive intact.
+
+Two addresses, not one. The image is mapped twice: ordinarily, where it can be read and
+written a byte at a time, and again on the instruction bus where it executes. The
+instruction bus only does aligned 32-bit loads, so a pointer to a function carries the
+executable address and a pointer to a string the ordinary one - which is the symbol's
+section, not a guess. Literal pools are the exception that needs no thought: they live in
+`.text` and `l32r` is an aligned 32-bit load.
+
+And one that was not a bug but a design mistake. The first version loaded packages during
+start-up, and one bad file took the watch through three crashed boots into safe mode, where
+it could not even be asked what had happened. A package comes from a stranger: nothing that
+loads one may sit between the console and being able to boot. `tat::PackagedGame` opens the
+package in `begin()`, which the engine calls the first time an app is shown - so a package
+that will not load costs a message on screen and a tap to go back.
+
 **Themes and watch faces don't depend on any of this**, so the app and the sharing story can
 ship without waiting for it.
 
