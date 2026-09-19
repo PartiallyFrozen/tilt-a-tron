@@ -445,6 +445,12 @@ extern "C" void app_main(void)
             s_engine->sleep();
             any = true;
         }
+        // And back again. Only a nap can hear this - on USB power the watch keeps running
+        // with its screen off; real sleep, on battery, takes Wi-Fi down with it.
+        if (std::strstr(q, "wake=1")) {
+            s_engine->wake();
+            any = true;
+        }
         if (std::strstr(q, "probe=1")) {   // try every installed package and log what happened
             probe_packages();
             any = true;

@@ -67,7 +67,12 @@ public:
     // on wake the active app gets enter() again. If still asleep after the auto-off
     // time, the console powers down (deep sleep; PWR cold-boots). Hooks let the
     // console pause and resume things the engine doesn't own (Wi-Fi).
+    //
+    // On USB power it naps instead: screen and motion sensor off, everything else left
+    // running, until PWR - or wake() - or the cable is pulled, when it goes on to sleep
+    // properly. See doSleep() for why.
     void sleep() { sleep_requested_ = true; }
+    void wake() { wake_requested_ = true; }   // ends a nap; safe from any task
     // Auto off: also powers down after this long with no input and no app keeping
     // it awake (the screen dims for the last 10 s as a warning). 0 = never.
     void setAutoOffSeconds(int seconds) { auto_off_s_ = seconds; }
@@ -134,6 +139,7 @@ private:
     Game *pending_ = nullptr;
     volatile bool redraw_req_ = false;
     bool sleep_requested_ = false;
+    volatile bool wake_requested_ = false;
     int auto_off_s_ = 120;
     int64_t last_activity_us_ = 0;
     bool dimmed_ = false;

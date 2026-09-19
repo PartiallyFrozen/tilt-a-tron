@@ -85,7 +85,6 @@ void Engine::irisOut()
 void Engine::quiesce()
 {
     if (game_) game_->leave(*this);   // enter() runs again on wake
-    if (before_sleep_) before_sleep_();
     input_.pause(true);
     display_sleep(true);
     imu_sleep(true);
@@ -119,20 +118,47 @@ void Engine::doSleep()
     irisOut();
     quiesce();
 
-    // Stage 1: light sleep. RAM is kept, so a PWR press resumes instantly.
-    gpio_wakeup_enable(PIN_KEY_PWR, GPIO_INTR_HIGH_LEVEL);
-    esp_sleep_enable_gpio_wakeup();
-    if (auto_off_s_ > 0) esp_sleep_enable_timer_wakeup(uint64_t(auto_off_s_) * 1000000ULL);
-    esp_light_sleep_start();
-    const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-    gpio_wakeup_disable(PIN_KEY_PWR);
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    // On USB power, nap rather than sleep. Light sleep does not hold with a cable in: the
+    // chip comes straight back out (measured: "sleep", then "wake" 354 ms later), so the
+    // screen of a watch left on its charger overnight never went dark - on an AMOLED, the
+    // one place that matters. It would also drop the USB port under the manager app, and
+    // there is no battery to save. So: the panel and the motion sensor go off, which is
+    // everything the eye and the panel care about, and the loop below waits for PWR.
+    // Pull the cable and it carries on into the real thing.
+    wake_requested_ = false;
+    bool napped = false;
+    while (pmu_usb_power() && !wake_requested_ && !(buttons_read() & ::BTN_PWR)) {
+        if (!napped) ESP_LOGI(TAG, "on USB power: screen off, everything else left running");
+        napped = true;
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    const bool woken_from_nap = napped && (wake_requested_ || (buttons_read() & ::BTN_PWR));
+    wake_requested_ = false;
 
-    if (cause == ESP_SLEEP_WAKEUP_TIMER) {
-        // Stage 2: nobody came back, turn "off".
-        ESP_LOGI(TAG, "auto off after %d s asleep", auto_off_s_);
-        powerOff();
+    bool suspended = false;
+    if (!woken_from_nap) {
+        if (before_sleep_) before_sleep_();
+        suspended = true;
+        // Stage 1: light sleep. RAM is kept, so a PWR press resumes instantly.
+        gpio_wakeup_enable(PIN_KEY_PWR, GPIO_INTR_HIGH_LEVEL);
+        esp_sleep_enable_gpio_wakeup();
+        if (auto_off_s_ > 0) esp_sleep_enable_timer_wakeup(uint64_t(auto_off_s_) * 1000000ULL);
+        const int64_t t0 = esp_timer_get_time();
+        const esp_err_t slept = esp_light_sleep_start();
+        const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+        gpio_wakeup_disable(PIN_KEY_PWR);
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+        // Said every time, because "it woke up by itself" cannot be looked into afterwards
+        // without knowing whether the chip refused to sleep or something woke it.
+        ESP_LOGI(TAG, "light sleep: %s, woken by cause %d after %lld ms", esp_err_to_name(slept), int(cause),
+                 (long long)((esp_timer_get_time() - t0) / 1000));
+
+        if (cause == ESP_SLEEP_WAKEUP_TIMER) {
+            // Stage 2: nobody came back, turn "off".
+            ESP_LOGI(TAG, "auto off after %d s asleep", auto_off_s_);
+            powerOff();
+        }
     }
     ESP_LOGI(TAG, "wake");
 
@@ -144,7 +170,7 @@ void Engine::doSleep()
     vTaskDelay(pdMS_TO_TICKS(20));
     input_.snapshot(input_state_);
     input_state_ = InputState{};
-    if (after_wake_) after_wake_();
+    if (suspended && after_wake_) after_wake_();
 
     gfx_.clear(colors::black);
     gfx_.markAllDirty();
@@ -244,6 +270,7 @@ void Engine::loop()
                 ESP_LOGI(TAG, "auto off after %d s idle", auto_off_s_);
                 irisOut();
                 quiesce();
+                if (before_sleep_) before_sleep_();
                 powerOff();
             }
         } else if (dimmed_) {
