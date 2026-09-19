@@ -346,6 +346,14 @@ extern "C" void app_main(void)
             s_engine->injectButton(p[4] == 'a' ? wc::BTN_A : wc::BTN_B, ms);
             any = true;
         }
+        // Put it to sleep from here. There is no other way to do it remotely: the sleep
+        // gesture is a double-click of PWR, injected buttons do not produce double-clicks,
+        // and auto-off never fires while the watch is on USB power. Leaving an AMOLED lit
+        // all night because the only way to darken it is to pick it up is a poor trade.
+        if (std::strstr(q, "sleep=1")) {
+            s_engine->sleep();
+            any = true;
+        }
         if (std::strstr(q, "probe=1")) {   // try every installed package and log what happened
             probe_packages();
             any = true;
