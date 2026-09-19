@@ -1,6 +1,8 @@
 idf_component_register(
-    SRCS "breakout.cpp" "maze.cpp" "racer.cpp" "clock.cpp" "star.cpp"
+    SRCS "clock.cpp"
          "pindrop/pindrop.c" "jump/jump.c" "jump/jump_builtin.c" "tiltatris/tiltatris.c"
+         "racer/racer.c" "racer/racer_builtin.c" "maze/maze.c" "maze/maze_builtin.c" "star/star.c"
+         "breakout/breakout.c"
     INCLUDE_DIRS "include"
     REQUIRES engine wc_console audio esp_hw_support nvs_flash esp_timer net tat_api
     EMBED_FILES
@@ -27,3 +29,9 @@ set_source_files_properties("pindrop/pindrop.c" PROPERTIES COMPILE_DEFINITIONS "
 set_source_files_properties("jump/jump.c" "jump/jump_builtin.c"
     PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_jump;tat_assets=tat_assets_jump")
 set_source_files_properties("tiltatris/tiltatris.c" PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_tiltatris")
+set_source_files_properties("racer/racer.c" "racer/racer_builtin.c"
+    PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_racer;tat_assets=tat_assets_racer")
+set_source_files_properties("maze/maze.c" "maze/maze_builtin.c"
+    PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_maze;tat_assets=tat_assets_maze")
+set_source_files_properties("star/star.c" PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_star")
+set_source_files_properties("breakout/breakout.c" PROPERTIES COMPILE_DEFINITIONS "tat_game=tat_game_breakout")

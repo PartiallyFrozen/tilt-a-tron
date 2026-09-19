@@ -1,4 +1,4 @@
-#include "board/board.h"
+﻿#include "board/board.h"
 #include "bench_game.h"
 #include "console/console.h"
 #include "console/icons.h"
@@ -20,11 +20,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "games/breakout.h"
-#include "games/maze.h"
-#include "games/racer.h"
 #include "games/clock.h"
-#include "games/star.h"
 #include "tat/tat_host.h"
 #include "net/net.h"
 #include "link/link.h"
@@ -38,6 +34,10 @@ static const char *TAG = "main";
 extern "C" const tat_game_t tat_game_pindrop;
 extern "C" const tat_game_t tat_game_jump;
 extern "C" const tat_game_t tat_game_tiltatris;
+extern "C" const tat_game_t tat_game_racer;
+extern "C" const tat_game_t tat_game_maze;
+extern "C" const tat_game_t tat_game_star;
+extern "C" const tat_game_t tat_game_breakout;
 
 static wc::Engine *s_engine;
 static const console::App *s_apps;
@@ -197,13 +197,13 @@ extern "C" void app_main(void)
     net_start();
 
     // The app carousel.
-    static games::Breakout breakout;
-    static games::Maze maze;
-    static games::Racer racer;
     static games::Clock clock_app;
-    static games::Star star;
-    // Games written against tat_api.h alone. Compiled in for now, but they talk to the
-    // console only through the table, which is what a loaded package will do.
+    // Every game now talks to the console only through the table. Compiled in for the
+    // moment, but nothing they do depends on that - which is the whole point.
+    static tat::HostedGame breakout(tat_game_breakout);
+    static tat::HostedGame maze(tat_game_maze);
+    static tat::HostedGame star(tat_game_star);
+    static tat::HostedGame racer(tat_game_racer);
     static tat::HostedGame jump(tat_game_jump);
     static tat::HostedGame tiltatris(tat_game_tiltatris);
     static tat::HostedGame pindrop(tat_game_pindrop);

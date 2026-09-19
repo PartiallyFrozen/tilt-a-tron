@@ -271,6 +271,8 @@ const uint16_t *api_polar_radii() { return polar_ready() ? wc::Polar::radii() : 
 
 int api_text_width(const char *s, int scale, bool bold) { return wc::Gfx::textWidth(s, scale, bold); }
 
+void api_canvas_set_palette(tat_canvas_t *c, const tat_color_t *pal, int n) { cv(c)->setPalette(pal, n); }
+
 const uint8_t *api_sheet_pixels(tat_sheet_t *x) { return sh(x)->px; }
 
 void api_sheet_info(tat_sheet_t *x, int *w, int *h, int *fw, int *fh)
@@ -311,6 +313,7 @@ tat_api_t s_api = {
     api_polar_angles, api_polar_radii,
     api_text_width,
     api_sheet_pixels, api_sheet_info,
+    api_canvas_set_palette,
 };
 
 // The input the game sees is a copy: it must not be able to reach into the engine's.

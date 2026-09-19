@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 #define TAT_API_MAJOR 1
-#define TAT_API_MINOR 2
+#define TAT_API_MINOR 3
 
 // ---------------------------------------------------------------- basics
 
@@ -228,6 +228,16 @@ typedef struct tat_api {
     // than shipping six PNGs of the same car.
     const uint8_t *(*sheet_pixels)(tat_sheet_t *s);
     void (*sheet_info)(tat_sheet_t *s, int *w, int *h, int *fw, int *fh);
+
+    // ---- added in 1.3
+    // Install a whole palette at once, so the game owns its indices outright. canvas_color
+    // hands out whatever is next and canvas_reserve a block starting wherever it happens to
+    // start, which is fine for a game that just wants colours - but a game whose sprite
+    // sheets are drawn against known index numbers, and which compares pixels against them
+    // to recolour a sprite, needs the indices to be the ones it chose. Index 0 stays black
+    // and transparent whatever is passed for it. Call it before loading any sheet, so the
+    // sheet's colours land on these entries instead of new ones.
+    void (*canvas_set_palette)(tat_canvas_t *c, const tat_color_t *pal, int n);
 } tat_api_t;
 
 // ---------------------------------------------------------------- what a game exports
