@@ -24,12 +24,16 @@ public sealed record TatPackage(
 
     public bool IsGame => Kind == KindGame;
 
+    /// <summary>The game's own icon as a PNG, if it packed one.</summary>
+    public byte[]? IconPng { get; init; }
+
     /// <summary>The same rule the console applies: same major, and a minor it can satisfy.</summary>
     public bool RunsOn(int major, int minor) => ApiMajor == major && ApiMinor <= minor;
 
-    public static TatPackage Read(string path)
+    public static TatPackage Read(string path) => Parse(File.ReadAllBytes(path));
+
+    public static TatPackage Parse(byte[] bytes)
     {
-        var bytes = File.ReadAllBytes(path);
         if (bytes.Length < HeaderBytes) throw new InvalidDataException("too short to be a package");
 
         var magic = Encoding.ASCII.GetString(bytes, 0, 6);
@@ -59,10 +63,33 @@ public sealed record TatPackage(
         if (Crc32(span.Slice(12, covered)) != headerCrc) throw new InvalidDataException("it is damaged");
 
         if (id.Length == 0 || name.Length == 0) throw new InvalidDataException("it has no name");
+        // The id becomes a file name, on the watch and in the library. The packer only ever
+        // writes lower-case letters, digits and underscores; anything else was made by hand,
+        // and "../" in a file name is not something to find out about afterwards.
+        foreach (var ch in id)
+            if (!(ch is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '_'))
+                throw new InvalidDataException("its id is not a plain name");
         if (kind != KindGame) throw new InvalidDataException("it is not a game");
 
+        // Every section carries its own CRC. Checking them all costs nothing at these sizes
+        // and means a file that was damaged on the watch, or on its way back from one, is
+        // never quietly filed away as a good copy.
+        byte[]? icon = null;
+        for (var i = 0; i < sections; i++)
+        {
+            var entry = span.Slice(HeaderBytes + i * 16, 16);
+            var tag = Encoding.ASCII.GetString(entry[..4]);
+            var off = BinaryPrimitives.ReadUInt32LittleEndian(entry[4..]);
+            var len = BinaryPrimitives.ReadUInt32LittleEndian(entry[8..]);
+            var crc = BinaryPrimitives.ReadUInt32LittleEndian(entry[12..]);
+            if ((ulong)off + len > (ulong)bytes.Length) throw new InvalidDataException("a section runs past the end");
+            var payload = span.Slice((int)off, (int)len);
+            if (Crc32(payload) != crc) throw new InvalidDataException("it is damaged");
+            if (tag == "ICON" && icon is null) icon = payload.ToArray();
+        }
+
         return new TatPackage(id, name, author, version, apiMajor, apiMinor,
-                              bytes[88], bytes[89], bytes[90], kind, bytes.Length);
+                              bytes[88], bytes[89], bytes[90], kind, bytes.Length) { IconPng = icon };
     }
 
     static string Str(ReadOnlySpan<byte> fixedField)

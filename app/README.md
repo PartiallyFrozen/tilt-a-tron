@@ -1,11 +1,35 @@
 # Tilt-a-tron manager
 
-A desktop app that talks to a watch over USB: see what is on it, send themes, back
-everything up. It speaks the protocol in `components/link` (documented in
+A desktop app that talks to a watch over USB: see what is on it, move games between it
+and a library on your computer, send themes, back everything up. It speaks the protocol in `components/link` (documented in
 [docs/GAME_API.md](../docs/GAME_API.md) section 7), the same one `tools/tatlink.py` uses.
 
 Nothing has to be switched on at the watch's end. Plug it in with a cable that carries
 data, make sure it is awake, and the app finds it by trying each serial port in turn.
+
+## The library
+
+A watch holds a handful of games, and taking one off deletes it. The library is where games
+live when they are not on a watch: a plain folder of `.tat` files, `Documents/Tilt-a-tron/Games`
+unless `TILTATRON_LIBRARY` says otherwise. There is no database. A file you copy into the
+folder is in the library; a file you copy out of it is a game you can give to someone.
+
+The window shows the watch on the left and the library on the right. Drag a game from one
+to the other, or pick it and use the button - everything a drag does, a button does too.
+Dropping `.tat` files from the desktop onto the library adds them; dropping them onto the
+watch adds them *and* installs them, so nothing is ever on a watch and nowhere else.
+
+Removing is arranged so that the first click never loses anything:
+
+- a game leaves the watch by **moving** to the library, and the copy is read back from
+  disk before the watch's file is deleted;
+- a theme is copied to `Documents/Tilt-a-tron/Themes` before it is removed;
+- a different build of a game you already have is filed beside the old one
+  (`starfall.v1.tat`), never over it;
+- deleting from the library itself is the one real deletion, and it asks twice.
+
+All of it is in `Library.cs`, which knows nothing about windows, so the command line does
+exactly what the drag does.
 
 ## Running it
 
@@ -19,6 +43,11 @@ gets tested without a person watching:
 
 ```bash
 tiltatron-manager list                     # what is on the watch
+tiltatron-manager library                  # what is in your library
+tiltatron-manager add game.tat             # file -> library
+tiltatron-manager install starfall         # library -> watch (or give it a .tat file)
+tiltatron-manager save starfall            # watch -> library, stays installed
+tiltatron-manager uninstall starfall       # off the watch, kept in the library
 tiltatron-manager send themes/CPU Theme/CPU
 tiltatron-manager remove Theme/CPU
 tiltatron-manager bench                    # measures transfer speed

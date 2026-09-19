@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Tiltatron.Manager.Link;
@@ -52,31 +53,55 @@ static class Program
                         Console.WriteLine($"  theme: {t.Name}");
                     return 0;
                 }
+                case "library" when args.Length == 1:
+                {
+                    var lib = new Library();
+                    Console.WriteLine($"library: {lib.Folder}");
+                    foreach (var g in lib.Games())
+                        Console.WriteLine($"  {g.Package.Name,-14} {g.Package.Id,-14} v{g.Package.Version,-4} "
+                                          + $"{g.Package.Bytes / 1024,4} KB  {Path.GetFileName(g.Path)}");
+                    return 0;
+                }
+                case "add" when args.Length == 2:
+                {
+                    var g = new Library().AddFile(args[1]);
+                    Console.WriteLine($"{g.Package.Name} is in the library: {g.Path}");
+                    return 0;
+                }
+                case "save" when args.Length == 2:
+                {
+                    // Watch to library; the game stays installed.
+                    using var w = Connect();
+                    var g = new Library().SaveFromWatch(w, args[1]);
+                    Console.WriteLine($"{g.Package.Name} saved to {g.Path}");
+                    return 0;
+                }
                 case "install" when args.Length == 2:
                 {
-                    // Exactly what the Install button does: read the header, refuse it here
-                    // if it is not a game this watch can run, then write the file under the
-                    // game's own id so uninstalling later is just deleting that name.
-                    var pkg = TatPackage.Read(args[1]);
+                    // Either a game already in the library, by id, or a file - which goes
+                    // into the library on its way, so that everything on a watch is also
+                    // somewhere safe.
+                    var lib = new Library();
+                    var game = File.Exists(args[1])
+                        ? lib.AddFile(args[1])
+                        : lib.Games().FirstOrDefault(g => g.Package.Id == args[1])
+                          ?? throw new FileNotFoundException($"{args[1]} is not a file and not in the library");
                     using var w = Connect();
-                    if (!pkg.RunsOn(w.GameApi.Major, w.GameApi.Minor))
-                    {
-                        Console.Error.WriteLine($"{pkg.Name} needs game API {pkg.ApiMajor}.{pkg.ApiMinor}; "
-                                                + $"this watch has {w.GameApi.Major}.{w.GameApi.Minor}");
-                        return 1;
-                    }
-                    Console.WriteLine($"installing {pkg.Name} ({pkg.Id}) v{pkg.Version} by {pkg.Author}");
-                    w.MakeFolder("Games");
-                    w.WriteFile($"Games/{pkg.Id}.tat", File.ReadAllBytes(args[1]),
-                                (done, total) => Console.Write($"\r  {done / 1024} of {total / 1024} KB"));
-                    Console.WriteLine("\ndone - restart the watch to see it on the home screen");
+                    Console.WriteLine($"installing {game.Package.Name} ({game.Package.Id}) "
+                                      + $"v{game.Package.Version} by {game.Package.Author}");
+                    Library.Install(w, game, (done, total) => Console.Write($"\r  {done / 1024} of {total / 1024} KB"));
+                    Console.WriteLine();
+                    Console.WriteLine("done - restart the watch to see it on the home screen");
                     return 0;
                 }
                 case "uninstall" when args.Length == 2:
                 {
+                    // Off the watch and into the library, in that order of safety: see
+                    // Library.MoveFromWatch.
                     using var w = Connect();
-                    w.Delete($"Games/{args[1]}.tat");
-                    Console.WriteLine($"removed {args[1]} - restart the watch to take it off the home screen");
+                    var g = new Library().MoveFromWatch(w, args[1]);
+                    Console.WriteLine($"{g.Package.Name} removed from the watch and kept in {g.Path}");
+                    Console.WriteLine("restart the watch to take it off the home screen");
                     return 0;
                 }
                 case "send" when args.Length == 3:
@@ -118,6 +143,11 @@ static class Program
 
                           tiltatron-manager                        open the window
                           tiltatron-manager list                   what is on the watch
+                          tiltatron-manager library                what is in your library
+                          tiltatron-manager add <file.tat>         put a game in the library
+                          tiltatron-manager install <id|file.tat>  library to watch
+                          tiltatron-manager save <id>              watch to library, keeping it installed
+                          tiltatron-manager uninstall <id>         off the watch, kept in the library
                           tiltatron-manager send <folder> <remote> copy a folder to it
                           tiltatron-manager remove <remote>        delete a file or folder
                         """);

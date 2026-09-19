@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Tiltatron.Manager.MainWindow"
         Title="Tilt-a-tron" Icon="/icon.ico"
-        Width="760" Height="700" MinWidth="620" MinHeight="480">
+        Width="1040" Height="700" MinWidth="760" MinHeight="480">
 
   <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="18">
 
@@ -17,20 +17,38 @@
       </Grid>
     </Border>
 
-    <!-- What you can do -->
+    <!-- What you can do. Everything a drag does, a button does too. -->
     <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
-      <Button x:Name="InstallGameButton" Content="Install a game..." IsEnabled="False" />
+      <Button x:Name="AddGamesButton" Content="Add games..." />
       <Button x:Name="SendThemeButton" Content="Send a theme..." IsEnabled="False" />
       <Button x:Name="BackupButton" Content="Back up everything..." IsEnabled="False" />
+      <Button x:Name="TransferButton" Content="Copy" IsEnabled="False" />
       <Button x:Name="RemoveButton" Content="Remove" IsEnabled="False" />
     </StackPanel>
 
-    <!-- What is on it -->
-    <Border Grid.Row="2" Classes="card" Margin="0,12,0,0">
-      <ScrollViewer>
-        <StackPanel x:Name="ContentPanel" Spacing="14" />
-      </ScrollViewer>
-    </Border>
+    <!-- The watch on the left, your library on the right; drag between them. -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,12,*" Margin="0,12,0,0">
+      <Border Grid.Column="0" x:Name="WatchPane" Classes="card" BorderThickness="2">
+        <ScrollViewer>
+          <StackPanel x:Name="ContentPanel" Spacing="14" />
+        </ScrollViewer>
+      </Border>
+      <Border Grid.Column="2" x:Name="LibraryPane" Classes="card" BorderThickness="2">
+        <Grid RowDefinitions="Auto,*">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <StackPanel Grid.Column="0" Spacing="3">
+              <TextBlock Text="YOUR LIBRARY" FontSize="12" FontWeight="Bold" Foreground="#7FE8FF" />
+              <TextBlock x:Name="LibraryPath" Classes="dim" FontSize="10" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <Button Grid.Column="1" x:Name="OpenFolderButton" Content="Open folder" FontSize="11"
+                    Padding="10,5" VerticalAlignment="Top" />
+          </Grid>
+          <ScrollViewer Grid.Row="1">
+            <StackPanel x:Name="LibraryPanel" Spacing="10" />
+          </ScrollViewer>
+        </Grid>
+      </Border>
+    </Grid>
 
     <!-- What it is doing -->
     <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="0,12,0,0">
