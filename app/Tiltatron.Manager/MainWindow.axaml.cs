@@ -244,7 +244,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Library to watch. Installing is writing the file to the games folder - there is no
-    /// separate install command, and the watch picks it up next time it starts. Whether
+    /// separate install command, and the watch's home screen notices by itself. Whether
     /// this watch can run it is checked before the transfer, not after it.
     /// </summary>
     async Task InstallAsync(IEnumerable<string> libraryPaths)
@@ -262,7 +262,7 @@ public partial class MainWindow : Window
         });
         await RefreshAsync();
         if (ok) SetBusy($"{string.Join(", ", games.Select(g => g.Package.Name))} installed - "
-                        + "restart the watch to see it on the home screen");
+                        + "it is on the watch's home screen now");
     }
 
     async Task SendThemeAsync()
@@ -338,7 +338,7 @@ public partial class MainWindow : Window
                     if (await RunAsync($"deleting {name}", () => w.Delete(Library.ReadFromWatch(w, pick.Key).Path)))
                     {
                         await RefreshAsync();
-                        SetBusy($"{name} deleted - restart the watch to take it off the home screen");
+                        SetBusy($"{name} deleted from the watch");
                     }
                     return;
                 }
@@ -354,8 +354,7 @@ public partial class MainWindow : Window
                     return;
                 }
                 await RefreshAsync();
-                if (ok) SetBusy($"{name} is off the watch and safe in your library - "
-                                + "restart the watch to take it off the home screen");
+                if (ok) SetBusy($"{name} is off the watch and safe in your library");
                 return;
             }
             case Kind.LibraryGame:

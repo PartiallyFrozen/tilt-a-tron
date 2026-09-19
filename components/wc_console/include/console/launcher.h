@@ -18,6 +18,12 @@ public:
     void update(wc::Engine &e, float dt) override;
     void draw(wc::Engine &e, wc::Gfx &g) override;
 
+    // Games are installed and removed while the watch is running. When storage changes,
+    // the launcher asks whoever owns the app table to look again; the answer is the new
+    // number of apps, or -1 for "nothing is different". The table itself stays where it is.
+    using RescanFn = int (*)();
+    void setRescan(RescanFn fn) { rescan_ = fn; }
+
 private:
     static constexpr int ICON_R = 105;
     static constexpr int SPACING = 290;   // neighbors peek in from the edges
@@ -27,6 +33,8 @@ private:
     void drawIcons(wc::Gfx &g, int shift);
     const Image &iconFor(int app) const;
     void refreshVisible();
+    void buildIcons();
+    void rescan();
     int count() const { return int(vis_.size()); }
     const App &app(int slot) const { return apps_[vis_[slot]]; }
 
@@ -37,6 +45,8 @@ private:
     std::vector<int> vis_;               // indexes of the apps not hidden in Settings > GAMES
     std::vector<Image> builtin_icons_;   // drawn in code; a theme's icons/<id>.png wins
     uint32_t theme_gen_ = 0;
+    RescanFn rescan_ = nullptr;
+    uint32_t storage_gen_ = 0;
     wc::Gestures ges_;
 
     float anim_ = 0;   // horizontal offset of the carousel, eases to 0

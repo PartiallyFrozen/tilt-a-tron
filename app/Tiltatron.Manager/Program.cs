@@ -91,7 +91,7 @@ static class Program
                                       + $"v{game.Package.Version} by {game.Package.Author}");
                     Library.Install(w, game, (done, total) => Console.Write($"\r  {done / 1024} of {total / 1024} KB"));
                     Console.WriteLine();
-                    Console.WriteLine("done - restart the watch to see it on the home screen");
+                    Console.WriteLine("done - it is on the watch's home screen now");
                     return 0;
                 }
                 case "uninstall" when args.Length == 2:
@@ -101,7 +101,6 @@ static class Program
                     using var w = Connect();
                     var g = new Library().MoveFromWatch(w, args[1]);
                     Console.WriteLine($"{g.Package.Name} removed from the watch and kept in {g.Path}");
-                    Console.WriteLine("restart the watch to take it off the home screen");
                     return 0;
                 }
                 case "send" when args.Length == 3:

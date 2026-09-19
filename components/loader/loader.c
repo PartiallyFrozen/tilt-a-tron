@@ -152,6 +152,7 @@ int loader_scan(loader_entry_t *out, int max)
             o->api_minor = h->api_minor;
             o->accent_r = h->accent_r, o->accent_g = h->accent_g, o->accent_b = h->accent_b;
             o->size = (uint32_t)len;
+            o->stamp = h->header_crc32;
             // The launcher shows an unrunnable game rather than hiding it, so that someone
             // whose watch is too old is told why instead of finding the icon simply gone.
             o->runnable = h->api_major == TAT_API_MAJOR && h->api_minor <= TAT_API_MINOR;

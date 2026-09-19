@@ -30,6 +30,7 @@ typedef struct {
     uint16_t api_major, api_minor;
     uint8_t accent_r, accent_g, accent_b;
     uint32_t size;     // the whole file, for showing and for uninstalling
+    uint32_t stamp;    // the header's CRC, which covers every section's: differs if the file does
     bool runnable;     // false when this console cannot satisfy its API version
 } loader_entry_t;
 

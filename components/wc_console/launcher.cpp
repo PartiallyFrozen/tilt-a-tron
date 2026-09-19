@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 #include "audio/audio.h"
 #include "console/ui.h"
@@ -21,8 +22,10 @@ using wc::Gfx;
 
 static const char *TAG = "launcher";
 
-void Launcher::begin(Engine &e)
+void Launcher::buildIcons()
 {
+    for (Image &img : builtin_icons_) img.release();
+    builtin_icons_.clear();
     const int size = 2 * ICON_R;
     for (int i = 0; i < n_; i++) {
         Image img;
@@ -41,6 +44,36 @@ void Launcher::begin(Engine &e)
         }
         builtin_icons_.push_back(img);
     }
+}
+
+// A game was installed or removed over the link. Everything after the built-ins may have
+// moved, so the selection is carried across by id rather than by position - the ids are
+// copied first, because the strings they point at are about to be rewritten.
+void Launcher::rescan()
+{
+    storage_gen_ = storage_generation();
+    if (!rescan_) return;
+    char selected[32] = "";
+    if (!vis_.empty()) std::snprintf(selected, sizeof(selected), "%s", app(sel_).id);
+
+    const int n = rescan_();
+    if (n < 0) return;
+    n_ = n;
+    buildIcons();
+    last_app_ = 0;
+    for (int i = 0; i < n_; i++)
+        if (std::strcmp(apps_[i].id, selected) == 0) last_app_ = i;
+    vis_.clear();
+    refreshVisible();
+    anim_ = 0;
+    full_ = true;
+    ESP_LOGI(TAG, "%d apps after a rescan", n_);
+}
+
+void Launcher::begin(Engine &e)
+{
+    buildIcons();
+    storage_gen_ = storage_generation();
     // Start on the app you played last.
     nvs_handle_t h;
     if (nvs_open("console", NVS_READONLY, &h) == ESP_OK) {
@@ -66,6 +99,7 @@ void Launcher::refreshVisible()
 
 void Launcher::enter(Engine &e)
 {
+    if (storage_generation() != storage_gen_) rescan();
     refreshVisible();
     full_ = true;
     anim_ = 0;
@@ -90,6 +124,7 @@ void Launcher::update(Engine &e, float dt)
     const auto &in = e.input();
     ges_.update(in.touch);
 
+    if (storage_generation() != storage_gen_) rescan();
     // New files may have arrived over the USB link: reload, showing progress.
     Theme::get().reloadWithProgress(e);
     if (Theme::get().generation() != theme_gen_) {

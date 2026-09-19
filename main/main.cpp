@@ -42,18 +42,90 @@ extern "C" const tat_game_t tat_game_star;
 extern "C" const tat_game_t tat_game_breakout;
 
 static wc::Engine *s_engine;
-static const console::App *s_apps;
+// The carousel's table: the built-ins, then whatever is installed, then Settings. It is
+// one fixed array so that everything holding a pointer to it keeps a good one while games
+// come and go; only the count, and what lies after the built-ins, ever changes.
+static console::App *s_apps;
 static int s_app_count;
-// What was found in the games folder at boot, so the link can tell the app which entries
-// are files it may remove and which are part of the firmware.
+static int s_builtin_count;
+static console::App s_settings_app;
+static console::AppsApp *s_games_screen;
+// What is in the games folder, as of the last look, and the game object for each.
 static loader_entry_t s_installed[LOADER_MAX_GAMES];
+static tat::PackagedGame *s_packaged[LOADER_MAX_GAMES];
 static int s_installed_count;
 
-static const loader_entry_t *installedById(const char *id)
+// One look at the games folder. The results are over 4 KB, and this is asked for from three
+// places on two tasks; as statics that was 13 KB of internal RAM, which on this board is
+// the difference between Wi-Fi coming up and not. So each look borrows PSRAM and gives it
+// back, and nothing is shared between the tasks.
+struct GamesScan {
+    loader_entry_t *found;
+    int count;
+    GamesScan()
+        : found(static_cast<loader_entry_t *>(
+              heap_caps_malloc(sizeof(loader_entry_t) * LOADER_MAX_GAMES, MALLOC_CAP_SPIRAM))),
+          count(found ? loader_scan(found, LOADER_MAX_GAMES) : 0)
+    {
+    }
+    ~GamesScan() { heap_caps_free(found); }
+    GamesScan(const GamesScan &) = delete;
+    GamesScan &operator=(const GamesScan &) = delete;
+};
+
+static bool samePackage(const loader_entry_t &a, const loader_entry_t &b)
 {
+    return a.stamp == b.stamp && a.size == b.size && std::strcmp(a.path, b.path) == 0;
+}
+
+// Lays the installed games and Settings into the table after the built-ins. The names in
+// the table point into s_installed, so the two are always rebuilt together.
+static void layPackages()
+{
+    int n = s_builtin_count;
     for (int i = 0; i < s_installed_count; i++)
-        if (std::strcmp(s_installed[i].id, id) == 0) return &s_installed[i];
-    return nullptr;
+        s_apps[n++] = {s_installed[i].id, s_installed[i].name,
+                       wc::rgb(s_installed[i].accent_r, s_installed[i].accent_g, s_installed[i].accent_b),
+                       console::icons::package, s_packaged[i], true};
+    s_apps[n++] = s_settings_app;
+    s_app_count = n;
+    if (s_games_screen) s_games_screen->setCount(n);
+}
+
+// Look at the games folder again. Installing a game is writing a file and removing one is
+// deleting it, both while the watch is running, so the carousel has to be able to catch
+// up without a restart. Returns the new number of apps, or -1 if nothing is different.
+//
+// Only ever called by the launcher, from the home screen - which is what makes deleting a
+// game object safe: whatever is on screen right now is not one of them. A game whose file
+// has not changed keeps its object, and with it anything it had already loaded.
+static int rescanPackages()
+{
+    const GamesScan scan;
+    if (!scan.found) return -1;
+    const loader_entry_t *found = scan.found;
+    const int n = scan.count;
+    bool same = n == s_installed_count;
+    for (int i = 0; i < n && same; i++) same = samePackage(found[i], s_installed[i]);
+    if (same) return -1;
+
+    tat::PackagedGame *next[LOADER_MAX_GAMES] = {};
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < s_installed_count; j++)
+            if (s_packaged[j] && samePackage(found[i], s_installed[j])) {
+                next[i] = s_packaged[j];
+                s_packaged[j] = nullptr;
+                break;
+            }
+    for (int j = 0; j < s_installed_count; j++) delete s_packaged[j];   // removed, or replaced
+    for (int i = 0; i < LOADER_MAX_GAMES; i++) s_packaged[i] = nullptr;
+
+    std::memcpy(s_installed, found, sizeof(s_installed[0]) * n);
+    s_installed_count = n;
+    for (int i = 0; i < n; i++) s_packaged[i] = next[i] ? next[i] : new tat::PackagedGame(s_installed[i]);
+    layPackages();
+    ESP_LOGI("main", "games folder changed: %d installed", n);
+    return s_app_count;
 }
 
 extern "C" void app_main(void)
@@ -205,8 +277,9 @@ extern "C" void app_main(void)
     // loads a package must be reachable without the console having to survive it first,
     // and when the carousel does load games it will be on the tap, not on the way up.
     static auto probe_packages = [] {
-        static loader_entry_t found[LOADER_MAX_GAMES];
-        const int n = loader_scan(found, LOADER_MAX_GAMES);
+        const GamesScan scan;
+        const loader_entry_t *found = scan.found;
+        const int n = scan.count;
         if (n == 0) {
             ESP_LOGI(TAG, "no installed packages in %s", loader_games_dir());
             return;
@@ -273,31 +346,26 @@ extern "C" void app_main(void)
     // Installed packages go on the end of the carousel, before Settings. Only their headers
     // are read here - names and colours, a few hundred bytes each. No game's code is
     // touched until its icon is tapped.
-    s_installed_count = loader_scan(s_installed, LOADER_MAX_GAMES);
-    const loader_entry_t *installed = s_installed;
-    const int n_installed = s_installed_count;
-
     static console::App apps[kBuiltin + LOADER_MAX_GAMES + 1];
-    int n_apps = 0;
-    for (int i = 0; i < kBuiltin; i++) apps[n_apps++] = builtin[i];
+    for (int i = 0; i < kBuiltin; i++) apps[i] = builtin[i];
+    s_apps = apps;
+    s_builtin_count = kBuiltin;
+    s_settings_app = {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings};
 
-    static tat::PackagedGame *packaged[LOADER_MAX_GAMES];
-    for (int i = 0; i < n_installed; i++) {
-        packaged[i] = new tat::PackagedGame(installed[i]);
-        apps[n_apps++] = {installed[i].id, installed[i].name,
-                          wc::rgb(installed[i].accent_r, installed[i].accent_g, installed[i].accent_b),
-                          console::icons::package, packaged[i], true};
-        ESP_LOGI(TAG, "carousel: %s (installed)", installed[i].name);
+    s_installed_count = loader_scan(s_installed, LOADER_MAX_GAMES);
+    for (int i = 0; i < s_installed_count; i++) {
+        s_packaged[i] = new tat::PackagedGame(s_installed[i]);
+        ESP_LOGI(TAG, "carousel: %s (installed)", s_installed[i].name);
     }
-    apps[n_apps++] = {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings};
+    layPackages();
 
-    static console::Launcher launcher(apps, n_apps);
-    static console::AppsApp games_screen(&settings, apps, n_apps);
+    static console::Launcher launcher(apps, s_app_count);
+    launcher.setRescan(rescanPackages);
+    static console::AppsApp games_screen(&settings, apps, s_app_count);
+    s_games_screen = &games_screen;
     settings.setGamesScreen(&games_screen);
     // GET /input: remote control for testing without touching the watch.
     //   app=N (0 = home)  tap=x,y  swipe=x0,y0,x1,y1  hold=x,y,ms  btn=a|b[,ms]  tilt=ax,ay,az|off
-    s_apps = apps;
-    s_app_count = n_apps;
     // GET /tilt: the sensor, the saved correction, and what a game actually sees. Enough
     // to tell "the sensor is off", "the correction is wrong" and "the game is wrong" apart
     // without having to guess from how it feels in the hand.
@@ -372,22 +440,36 @@ extern "C" void app_main(void)
     link_set_info_hook([](uint32_t *total, uint32_t *free_bytes, uint8_t *count) {
         *total = *free_bytes = 0;
         storage_free_bytes(total, free_bytes);
-        *count = uint8_t(s_installed_count);
+        *count = uint8_t(GamesScan().count);
     });
+    // The built-ins come from the table; the installed games come from a fresh look at the
+    // folder, not from the table. The app asks this straight after it installs or removes
+    // something, quite possibly while a game is being played and the carousel has had no
+    // chance to catch up - and an answer that still lists a game it has just deleted, or
+    // leaves out one it has just sent, is worse than no answer. It also keeps this task off
+    // the part of the table the launcher rewrites.
     link_set_list_hook([](link_game_t *out, int max) -> int {
         int n = 0;
-        for (int i = 0; i < s_app_count && n < max; i++) {
-            if (std::strcmp(s_apps[i].id, "settings") == 0) continue;
+        for (int i = 0; i < s_builtin_count && n < max; i++) {
             link_game_t &g = out[n++];
             memset(&g, 0, sizeof(g));
             snprintf(g.id, sizeof(g.id), "%s", s_apps[i].id);
             snprintf(g.name, sizeof(g.name), "%s", s_apps[i].name);
             g.accent = s_apps[i].accent;
-            g.flags = console::appHidden(s_apps[i].id) ? LINK_GAME_HIDDEN : 0;
-            // An installed game is a file, and the app is allowed to delete it. A built-in
-            // can only be hidden, so it says so and reports no size of its own.
-            if (const loader_entry_t *e = installedById(s_apps[i].id)) g.bytes = e->size;
-            else g.flags |= LINK_GAME_BUILTIN;
+            // A built-in can only be hidden, never removed, so it says what it is and
+            // reports no size of its own.
+            g.flags = LINK_GAME_BUILTIN | (console::appHidden(s_apps[i].id) ? LINK_GAME_HIDDEN : 0);
+        }
+        const GamesScan scan;
+        const loader_entry_t *found = scan.found;
+        for (int i = 0; i < scan.count && n < max; i++) {
+            link_game_t &g = out[n++];
+            memset(&g, 0, sizeof(g));
+            snprintf(g.id, sizeof(g.id), "%s", found[i].id);
+            snprintf(g.name, sizeof(g.name), "%s", found[i].name);
+            g.accent = wc::rgb(found[i].accent_r, found[i].accent_g, found[i].accent_b);
+            g.flags = console::appHidden(found[i].id) ? LINK_GAME_HIDDEN : 0;
+            g.bytes = found[i].size;
         }
         return n;
     });

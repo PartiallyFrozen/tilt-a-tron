@@ -28,6 +28,7 @@ private:
 class AppsApp : public wc::Game {
 public:
     AppsApp(wc::Game *back, const App *apps, int count) : back_(back), apps_(apps), n_(count) {}
+    void setCount(int count) { n_ = count; }   // games come and go; the table stays put
     void enter(wc::Engine &e) override;
     void update(wc::Engine &e, float dt) override;
     void draw(wc::Engine &e, wc::Gfx &g) override;
