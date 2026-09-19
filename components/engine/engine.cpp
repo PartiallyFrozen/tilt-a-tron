@@ -166,9 +166,14 @@ void Engine::injectButton(uint32_t mask, int ms)
     inj_.btn_until = esp_timer_get_time() + int64_t(std::max(ms, 40)) * 1000;
 }
 
+// Long enough for a slow step of a test script - a full-screen screenshot over a weak
+// link can take the better part of a minute - and short enough that a watch left with a
+// frozen gravity heals itself long before anyone picks it up and wonders why tilt died.
+static constexpr int64_t kInjectedTiltUs = 60 * 1000000LL;
+
 void Engine::injectTilt(float ax, float ay, float az)
 {
-    inj_.tilt = !std::isnan(ax);
+    inj_.tilt_until = std::isnan(ax) ? 0 : esp_timer_get_time() + kInjectedTiltUs;
     inj_.ax = ax, inj_.ay = ay, inj_.az = az;
 }
 
@@ -193,7 +198,7 @@ void Engine::applyInjected(int64_t now)
         if (!holding && inj_.btn_was) in.released |= inj_.btn_mask, in.clicked |= inj_.btn_mask;
         inj_.btn_was = holding;
     }
-    if (inj_.tilt) {
+    if (now < inj_.tilt_until) {
         in.tilt.ax = inj_.ax, in.tilt.ay = inj_.ay, in.tilt.az = inj_.az;
     }
 }

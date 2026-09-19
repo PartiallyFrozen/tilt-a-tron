@@ -86,6 +86,11 @@ public:
     // Debug remote control (driven by the /input endpoint): fake a touch that moves
     // from (x0, y0) to (x1, y1) over `ms`, hold buttons, or override the tilt
     // (pass NAN to go back to the real sensor). Applied on top of the real input.
+    //
+    // A faked touch or button lasts the milliseconds it was given. A faked tilt used to
+    // last until something turned it off, which meant a test script that died - or forgot -
+    // left the watch reading a frozen gravity, and every game silently stopped responding
+    // to being turned. It expires on its own now; hold it by sending it again.
     void injectTouch(int x0, int y0, int x1, int y1, int ms);
     void injectButton(uint32_t mask, int ms);
     void injectTilt(float ax, float ay, float az);
@@ -119,7 +124,7 @@ private:
         int64_t btn_until = 0;
         uint32_t btn_mask = 0;
         bool btn_was = false;
-        bool tilt = false;
+        int64_t tilt_until = 0;
         float ax = 0, ay = 0, az = 1;
     } inj_;
     InputState input_state_;
