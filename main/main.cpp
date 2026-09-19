@@ -286,7 +286,7 @@ extern "C" void app_main(void)
         packaged[i] = new tat::PackagedGame(installed[i]);
         apps[n_apps++] = {installed[i].id, installed[i].name,
                           wc::rgb(installed[i].accent_r, installed[i].accent_g, installed[i].accent_b),
-                          console::icons::package, packaged[i]};
+                          console::icons::package, packaged[i], true};
         ESP_LOGI(TAG, "carousel: %s (installed)", installed[i].name);
     }
     apps[n_apps++] = {"settings", "SETTINGS", wc::rgb(200, 205, 215), console::icons::settings, &settings};

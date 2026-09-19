@@ -73,7 +73,8 @@ void Launcher::enter(Engine &e)
 
 const Image &Launcher::iconFor(int app) const
 {
-    if (const Image *themed = Theme::get().icon(apps_[app].id, apps_[app].name)) return *themed;
+    if (!apps_[app].packaged)
+        if (const Image *themed = Theme::get().icon(apps_[app].id, apps_[app].name)) return *themed;
     return builtin_icons_[app];
 }
 

@@ -207,12 +207,19 @@ const Image *Theme::icon(const std::string &app_id, const std::string &title) co
 {
     auto it = icons_.find(app_id);
     if (it != icons_.end()) return &it->second;
+    // Named either way round: "jump.png" for the id, or "Sky Jump.png" for the title.
+    //
+    // Nothing looser than that. This used to accept a theme file whose name merely
+    // appeared anywhere inside the id or title, which meant STARFALL matched star.png and
+    // wore SLEEPY STAR's face on the home screen - and the two games looked like one game
+    // that had replaced the other. Any id beginning with a four-letter icon name could
+    // take it, which is a poor thing to leave lying around when games arrive from
+    // strangers. An icon that does not match exactly falls back to the built-in one, which
+    // is always right if plain.
     const std::string id = slug(app_id), t = slug(title);
     for (const auto &kv : icons_) {
         const std::string &k = kv.first;
-        if (k == id || k == t || k.find(id) != std::string::npos || k.find(t) != std::string::npos ||
-            (k.size() >= 4 && t.find(k) != std::string::npos))
-            return &kv.second;
+        if (k == id || k == t) return &kv.second;
     }
     return nullptr;
 }

@@ -17,6 +17,10 @@ struct App {
     wc::Color accent;
     IconFn icon;
     wc::Game *game;
+    // Games that arrived as a package do not get to wear a theme's icons. Those belong to
+    // the apps the theme was drawn for, and a game from a stranger picking one up means
+    // the home screen can show it as something it is not.
+    bool packaged = false;
 };
 
 // ---- brightness (persisted)
