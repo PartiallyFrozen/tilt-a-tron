@@ -467,7 +467,39 @@ def skatergirlz_icon():
     finish(img, "skatergirlz")
 
 
+def echo_icon():
+    """The four pads, one of them lit, around a dark hub."""
+    img = canvas((8, 9, 16))
+    c = L / 2
+    px = img.load()
+    hue = ((60, 220, 110), (255, 72, 84), (70, 140, 255), (255, 206, 60))   # up right down left
+    lit = 1
+    for yy in range(L):
+        for xx in range(L):
+            dx, dy = xx + 0.5 - c, yy + 0.5 - c
+            d = math.hypot(dx, dy)
+            if d <= 8:
+                px[xx, yy] = ((52, 58, 84) if d > 6.5 else (18, 20, 32)) + (255,)
+                continue
+            if not (10 <= d <= 24.5):
+                continue
+            ax, ay = abs(dx), abs(dy)
+            if abs(ax - ay) * 0.7071 <= 1.3:
+                continue
+            pad = (0 if dy < 0 else 2) if ay > ax else (1 if dx > 0 else 3)
+            k = 1.0 if pad == lit else 0.34
+            if d > 22.5:
+                k *= 0.7
+            h = hue[pad]
+            col = tuple(min(255, int(v * k)) for v in h)
+            if pad == lit and d < 12:
+                col = tuple(int(v + (255 - v) * 0.5) for v in h)
+            px[xx, yy] = col + (255,)
+    finish(img, "echo")
+
+
 def main():
+    echo_icon()
     starfall_icon()
     skatergirlz_icon()
     jump_icon()

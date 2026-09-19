@@ -66,7 +66,7 @@ circle (232 x 232 is the most the launcher will decode), and at most 4096 bytes 
 sends it to the manager app in a single link frame. `tools/make_icons.py` draws the
 firmware's own on a 52 x 52 grid scaled up 4x, which is a good way to stay under the limit.
 
-**No game is part of the firmware.** The nine a new watch comes with live in `games/<id>/`
+**No game is part of the firmware.** The ones a new watch comes with live in `games/<id>/`
 like anyone else's, are built by the same `tools/mktat.py`, and are installed and removed
 the same way. The firmware build packs them (`components/factory`) and carries a factory
 copy of each, which it puts in place the first time it starts, or when it finds the games

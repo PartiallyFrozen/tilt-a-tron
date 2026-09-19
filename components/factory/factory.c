@@ -14,7 +14,7 @@ static const char *TAG = "factory";
 
 #define FACTORY(id) extern const uint8_t _binary_##id##_tat_start[], _binary_##id##_tat_end[];
 FACTORY(breakout) FACTORY(maze) FACTORY(racer) FACTORY(jump) FACTORY(tiltatris)
-FACTORY(star) FACTORY(pindrop) FACTORY(starfall) FACTORY(skatergirlz)
+FACTORY(star) FACTORY(pindrop) FACTORY(starfall) FACTORY(skatergirlz) FACTORY(echo)
 #undef FACTORY
 
 // In the order they appear on a new watch's home screen.
@@ -23,7 +23,7 @@ static const struct {
     const uint8_t *start, *end;
 } s_games[] = {
     ENTRY(breakout), ENTRY(maze),    ENTRY(racer),    ENTRY(jump),        ENTRY(tiltatris),
-    ENTRY(star),     ENTRY(pindrop), ENTRY(starfall), ENTRY(skatergirlz),
+    ENTRY(star),     ENTRY(pindrop), ENTRY(starfall), ENTRY(skatergirlz), ENTRY(echo),
 };
 #define N_GAMES ((int)(sizeof(s_games) / sizeof(s_games[0])))
 
@@ -78,8 +78,8 @@ static int install(bool everything)
     if (!have) return 0;
     const int n_have = loader_scan(have, LOADER_MAX_GAMES);
     // An empty folder is a new watch or a wiped drive, and either way the answer is the
-    // same. It is also somebody who removed all nine on purpose, who will be less put out
-    // by getting them back than everyone else would be by a watch with nothing on it.
+    // same. It is also somebody who removed every game on purpose, who will be less put
+    // out by getting them back than everyone else would be by a watch with nothing on it.
     if (n_have == 0) everything = true;
 
     nvs_handle_t nvs = 0;
