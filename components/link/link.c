@@ -11,6 +11,7 @@
 #include "esp_system.h"
 #include "net/net.h"
 #include "storage/storage.h"
+#include "tat/tat_api.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -164,8 +165,10 @@ static void handle(uint8_t seq, uint8_t cmd, const uint8_t *body, uint16_t len)
         const esp_app_desc_t *app = esp_app_get_description();
         size_t n = 0;
         out[n++] = LINK_PROTO_VERSION, out[n++] = 0;
-        out[n++] = 1, out[n++] = 0;   // game API major
-        out[n++] = 0, out[n++] = 0;   // game API minor
+        // The game API this console actually implements, straight from the header, so it
+        // cannot drift from the truth the way a number written out by hand just did.
+        out[n++] = TAT_API_MAJOR & 0xFF, out[n++] = (TAT_API_MAJOR >> 8) & 0xFF;
+        out[n++] = TAT_API_MINOR & 0xFF, out[n++] = (TAT_API_MINOR >> 8) & 0xFF;
         n += snprintf((char *)out + n, sizeof(out) - n, "%s", app->version) + 1;
         n += snprintf((char *)out + n, sizeof(out) - n, "%s", "waveshare-amoled-175c") + 1;
         // The Wi-Fi key. A cable is physical access, so handing it over here is the

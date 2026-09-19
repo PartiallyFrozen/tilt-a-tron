@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Pack a game into a .tat - the single file people install, trade and share.
+
+    python tools/mktat.py components/games/pindrop --out build/pindrop.tat
+
+A game directory holds its source (one or more .c files), optionally an assets/ folder,
+and a game.json naming it. Everything that ends up in the package comes from there, so a
+package is exactly what the author wrote and nothing of this repo's build.
+
+The interesting part is how the code is linked. See docs/GAME_API.md section 6.1: the game
+is linked as ONE contiguous image at base 0 with relaxation off and the relocations kept.
+That leaves the loader a single relocation type to handle, because everything PC-relative
+inside the image is already correct and every call out of it went through the literal pool
+as a plain 32-bit word.
+"""
+import argparse
+import glob
+import json
+import os
+import struct
+import subprocess
+import sys
+import zlib
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+MAGIC = b"TATPKG\0\x01"
+KIND_GAME, KIND_THEME, KIND_FACE = 1, 2, 3
+
+# Section types, four bytes each so a dump is readable.
+SEC_CODE = b"CODE"
+SEC_ICON = b"ICON"
+SEC_ASSET = b"ASST"
+SEC_SHOT = b"SHOT"
+
+# The linker script that makes the loader's job small. Written out next to the build so a
+# package can be reproduced from the tool alone.
+LINKER_SCRIPT = """\
+/* One contiguous image at zero: literals, code, read-only data, data, then bss. Every
+ * distance inside the image is what the linker assumed, so the loader can drop it
+ * anywhere and only the absolute references need fixing. */
+ENTRY(tat_game)
+SECTIONS
+{
+  . = 0;
+  .text : ALIGN(4) { *(.literal .literal.*) *(.text .text.*) }
+  .rodata : ALIGN(4) { *(.rodata .rodata.*) *(.srodata .srodata.*) }
+  .data : ALIGN(4) { *(.data .data.*) *(.sdata .sdata.*) }
+  .bss (NOLOAD) : ALIGN(4) { *(.bss .bss.*) *(.sbss .sbss.*) *(COMMON) }
+  /DISCARD/ : { *(.comment) *(.xtensa.info) *(.xt.prop*) *(.xt.lit*) *(.debug*) }
+}
+"""
+
+
+def find_toolchain():
+    """The same compiler the firmware is built with, wherever ESP-IDF put it."""
+    pats = [
+        r"C:\Espressif\tools\xtensa-esp-elf\*\xtensa-esp-elf\bin\xtensa-esp32s3-elf-gcc*",
+        os.path.expanduser("~/.espressif/tools/xtensa-esp-elf/*/xtensa-esp-elf/bin/xtensa-esp32s3-elf-gcc"),
+    ]
+    for pat in pats:
+        hits = sorted(glob.glob(pat))
+        if hits:
+            gcc = hits[-1]
+            return gcc, gcc.replace("gcc", "ld", 1) if False else gcc[: gcc.rfind("gcc")] + "ld" + gcc[gcc.rfind("gcc") + 3 :]
+    sys.exit("could not find the xtensa toolchain; run this from an ESP-IDF install")
+
+
+def build_code(game_dir, work, verbose=False):
+    """Compile every .c in the game directory and link it into one relocatable image."""
+    gcc, ld = find_toolchain()
+    os.makedirs(work, exist_ok=True)
+
+    sources = sorted(glob.glob(os.path.join(game_dir, "*.c")))
+    # A _builtin.c exists only to hand the firmware build its embedded assets. A package
+    # carries the files themselves, so it must not be compiled in.
+    sources = [s for s in sources if not s.endswith("_builtin.c")]
+    if not sources:
+        sys.exit(f"no .c files in {game_dir}")
+
+    objs = []
+    for src in sources:
+        obj = os.path.join(work, os.path.basename(src)[:-2] + ".o")
+        cmd = [gcc, "-c", "-std=gnu17", "-Os", "-mlongcalls",
+               "-ffunction-sections", "-fdata-sections",
+               "-I", os.path.join(ROOT, "components/tat_api/include"),
+               "-o", obj, src]
+        if verbose:
+            print("  " + " ".join(cmd))
+        subprocess.run(cmd, check=True)
+        objs.append(obj)
+
+    script = os.path.join(work, "game.ld")
+    with open(script, "w") as f:
+        f.write(LINKER_SCRIPT)
+
+    elf = os.path.join(work, "game.elf")
+    cmd = [ld, "-q", "--no-relax",
+           "--unresolved-symbols=ignore-all", "--no-warn-rwx-segments",
+           "-T", script, "-o", elf] + objs
+    if verbose:
+        print("  " + " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    return elf
+
+
+def section(kind, payload):
+    """One section: a 4-byte type, then the bytes, with its own CRC in the table."""
+    return kind, payload, zlib.crc32(payload) & 0xFFFFFFFF
+
+
+def build_package(game_dir, out, verbose=False):
+    meta_path = os.path.join(game_dir, "game.json")
+    if not os.path.exists(meta_path):
+        sys.exit(f"{game_dir} has no game.json")
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    for key in ("id", "name", "author", "version"):
+        if key not in meta:
+            sys.exit(f"game.json is missing {key!r}")
+    if not meta["id"].replace("_", "").isalnum() or meta["id"] != meta["id"].lower():
+        sys.exit("id must be lowercase letters, digits and underscores")
+
+    work = os.path.join(ROOT, "build", "tat", meta["id"])
+    elf = build_code(game_dir, work, verbose)
+    with open(elf, "rb") as f:
+        code = f.read()
+
+    sections = [section(SEC_CODE, code)]
+
+    icon = os.path.join(game_dir, "icon.png")
+    if os.path.exists(icon):
+        with open(icon, "rb") as f:
+            sections.append(section(SEC_ICON, f.read()))
+
+    shot = os.path.join(game_dir, "shot.png")
+    if os.path.exists(shot):
+        with open(shot, "rb") as f:
+            sections.append(section(SEC_SHOT, f.read()))
+
+    # Assets travel by the name the game asks for, so the loader can answer api->asset()
+    # without knowing anything about what is in them.
+    # Normally a game keeps its files in its own assets/. The built-in games share one art
+    # folder with the firmware build, so game.json may point at it rather than the files
+    # being copied into the repo twice.
+    asset_dir = os.path.join(game_dir, meta.get("assets", "assets"))
+    for path in sorted(glob.glob(os.path.join(asset_dir, "*"))):
+        name = os.path.basename(path)
+        if len(name.encode()) > 15:
+            sys.exit(f"asset name too long (15 bytes max): {name}")
+        with open(path, "rb") as f:
+            body = f.read()
+        sections.append(section(SEC_ASSET, name.encode().ljust(16, b"\0") + body))
+
+    # Header, then the section table, then the payloads. Offsets are from the file start,
+    # so the watch can check a section's CRC without having parsed anything before it.
+    head_len = 92 + 16 * len(sections)
+    blobs, table, off = [], b"", head_len
+    for kind, payload, crc in sections:
+        table += struct.pack("<4sIII", kind, off, len(payload), crc)
+        blobs.append(payload)
+        off += len(payload)
+    total = off
+
+    def fixed(s, n):
+        b = s.encode()
+        if len(b) >= n:
+            sys.exit(f"{s!r} is too long (max {n - 1} bytes)")
+        return b.ljust(n, b"\0")
+
+    body = struct.pack("<BBHHH", KIND_GAME, 0,
+                       meta.get("api_major", 1), meta.get("api_minor", 0),
+                       int(meta["version"]))
+    body += fixed(meta["id"], 16) + fixed(meta["name"], 24) + fixed(meta["author"], 24)
+    body += struct.pack("<BBBB", *(list(meta.get("accent", [255, 255, 255])) + [0]))
+    body += struct.pack("<H", len(sections)) + b"\0\0"
+    assert len(body) == head_len - 12 - len(table), len(body)
+
+    # header_crc32 covers everything after itself, so a truncated or shuffled file is
+    # caught before a single byte of it is trusted.
+    after = struct.pack("<I", total) + body + table
+    header = MAGIC + struct.pack("<I", zlib.crc32(after) & 0xFFFFFFFF) + after
+
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with open(out, "wb") as f:
+        f.write(header)
+        for b in blobs:
+            f.write(b)
+
+    print(f"{out}  {total / 1024:.1f} KB")
+    print(f"  {meta['name']} ({meta['id']}) v{meta['version']} by {meta['author']}")
+    for kind, payload, _ in sections:
+        label = kind.decode().strip()
+        if kind == SEC_ASSET:
+            label += " " + payload[:16].rstrip(b"\0").decode()
+        print(f"  {label:<12} {len(payload) / 1024:7.1f} KB")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="pack a game into a .tat")
+    ap.add_argument("game_dir", help="a directory with game.json, .c sources and assets/")
+    ap.add_argument("--out", help="where to write the package")
+    ap.add_argument("-v", "--verbose", action="store_true", help="show the build commands")
+    args = ap.parse_args()
+
+    out = args.out or os.path.join(ROOT, "build", os.path.basename(args.game_dir.rstrip("/\\")) + ".tat")
+    build_package(args.game_dir, out, args.verbose)
+
+
+if __name__ == "__main__":
+    main()

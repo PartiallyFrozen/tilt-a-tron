@@ -403,9 +403,50 @@ instruction fetch from PSRAM.
 **A is preferred.** Either way the game source doesn't change: the same code builds as a
 package or compiled into the OS.
 
-This must be proved before any game is converted — a throwaway "bouncing ball" game, built as
-a package, installed and run. **Themes and watch faces don't depend on it at all**, so the
-app and the whole sharing story can ship first.
+### 6.1 Answered: it is A, and it is much smaller than feared
+
+Measured on the real games rather than argued. Compile a game to an object and it has
+thousands of relocations, which is where the fear came from:
+
+```
+R_XTENSA_SLOT0_OP  4116      (patches a field inside an instruction - the hard kind)
+R_XTENSA_32        3445
+R_XTENSA_ASM_EXPAND 777
+```
+
+But that is the state *before* a linker has run. Link the game properly — one contiguous
+image at base 0, `--no-relax`, `-q` to keep the relocations, unresolved symbols left
+unresolved — and almost all of it is already done:
+
+```
+total 594, and every single one of these is a section symbol:
+  386  R_XTENSA_SLOT0_OP    .text / .rodata / .bss     <- intra-image, already correct
+   91  R_XTENSA_32          .text / .rodata / .bss     <- add the load address
+   23  R_XTENSA_ASM_EXPAND  section                    <- relaxation hint, nothing to do
+  ...  R_XTENSA_32          sinf, cosf, memset, ...    <- 50, resolve by name
+```
+
+Two facts make the loader small:
+
+- **Nothing outside the image is reached by a PC-relative instruction.** `-mlongcalls`
+  routes every external call through the literal pool, so it lands as a plain 32-bit word.
+  Not one `SLOT0_OP` relocation names an external symbol. Load the image contiguously and
+  every branch, call and `l32r` inside it is correct without being touched.
+- **So the loader handles exactly one relocation type, `R_XTENSA_32`.** Section-relative
+  ones get the load address added; named ones are looked up. 141 of them for Pin Drop.
+
+What a game still needs by name is 21 symbols across all seven games, and every one is
+standard C or a compiler helper — `sinf`, `memset`, `snprintf`, `__divsf3` and the like.
+None is a console API, which is the point: the console exports a frozen list that means the
+same thing in ten years, and everything about the console itself still arrives through the
+api table.
+
+That leaves ordinary work: pack the linked image into the `CODE` section, copy it to a
+64 KB-aligned block, zero the bss, walk `.rela.text`, map it executable, and find `tat_game`
+in the symbol table.
+
+**Themes and watch faces don't depend on any of this**, so the app and the sharing story can
+ship without waiting for it.
 
 ---
 
