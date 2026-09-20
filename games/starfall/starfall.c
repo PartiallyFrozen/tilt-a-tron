@@ -2,8 +2,9 @@
 //
 // You are flying a fighter down a trench at speed. There is a raider ahead of you that does
 // not want to be caught, and there are blast gates coming down the trench with one opening
-// in each, and mines. Tilting the watch moves your sight, directly: tip it and the sight is
-// there. The ship flies to wherever you are aiming and gets there a moment later. So you
+// in each, and mines. It flies like the rail shooters it takes after, with the watch as
+// the stick: turn it like a wheel to go left and right, lean it back to climb and tip it
+// away to dive. That moves your sight, directly: tip it and the sight is there. The ship flies to wherever you are aiming and gets there a moment later. So you
 // aim with the tilt and you fly with the aim - where you look is where you go - and the
 // same hand that holds the sight on the raider has to bring the ship round to the opening
 // in the next gate in time. Those two jobs pull against each other. That is the game.
@@ -58,11 +59,14 @@ static const tat_api_t *T;
 #define FLY_SPEED 175.0f   /* units a second: a gate is in sight for about three seconds */
 
 // Aiming and flying. Tilt is where the sight is; the ship chases the sight.
-#define FULL_TILT 0.36f    /* g of tilt, away from level, that puts the sight at the edge of its reach */
+#define FULL_TILT 0.36f    /* g of sideways tilt, away from level, that puts the sight at the edge of its reach */
+#define FULL_PITCH 0.36f   /* and radians of tipping forward or back that do the same, up and down: about 20 degrees */
 #define AIM_X 72.0f        /* how far from the middle of the trench the sight can get */
 #define AIM_Y 46.0f
 #define AIM_SNAP 16.0f     /* 1/s: the sight follows the hand almost at once - just enough to take tremor out */
 #define FOLLOW 2.4f        /* 1/s: the ship closes on the sight; about half a second behind */
+#define CAMERA 0.55f       /* how much of the ship's movement the eye follows: the rest is the ship crossing the screen */
+#define SHIP_AHEAD 58.0f   /* how far in front of the eye the ship is drawn */
 #define REACH_X 60.0f      /* how far from the middle of the trench the ship can get */
 #define REACH_Y 38.0f
 
@@ -104,7 +108,7 @@ static struct {
     float x, y, vx, vy;            /* our ship, in trench units from the middle */
     float aim_x, aim_y;            /* the sight, likewise: where the guns point and the ship is heading */
     int target;                    /* what the sight is on */
-    float level_x, level_y;        /* what the tilt reads when the watch is held "level" */
+    float level_x, level_pitch;    /* what the tilt reads when the watch is held "level" */
     float rx, ry;                  /* the raider, likewise */
     float weave_t, jink_t, jink_x, jink_y;
     float scroll;
@@ -161,10 +165,16 @@ static void rect(int x, int y, int w, int h, uint8_t c)
     if (w > 0 && h > 0) T->canvas_fill_rect(g.cv, x, y, w, h, c);
 }
 
-// Where a point in the trench lands on the screen, seen from the ship.
+// Where a point in the trench lands on the screen.
 static int jolt(void) { return g.shake > 0 ? (int)(sinf(g.anim_t * 95.0f) * g.shake * 3.0f) : 0; }
-static int px_of(float wx, float z) { return CC + (int)floorf((wx - g.x) * FOCAL / z); }
-static int py_of(float wy, float z) { return CY + jolt() + (int)floorf((wy - g.y) * FOCAL / z); }
+//
+// Seen from behind the ship, not from inside it: the eye follows about half of what the
+// ship does, so the ship flies across the screen toward the sight and the trench swings
+// the other way - which is the look of the games this borrows its flying from.
+static float eye_x(void) { return g.x * CAMERA; }
+static float eye_y(void) { return g.y * CAMERA; }
+static int px_of(float wx, float z) { return CC + (int)floorf((wx - eye_x()) * FOCAL / z); }
+static int py_of(float wy, float z) { return CY + jolt() + (int)floorf((wy - eye_y()) * FOCAL / z); }
 
 // ---------------------------------------------------------------- sound
 
@@ -296,6 +306,10 @@ static void raider_screen(float *sx, float *sy)
 
 // ---------------------------------------------------------------- flying
 
+// How far the watch is tipped forward or back: the angle of gravity between down the
+// screen (0) and out through the glass, positive as the top tips away from you.
+static float pitch_of(const tat_input_t *in) { return atan2f(in->tilt.az, in->tilt.ay); }
+
 // Where the sight is on the screen. The view is from the ship, so the sight sits off-centre
 // by however far the ship still has to go to reach it, and drifts back as the ship arrives.
 static int sight_px(void) { return px_of(g.aim_x, RAIDER_Z); }
@@ -306,8 +320,19 @@ static void fly(const tat_input_t *in, float dt)
     // The tilt, away from however the watch was being held when the run began, is where the
     // sight is. Not a push on it: tip the watch a little and the sight is a little way
     // over, and it stays there.
+    //
+    // Left and right is how far gravity has swung along the screen's x, which works however
+    // the watch is held. Up and down is NOT how far it has swung along the screen's y: held
+    // upright, the way it is held to turn it like a wheel, gravity is already all the way
+    // down the screen, and tipping the top away or toward you hardly changes that - it
+    // takes it out through the glass instead. That was the bug: the sight was stuck at one
+    // height. What tipping changes is the angle between down-the-screen and
+    // through-the-screen, so that is what is read, and it holds for a watch lying flat too.
     float tx = (in->tilt.ax - g.level_x) / FULL_TILT;
-    float ty = (in->tilt.ay - g.level_y) / FULL_TILT;
+    float dp = pitch_of(in) - g.level_pitch;
+    if (dp > PI) dp -= 2 * PI;
+    if (dp < -PI) dp += 2 * PI;
+    float ty = dp / FULL_PITCH;   /* lean the top back toward you to climb, tip it away to dive: a stick, and a pointer */
     if (g.invert) ty = -ty;
 #ifdef SF_AUTOPILOT
     // Flying it over Wi-Fi is not possible - a tilt arrives a second late - so a test build
@@ -565,8 +590,8 @@ static uint8_t plating(uint8_t shade[3][2], float z)
 
 static void draw_trench(void)
 {
-    const float floor_h = TRENCH_H - g.y, top_h = WALL_TOP + g.y;
-    const float left_w = TRENCH_W + g.x, right_w = TRENCH_W - g.x;
+    const float floor_h = TRENCH_H - eye_y(), top_h = WALL_TOP + eye_y();
+    const float left_w = TRENCH_W + eye_x(), right_w = TRENCH_W - eye_x();
     for (int d = 1; d <= CW; d++) {
         g.col_floor[d] = plating(g.c_floor, floor_h * FOCAL / (float)d);
         g.col_left[d] = plating(g.c_wall, left_w * FOCAL / (float)d);
@@ -598,7 +623,7 @@ static void draw_trench(void)
     // Stars, over whatever is left of the sky.
     for (int i = 0; i < 46; i++) {
         const uint32_t h = hash((uint32_t)i + 9);
-        const int x = (int)(h % CW) - (int)(g.x * 0.1f), y = (int)(h / 251 % 100) - (int)(g.y * 0.1f);
+        const int x = (int)(h % CW) - (int)(eye_x() * 0.1f), y = (int)(h / 251 % 100) - (int)(eye_y() * 0.1f);
         if (x < 0 || y < 0 || x >= CW || y >= CW) continue;
         if (px[y * CW + x] == g.c_space) px[y * CW + x] = (h >> 20 & 3) ? g.c_star : g.c_text;
     }
@@ -687,7 +712,9 @@ static void draw_raider(float fx, float fy)
 // two engines. The bank is the instrument - it tells you which way you are still sliding.
 static void draw_ship(void)
 {
-    const int x = CC + (int)(g.vx * 0.10f), y = CW - 46 + (int)(g.vy * 0.06f) + jolt();
+    // Where it is in the trench, seen from the eye trailing it - so it crosses the screen
+    // toward the sight, and sits low because the eye rides above it.
+    const int x = px_of(g.x, SHIP_AHEAD), y = py_of(g.y + 34.0f, SHIP_AHEAD);
     const int bank = (int)clampf(g.vx * 0.09f, -8.0f, 8.0f);
     const bool hurt = g.hurt > 0 && ((int)(g.anim_t * 24.0f) & 1);
     if (g.sh_ship) {
@@ -899,7 +926,7 @@ static void sf_update(float dt)
         }
         if (!T->menu_is_open()) {
             g.level_x = in->tilt.ax;   /* your grip may have changed */
-            g.level_y = in->tilt.ay;
+            g.level_pitch = pitch_of(in);
             g.dirty = true;
         }
         return;
@@ -933,7 +960,7 @@ static void sf_update(float dt)
     case READY:
         if (ges->tap) {
             g.level_x = in->tilt.ax;   /* however it is being held now is level */
-            g.level_y = in->tilt.ay;
+            g.level_pitch = pitch_of(in);
             g.phase = FLYING;
             g.phase_t = 0;
             sfx_start();
@@ -1043,7 +1070,7 @@ static void sf_draw(void)
         const float t = 1.0f - g.bolt_t / 0.16f;
         const int tx = (int)g.bolt_x, ty = (int)g.bolt_y;
         for (int side = -1; side <= 1; side += 2) {
-            const int x0 = CC + side * 30, y0 = CW - 40;
+            const int x0 = px_of(g.x, SHIP_AHEAD) + side * 29, y0 = py_of(g.y + 34.0f, SHIP_AHEAD) + 4;
             const float t1 = clampf(t + 0.35f, 0, 1);
             const int xa = x0 + (int)((tx - x0) * t), ya = y0 + (int)((ty - y0) * t);
             const int xb = x0 + (int)((tx - x0) * t1), yb = y0 + (int)((ty - y0) * t1);

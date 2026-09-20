@@ -372,10 +372,13 @@ Handy for checking a game without picking the watch up.
 
 ## Starfall controls
 
-- You are on a raider's tail down a trench at speed. **Tilt moves your sight**, directly: tip
-  the watch and the sight is there. **The ship flies to wherever you are aiming** and gets
-  there a moment later - so you aim with the tilt and you fly with the aim. "Level" is
-  however you are holding the watch when you start
+- You are on a raider's tail down a trench at speed, and it flies like the rail shooters it
+  takes after, with the watch as the stick: **turn it like a wheel** for left and right,
+  **lean the top back toward you to climb, tip it away to dive** (UP / DOWN in the menu
+  flips that). "Level" is however you are holding the watch when you start
+- That moves your **sight**, directly: tip it and the sight is there. **The ship flies to
+  wherever you are aiming** and gets there a moment later, banking as it goes, with the
+  camera trailing behind it - so you aim with the watch and you fly with the aim
 - Put the sight on something and it turns red - **LOCK** - then **tap**. A raider is a kill
   and seconds back on the clock; a shot at nothing costs you a second. A red mark on the edge
   of the sight shows which way the raider went
