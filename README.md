@@ -27,7 +27,7 @@ your own.
 <td align="center"><img src="site/img/star.png" width="150"><br><b>SLEEPY STAR</b><br><sub>A laser falls straight down. Turn rings of gaps and mirrors to wake the star.</sub></td>
 <td align="center"><img src="site/img/pindrop.png" width="150"><br><b>PIN DROP</b><br><sub>Steer a falling ball through the pins into the hole. The rim is live.</sub></td>
 <td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>A run down a shaft seen head on. Find the gap in every ring; shoot the mines.</sub></td>
-<td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>A rooftop skate run with one life. Turn the watch to push, tap to ollie; the faster you go, the wider the gaps.</sub></td>
+<td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>A rooftop skate run with one life. Turn the watch to push, tap to ollie, tap again to kickflip for Aura.</sub></td>
 <td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then touch them in the same order. One more each round, for as long as you can remember.</sub></td>
 </tr>
 </table>
@@ -375,8 +375,16 @@ Handy for checking a game without picking the watch up.
 - Miss a gap and the run is over. Clip the side of a building and the run is over (catch the
   edge by a few pixels and she rides on). Hit a bin and she stumbles, the bin goes flying, and
   she loses a third of her speed - a disaster, or the only brake there is when you need one
+- **Tap again in the air for a trick.** Which one is the luck of the tap - she is showing
+  off, not taking requests: **kickflip** (10), **kickflick** (15), **kickflip 360** (20) or
+  **dolphin flip** (25). Each turns the board its own way, so you can tell them apart without
+  reading, and the flashier ones keep it off her feet for longer. She has to be back on it
+  before the roof arrives: land clean and it is **Aura**, land mid-flip and it is SKETCHY - a
+  stumble, and that air's Aura gone. A second trick in the same air is worth double and a
+  third triple, and anything landed onto a rail is doubled again. Letting go of the ollie
+  early is what buys the time, so the height a gap does not need is the height there is to spend
 - Land on a rail from above to grind it: +5 m and a little speed back. Tap to pop off
-- The score is metres. **Swipe left** menu (sound, tilt, new run, best) · **BOOT** home
+- The score is metres plus Aura. **Swipe left** menu (sound, tilt, new run, best) · **BOOT** home
 - The mechanics are Canabalt's - speed that only builds, jump height by how long you hold,
   obstacles that cost speed rather than lives - learned from the MIT-licensed source of its
   HaxeFlixel port. None of its code or art is here; the tilt and the rails are ours

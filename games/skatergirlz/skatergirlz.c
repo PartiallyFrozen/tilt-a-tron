@@ -9,6 +9,7 @@
 //
 //   turn right  - push, the further the harder (turn left to brake)
 //   tap         - ollie; keep your finger down for more air, and more at speed
+//   tap again   - in the air: a trick. Land it clean and it is Aura; land mid-flip and it is not
 //   land on a rail from above to grind it; tap to pop off
 //   swipe left  - pause menu
 //
@@ -17,8 +18,14 @@
 // laid out from how fast you are going so that every gap can be made, and one life. They
 // are taken from reading the MIT-licensed source of the HaxeFlixel port
 // (github.com/ninjamuffin99/canabalt-hf, (c) Finji); no code or art from it is here. What
-// this adds is the tilt - in Canabalt you cannot choose your speed, and here you can - and
-// the rails.
+// this adds is the tilt - in Canabalt you cannot choose your speed, and here you can - the
+// rails, and the tricks.
+//
+// Tricks are the second thing to do with a jump. Letting go of the ollie early and tapping
+// again flips the board - a kickflip, a kickflick, a kickflip 360 or a dolphin flip, whichever
+// comes; it takes a moment, and she has to be back on it before the roof arrives. Each trick in the same air is worth more than the last, a trick landed onto a
+// rail is worth double, and none of it counts until she lands clean - so the height a gap
+// does not need is the height there is to spend, and the score is metres plus Aura.
 //
 // An earlier version had three lives, put her back on the roof when she fell, let her
 // scramble up walls, and made hitting a bin a silent multiplication. Every one of those
@@ -86,6 +93,7 @@ static struct {
     uint8_t c_rail, c_rail_leg, c_bin, c_bin_lid;
     uint8_t c_skin, c_hair, c_shirt, c_jeans, c_board, c_wheel, c_shoe;
     uint8_t c_text, c_dim, c_accent, c_danger, c_go, c_panel, c_dust, c_spark, c_streak;
+    uint8_t c_aura, c_aura_hi, c_grip;
 
     Phase phase;
     float phase_t;
@@ -103,6 +111,15 @@ static struct {
     float anim_t;
     float grind_tick;
     int grind_bonus;          /* metres of credit from rails */
+    float trick_t;            /* > 0 while the board is mid-flip */
+    int trick_kind;           /* which of TRICKS it is */
+    int tricks;               /* how many this air */
+    int pending;              /* Aura earned this air, not hers until she lands it */
+    int aura;                 /* banked */
+    float glow_t;             /* just banked some: she shines for a moment */
+    char pop[20];             /* a word or two that floats up beside her */
+    float pop_t;
+    uint8_t pop_col;
     int best;
     int sens;                 /* tilt sensitivity, 0..2 */
 
@@ -144,6 +161,14 @@ static int sy_of(float wy)
 }
 
 static int metres(void) { return (int)(g.x / 10.0f) + g.grind_bonus; }
+static int score(void) { return metres() + g.aura; }
+
+static void pop(const char *text, uint8_t colour)
+{
+    snprintf(g.pop, sizeof(g.pop), "%s", text);
+    g.pop_t = 0.9f;
+    g.pop_col = colour;
+}
 
 // ---------------------------------------------------------------- sound
 
@@ -155,6 +180,14 @@ static void tone1(float f0, float f1, int ms, int wave, float vol, int delay)
 static void sfx_push(void) { tone1(95, 70, 45, TAT_NOISE, 0.22f, 0); }
 static void sfx_ollie(void) { tone1(240, 620, 70, TAT_TRIANGLE, 0.45f, 0); }
 static void sfx_land(void) { tone1(150, 90, 55, TAT_NOISE, 0.4f, 0); }
+static void sfx_trick(int n) { tone1(520.0f + 130.0f * n, 900.0f + 160.0f * n, 90, TAT_SQUARE, 0.35f, 0); }
+static void sfx_aura(void)
+{
+    tone1(784, 0, 60, TAT_TRIANGLE, 0.5f, 0);
+    tone1(1047, 0, 60, TAT_TRIANGLE, 0.5f, 60);
+    tone1(1568, 0, 130, TAT_TRIANGLE, 0.5f, 120);
+}
+static void sfx_sketchy(void) { tone1(300, 120, 140, TAT_SQUARE, 0.45f, 0); }
 static void sfx_grind(void) { tone1(900, 700, 60, TAT_NOISE, 0.25f, 0); }
 static void sfx_start(void) { tone1(440, 880, 110, TAT_TRIANGLE, 0.6f, 0); }
 static void sfx_bin(void)
@@ -279,6 +312,8 @@ static void start_run(void)
     g.jump_t = -1;
     g.coyote = g.fall_t = g.stumble_t = g.push_t = g.shake = g.grind_tick = 0;
     g.grind_bonus = 0;
+    g.trick_t = g.glow_t = g.pop_t = 0;
+    g.tricks = g.pending = g.aura = 0;
     g.push = 0;
     memset(g.parts, 0, sizeof(g.parts));
     memset(g.flyers, 0, sizeof(g.flyers));
@@ -305,6 +340,8 @@ static void die(Death how)
     g.phase_t = 0;
     g.grounded = g.grinding = false;
     g.jump_t = -1;
+    g.pending = 0;
+    g.trick_t = 0;
     if (how == DIED_WALL) {
         g.v = 0;
         g.vy = -60;
@@ -323,6 +360,69 @@ static void stumble(float keep)
     if (g.v < V_MIN) g.v = V_MIN;
     g.stumble_t = 0.6f;
     g.shake = 0.6f;
+}
+
+// ---------------------------------------------------------------- tricks
+
+// Which trick she does is the luck of the tap: she is showing off, not taking requests. They
+// are not equal. The flashier the trick, the longer the board is away from her feet - so
+// the more it is worth, and the more air it needs to be landed at all. The second trick in
+// the same air is worth twice its Aura and the third three times.
+typedef struct {
+    const char *name;
+    float seconds;   /* the board is off her feet for this long */
+    int aura;
+    int odds;        /* out of the total, how often it comes up */
+} Trick;
+enum { KICKFLIP, KICKFLICK, KICKFLIP_360, DOLPHIN_FLIP, N_TRICKS };
+static const Trick TRICKS[N_TRICKS] = {
+    {"KICKFLIP", 0.32f, 10, 40},       /* rolls once about its length */
+    {"KICKFLICK", 0.28f, 15, 25},      /* the same, flicked: twice round in less time */
+    {"KICKFLIP 360", 0.40f, 20, 20},   /* rolls and spins flat at once */
+    {"DOLPHIN FLIP", 0.46f, 25, 15},   /* nose down and right over, end over end */
+};
+
+static int pick_trick(void)
+{
+    int roll = (int)frand(0, 100.0f);
+    for (int i = 0; i < N_TRICKS; i++) {
+        roll -= TRICKS[i].odds;
+        if (roll < 0) return i;
+    }
+    return KICKFLIP;
+}
+
+// Touching down, on a roof or a rail. If the board is still turning she has not landed it:
+// the Aura from this air is gone and she stumbles. Otherwise it is hers, doubled if she put
+// it down on a rail, which is the hardest place to put it.
+static void touch_down(bool on_rail)
+{
+    if (g.trick_t > 0) {
+        g.trick_t = 0;
+        g.pending = 0;
+        g.tricks = 0;
+        pop("SKETCHY!", g.c_danger);
+        sfx_sketchy();
+        T->log("sketchy landing at %d m", metres());
+        stumble(0.8f);
+        return;
+    }
+    if (g.pending > 0) {
+        const int got = g.pending * (on_rail ? 2 : 1);
+        char line[20];
+        snprintf(line, sizeof(line), "+%d AURA", got);
+        pop(line, g.c_aura_hi);
+        g.aura += got;
+        g.glow_t = 0.7f;
+        sfx_aura();
+        T->log("landed %d trick%s at %d m: +%d aura%s", g.tricks, g.tricks == 1 ? "" : "s", metres(), got,
+               on_rail ? " (rail)" : "");
+        for (int i = 0; i < 10; i++)
+            puff(g.x + frand(-8, 8), g.y - frand(2, 22), frand(-30, 30) + g.v * 0.5f, frand(-90, -20), frand(0.3f, 0.6f),
+                 i & 1 ? g.c_aura : g.c_aura_hi);
+    }
+    g.pending = 0;
+    g.tricks = 0;
 }
 
 // ---------------------------------------------------------------- skating
@@ -361,6 +461,9 @@ static void autopilot(bool *pressed, bool *down)
     if (holding && g.jump_t < 0 && !g.grounded && !g.grinding) holding = false;
     *pressed = holding && (g.grounded || g.grinding);
     *down = holding;
+    // Once it has let go, a trick - and sometimes a second, which it will not always land.
+    if (!holding && !g.grounded && !g.grinding && g.trick_t <= 0 && g.tricks < 2 && g.vy > -60.0f && g.vy < 90.0f)
+        *pressed = true;
 }
 #endif
 
@@ -403,7 +506,19 @@ static void step(const tat_input_t *in, float dt)
         g.coyote = 0;
         sfx_ollie();
         dust(3);
+    } else if (pressed && g.trick_t <= 0) {
+        // A second tap in the air. One at a time: she has to be back on the board before
+        // the next, which is what stops it being a matter of tapping as fast as you can.
+        g.trick_kind = pick_trick();
+        g.trick_t = TRICKS[g.trick_kind].seconds;
+        g.jump_t = -1;
+        g.pending += TRICKS[g.trick_kind].aura * (g.tricks + 1);
+        pop(TRICKS[g.trick_kind].name, g.c_aura);
+        sfx_trick(g.trick_kind);
+        T->log("%s at %d m", TRICKS[g.trick_kind].name, metres());
+        g.tricks++;
     }
+    if (g.trick_t > 0) g.trick_t -= dt;
     if (g.jump_t >= 0) {
         g.jump_t += dt;
         if (!down || g.jump_t > jump_limit(g.v)) g.jump_t = -1;
@@ -477,12 +592,14 @@ static void step(const tat_input_t *in, float dt)
             g.grind_tick = 1;
             g.grind_bonus += 5;
             T->log("grind at %d m, %.0f px/s", metres(), (double)g.v);
+            touch_down(true);
             g.v = clampf(g.v + 12.0f, V_MIN, V_MAX);   /* a rail gives a little back */
         } else if (under && prev_y <= under->y + 2 && g.y >= under->y) {
             g.y = under->y;
             g.vy = 0;
             g.grounded = true;
             sfx_land();
+            touch_down(false);
             if (g.fall_t > HARD_LANDING_S) {
                 T->log("hard landing at %d m", metres());
                 stumble(0.93f);   /* came down hard */
@@ -512,6 +629,7 @@ static void step(const tat_input_t *in, float dt)
                      i & 1 ? g.c_bin : g.c_bin_lid);
             T->log("bin at %d m, %.0f -> %.0f px/s", metres(), (double)g.v, (double)(g.v * 0.7f));
             stumble(0.7f);
+            pop("OOF!", g.c_danger);
             sfx_bin();
         }
     }
@@ -529,6 +647,8 @@ static void step_world(float dt)
     g.anim_t += dt;
     if (g.shake > 0) g.shake -= dt * 2.2f;
     if (g.stumble_t > 0) g.stumble_t -= dt;
+    if (g.glow_t > 0) g.glow_t -= dt;
+    if (g.pop_t > 0) g.pop_t -= dt;
 
     for (int i = 0; i < MAX_PARTS; i++) {
         Part *p = &g.parts[i];
@@ -699,13 +819,51 @@ static void draw_skater(void)
     if (g.grinding) nose = -1;
     const int wobble = g.stumble_t > 0 ? (int)(sinf(g.anim_t * 38.0f) * 2.5f) : 0;
     const int by = y - 3;
-    T->canvas_line(g.cv, x - 8, by - nose / 2 + 0, x + 8, by + nose, g.c_board);
-    T->canvas_line(g.cv, x - 8, by - nose / 2 + 1, x + 8, by + nose + 1, g.c_board);
-    rect(x - 6, by + 2 - nose / 3, 2, 2, g.c_wheel);
-    rect(x + 4, by + 2 + nose / 2, 2, 2, g.c_wheel);
+    // Just banked some Aura: she shines, in rings that open out and fade.
+    if (g.glow_t > 0) {
+        const int r = 10 + (int)((0.7f - g.glow_t) * 26.0f);
+        for (int a = 0; a < 16; a++) {
+            const float t = a * (2 * PI / 16) + g.anim_t * 3.0f;
+            T->canvas_pixel(g.cv, x + (int)(cosf(t) * r), y - 12 + (int)(sinf(t) * r), a & 1 ? g.c_aura : g.c_aura_hi);
+        }
+    }
+    if (g.trick_t > 0) {
+        // The board has left her feet and is turning under them, and each trick turns it its
+        // own way, so they can be told apart without reading the word. Rolling about its
+        // length shows deck, edge, grip, edge. Spinning flat shortens it to nothing and
+        // back. End over end is the whole board wheeling round in the plane of the screen.
+        const float turn = 1.0f - g.trick_t / TRICKS[g.trick_kind].seconds;   /* 0..1 through it */
+        const int drop = 3 + (int)(sinf(turn * PI) * 5.0f);   /* it falls away and comes back */
+        if (g.trick_kind == DOLPHIN_FLIP) {
+            const float a = turn * 2 * PI;
+            const int dx = (int)(cosf(a) * 8.0f), dy = (int)(sinf(a) * 8.0f);
+            const uint8_t c = cosf(a) < 0 ? g.c_grip : g.c_board;
+            T->canvas_line(g.cv, x - dx, by + drop - dy, x + dx, by + drop + dy, c);
+            T->canvas_line(g.cv, x - dx, by + drop - dy + 1, x + dx, by + drop + dy + 1, c);
+            rect(x + dx - 1, by + drop + dy - 1, 2, 2, g.c_wheel);
+            rect(x - dx - 1, by + drop - dy - 1, 2, 2, g.c_wheel);
+        } else {
+            const int rolls = g.trick_kind == KICKFLICK ? 8 : 4;   /* quarter turns about its length */
+            const int face = (int)(turn * rolls) & 3;
+            int half = 8;
+            if (g.trick_kind == KICKFLIP_360) half = (int)(fabsf(cosf(turn * 2 * PI)) * 8.0f) + 1;
+            const uint8_t c = face == 2 ? g.c_grip : g.c_board;
+            rect(x - half, by + drop, half * 2, (face & 1) ? 1 : 3, c);
+            if (!(face & 1)) {
+                rect(x - half + 1, by + drop + (face == 2 ? -2 : 3), 2, 2, g.c_wheel);
+                rect(x + half - 3, by + drop + (face == 2 ? -2 : 3), 2, 2, g.c_wheel);
+            }
+        }
+    } else {
+        T->canvas_line(g.cv, x - 8, by - nose / 2 + 0, x + 8, by + nose, g.c_board);
+        T->canvas_line(g.cv, x - 8, by - nose / 2 + 1, x + 8, by + nose + 1, g.c_board);
+        rect(x - 6, by + 2 - nose / 3, 2, 2, g.c_wheel);
+        rect(x + 4, by + 2 + nose / 2, 2, 2, g.c_wheel);
+    }
 
     // Crouch: deep at the top of an ollie and on a rail, a little when braking.
     int crouch = air ? 4 : g.grinding ? 3 : g.push < -0.02f ? 2 : 0;
+    if (g.trick_t > 0) crouch = 1;   /* knees up, out of the board's way */
     if (g.stumble_t > 0) crouch = 2;
     const int lean = (int)(speed01 * 3.0f) + (g.push > 0.02f ? 1 : 0) + wobble;
     const int hip = by - 6 + crouch;
@@ -752,7 +910,7 @@ static void draw_skater(void)
 static void draw_hud(void)
 {
     char buf[24];
-    snprintf(buf, sizeof(buf), "%dM", metres());
+    snprintf(buf, sizeof(buf), "%d", score());
     T->canvas_text_centered(g.cv, CW / 2, 17, buf, g.c_text, 2, true);
 
     // Speed, as a bar: green, then gold, then red when the gaps are about to get serious.
@@ -760,8 +918,23 @@ static void draw_hud(void)
     const int bw = 56, bx = CW / 2 - bw / 2, by = 30;
     rect(bx - 1, by - 1, bw + 2, 5, g.c_panel);
     rect(bx, by, (int)(bw * s), 3, s > 0.72f ? g.c_danger : s > 0.42f ? g.c_accent : g.c_go);
-    if (g.grinding) T->canvas_text_centered(g.cv, CW / 2, 44, "GRIND +5M", g.c_accent, 1, true);
-    else if (g.stumble_t > 0.25f) T->canvas_text_centered(g.cv, CW / 2, 44, "OOF!", g.c_danger, 1, true);
+    snprintf(buf, sizeof(buf), "%dM", metres());
+    T->canvas_text(g.cv, CW / 2 - 4 - T->text_width(buf, 1, true), 39, buf, g.c_dim, 1, true);
+    snprintf(buf, sizeof(buf), "%d AURA", g.aura);
+    T->canvas_text(g.cv, CW / 2 + 4, 39, buf, g.aura ? g.c_aura_hi : g.c_dim, 1, true);
+
+    // A word beside her, floating up and gone: what she just did, or what it cost.
+    if (g.pop_t > 0) {
+        // Never up into the score: at the top of a big ollie she is nearly there herself.
+        const int rise = (int)((0.9f - g.pop_t) * 22.0f);
+        int py = sy_of(g.y) - 40 - rise;
+        if (py < 58) py = 58;
+        T->canvas_text_centered(g.cv, SKATER_X + 34, py, g.pop, g.pop_col, 1, true);
+    } else if (g.grinding) {
+        int py = sy_of(g.y) - 40;
+        if (py < 58) py = 58;
+        T->canvas_text_centered(g.cv, SKATER_X + 34, py, "GRIND", g.c_accent, 1, true);
+    }
 }
 
 static void banner(const char *top, const char *mid, const char *bottom, uint8_t col, int y)
@@ -823,6 +996,9 @@ static void sk_begin(const tat_api_t *api)
     g.c_dust = col(200, 190, 200);
     g.c_spark = col(255, 236, 140);
     g.c_streak = col(255, 214, 190);
+    g.c_aura = col(176, 108, 255);
+    g.c_aura_hi = col(226, 186, 255);
+    g.c_grip = col(30, 28, 40);
 
     g.seed = (uint32_t)T->now_us() | 1u;
     g.sens = 1;
@@ -889,11 +1065,12 @@ static void sk_update(float dt)
         if (g.phase_t > 1.3f || sy_of(g.y) > CW + 60) {
             g.phase = OVER;
             g.phase_t = 0;
-            if (metres() > g.best) {
-                g.best = metres();
+            if (score() > g.best) {
+                g.best = score();
                 T->save_set("best_m", g.best);
             }
-            T->log("%d m, %s, best %d", metres(), g.death == DIED_WALL ? "wall" : "gap", g.best);
+            T->log("%d m + %d aura = %d, %s, best %d", metres(), g.aura, score(), g.death == DIED_WALL ? "wall" : "gap",
+                   g.best);
             sfx_over();
         }
         break;
@@ -912,7 +1089,7 @@ static void sk_draw(void)
     if (T->menu_is_open()) {
         char best[16];
         static const char *const SENS[3] = {"GENTLE", "NORMAL", "TWITCHY"};
-        snprintf(best, sizeof(best), "%d M", g.best);
+        snprintf(best, sizeof(best), "%d", g.best);
         const tat_menu_row_t rows[] = {
             T->menu_sound_row(),
             {"TILT", SENS[g.sens], 0},
@@ -943,12 +1120,14 @@ static void sk_draw(void)
     draw_hud();
 
     if (g.phase == READY) {
-        banner("TURN RIGHT TO PUSH", "LEFT TO BRAKE - TAP TO OLLIE", "TAP TO START", g.c_shirt, 62);
+        banner("TURN RIGHT TO PUSH", "TAP: OLLIE  TAP AGAIN: TRICK", "TAP TO START", g.c_shirt, 62);
     } else if (g.phase == OVER) {
         char mid[32], bottom[32];
-        snprintf(mid, sizeof(mid), g.death == DIED_WALL ? "%dM, THEN A WALL" : "%dM, THEN THE GAP", metres());
-        snprintf(bottom, sizeof(bottom), "BEST %dM   TAP TO RETRY", g.best);
-        banner("WIPEOUT", mid, bottom, g.c_danger, 62);
+        char top[32];
+        snprintf(top, sizeof(top), g.death == DIED_WALL ? "%d - HIT A WALL" : "%d - MISSED THE GAP", score());
+        snprintf(mid, sizeof(mid), "%dM + %d AURA", metres(), g.aura);
+        snprintf(bottom, sizeof(bottom), "BEST %d   TAP TO RETRY", g.best);
+        banner(top, mid, bottom, g.c_danger, 62);
     }
     T->canvas_present(g.cv);
 }
