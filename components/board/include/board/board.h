@@ -65,6 +65,9 @@ esp_err_t pmu_init(void);
 bool      pmu_usb_power(void);   // USB cable supplying power (charger or computer)
 int       pmu_battery_percent(void);   // 0..100, or -1 if unknown
 bool      pmu_charging(void);
+// Cut the power at the power chip: everything off, and PWR turns it on again. Returns only if
+// it could not be asked - and may return briefly even when it could, so have a fallback.
+bool      pmu_power_off(void);
 
 // ---------------------------------------------------------------- buttons
 enum { BTN_BOOT = 1 << 0, BTN_PWR = 1 << 1 };

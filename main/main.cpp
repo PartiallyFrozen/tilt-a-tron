@@ -4,7 +4,9 @@
 #include "console/ui.h"
 #include "console/icons.h"
 #include "console/calibrate_app.h"
+#include "console/boot_anim.h"
 #include "console/launcher.h"
+#include "console/power_menu.h"
 #include "console/settings_app.h"
 #include "audio/audio.h"
 #include "console/theme.h"
@@ -335,32 +337,37 @@ extern "C" void app_main(void)
 
     console::crumb("storage");
     if (storage_init() != ESP_OK) ESP_LOGE(TAG, "storage unavailable, using the built-in look");
+    s_table_lock = xSemaphoreCreateMutex();
+    // If the last run ended badly, say so on screen and leave a note on the drive.
+    console::reportCrashIfAny(engine);
+
+    // From here until the home screen is ready, the screen is the boot animation's: it plays
+    // on the other core while this one loads, and it is how a watch says it has been turned
+    // on rather than woken.
+    static console::BootSplash *splash;
+    splash = new console::BootSplash;
+    splash->start(engine);
+
     // The games this watch came with, the first time it starts - or after its storage has
     // been wiped. Nothing is run; these are files being copied.
-    s_table_lock = xSemaphoreCreateMutex();
     console::crumb("factory");
     // On a new watch this takes the best part of half a minute and is the first thing its
     // screen ever shows, straight after someone has flashed it from a web page and is
-    // wondering whether that worked. A black screen would tell them it had not.
-    static wc::Engine *setup_ui;
-    setup_ui = &engine;
+    // wondering whether that worked. So the animation stands still and says what is going on.
     const int seeded = factory_seed([](const char *name, int done, int total) {
-        wc::Gfx &g = setup_ui->gfx();
-        const int cx = wc::Gfx::CX;
+        if (splash->running()) {
+            splash->status("SETTING UP", name, done, total);
+            return;
+        }
+        wc::Gfx &g = s_engine->gfx();
         g.clear(wc::colors::black);
-        g.textCentered(cx, 150, "SETTING UP", wc::colors::white, 4, true);
-        g.textCentered(cx, 198, "INSTALLING GAMES", console::ui::DIM, 2, true);
-        const int bar_w = 300, bar_x = cx - bar_w / 2, bar_y = 236;
-        g.rect(bar_x, bar_y, bar_w, 20, console::ui::BOX);
-        g.fillRect(bar_x + 2, bar_y + 2, (bar_w - 4) * done / total, 16, console::ui::GO);
-        g.textCentered(cx, 284, name, console::ui::ACCENT, 3, true);
-        setup_ui->presenter().present(g);
-        setup_ui->presenter().flush();
+        g.textCentered(wc::Gfx::CX, 150, "SETTING UP", wc::colors::white, 4, true);
+        g.textCentered(wc::Gfx::CX, 284, name, console::ui::ACCENT, 3, true);
+        s_engine->presenter().present(g);
+        s_engine->presenter().flush();
     });
+    splash->status("", "", 0, 0);
     if (seeded) ESP_LOGI(TAG, "installed %d factory games", seeded);
-
-    // If the last run ended badly, say so on screen and leave a note on the drive.
-    console::reportCrashIfAny(engine);
 
     console::crumb("theme");
     console::Theme::get().loadActive();
@@ -544,6 +551,8 @@ extern "C" void app_main(void)
     link_set_changed_hook(storage_changed);
     link_start();
 
+    static console::PowerMenu power_menu;
+    engine.setPowerMenu(power_menu);
     engine.setHome(launcher);
     engine.setSleepHooks(net_suspend, net_resume);
     // Plugged in means awake. AUTO OFF is for saving the battery, and there is no battery
@@ -553,6 +562,8 @@ extern "C" void app_main(void)
     engine.setKeepAwakeHook([] { return pmu_usb_power() || net_busy() || link_session_active(); });
     engine.setBusyHook(net_transfer_active);
     engine.setAutoOffSeconds(console::autoOffSeconds());
+    splash->finish();
+    delete splash;
     engine.run(launcher);
 }
 

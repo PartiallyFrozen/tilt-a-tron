@@ -112,6 +112,20 @@ void Engine::powerOff()
     esp_deep_sleep_start();
 }
 
+void Engine::doShutDown()
+{
+    ESP_LOGI(TAG, "shut down");
+    quiesce();
+    if (before_sleep_) before_sleep_();
+    // The power chip lets go of everything, and that is the end of this function. If it does
+    // not - it could not be reached, or it declines with a cable in - deep sleep is the next
+    // best thing, and looks the same from outside: dark, and PWR starts it from cold.
+    pmu_power_off();
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    ESP_LOGW(TAG, "still powered; deep sleep instead");
+    powerOff();
+}
+
 void Engine::doSleep()
 {
     ESP_LOGI(TAG, "sleep");
@@ -174,8 +188,16 @@ void Engine::doSleep()
 
     gfx_.clear(colors::black);
     gfx_.markAllDirty();
-    game_->enter(*this);
+    // Sent to sleep from the power menu: wake into what it interrupted, not back into it.
+    if (pending_) {
+        Game *next = pending_;
+        pending_ = nullptr;
+        activate(*next);
+    } else {
+        game_->enter(*this);
+    }
     dimmed_ = false;
+    pwr_held_since_us_ = 0;
     last_frame_us_ = last_activity_us_ = esp_timer_get_time();
 }
 
@@ -278,6 +300,16 @@ void Engine::loop()
             dimmed_ = false;
         }
 
+        // Console-wide: a long hold of PWR is the power menu.
+        if (!(input_state_.held & BTN_B)) {
+            pwr_held_since_us_ = 0;
+        } else if (!pwr_held_since_us_) {
+            pwr_held_since_us_ = t0;
+        } else if (power_menu_ && game_ != power_menu_ && !pending_ &&
+                   t0 - pwr_held_since_us_ >= int64_t(POWER_PEEK_S * 1e6f)) {
+            before_power_ = game_;
+            pending_ = power_menu_;
+        }
         // Console-wide: BOOT (the small key by the USB port) goes back to the home menu.
         if ((input_state_.pressed & BTN_A) && home_ && game_ != home_) pending_ = home_;
         if (pending_) {
@@ -293,6 +325,13 @@ void Engine::loop()
             game_->redraw();
         }
         game_->update(*this, dt);
+        if (restart_requested_) {
+            ESP_LOGI(TAG, "restart");
+            quiesce();
+            if (before_sleep_) before_sleep_();
+            esp_restart();
+        }
+        if (shutdown_requested_) doShutDown();
         if (sleep_requested_) {
             sleep_requested_ = false;
             // Never drop the USB connection out from under a file copy.

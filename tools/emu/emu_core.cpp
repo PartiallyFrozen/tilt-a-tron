@@ -13,6 +13,7 @@
 // it, or anything about the loader - a game is linked in here, not loaded from a .tat.
 //
 // tools/emu/emu.py builds this and drives it; see tools/emu/README.md.
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -36,7 +37,15 @@
 #define EMU_API extern "C" __attribute__((visibility("default")))
 #endif
 
+// Built around a game - or, with EMU_SCREEN_*, around one of the console's own screens, which
+// are not games and draw through the engine rather than the game API.
+#if defined(EMU_SCREEN_BOOT) || defined(EMU_SCREEN_POWER) || defined(EMU_SCREEN_HOLD)
+#define EMU_SCREEN 1
+#include "console/boot_anim.h"
+#include "console/power_menu.h"
+#else
 extern "C" const tat_game_t tat_game;   // the game this library was built around
+#endif
 
 // A game names its files through `tat_assets`, which on a watch the loader fills in from the
 // package. Here it is filled in from the game's assets folder. The game sees it as const;
@@ -279,7 +288,12 @@ void Presenter::presentBands(const BandFill &fill)
 // which for a game is when its pause menu is open.
 void Presenter::present(Gfx &gfx)
 {
-    if (!streamed_ && tat::api()->menu_is_open()) std::memcpy(s_frame, gfx.pixels(), sizeof(s_frame));
+#ifdef EMU_SCREEN
+    const bool looked_at = true;   // a console screen draws nowhere else
+#else
+    const bool looked_at = tat::api()->menu_is_open();
+#endif
+    if (!streamed_ && looked_at) std::memcpy(s_frame, gfx.pixels(), sizeof(s_frame));
     streamed_ = false;
 }
 
@@ -315,9 +329,30 @@ struct HomeMarker : wc::Game {
     void draw(wc::Engine &, wc::Gfx &) override {}
 };
 
+#ifdef EMU_SCREEN
+// The boot animation, as BootSplash plays it: two spins, a stretch of "setting up" as a new
+// watch would show, and round again.
+struct BootScreen : wc::Game {
+    console::BootAnim anim;
+    float t = 0;
+    void begin(wc::Engine &) override { anim.init(); }
+    void update(wc::Engine &, float dt) override { t += dt; }
+    void draw(wc::Engine &e, wc::Gfx &) override
+    {
+        const float lap = console::BootAnim::SPIN_S * 2 + 2.0f, at = std::fmod(t, lap);
+        if (at < console::BootAnim::SPIN_S * 2) anim.spin(e.presenter(), at);
+        else anim.waiting(e.presenter(), "SETTING UP", "SKATER GIRLZ", int((at - console::BootAnim::SPIN_S * 2) * 5), 10);
+    }
+};
+#endif
+
 static wc::Engine s_engine;
 static HomeMarker s_home;
+#ifdef EMU_SCREEN
+static wc::Game *s_game;
+#else
 static tat::HostedGame *s_game;
+#endif
 static std::vector<std::vector<unsigned char>> s_asset_bytes;
 static std::vector<std::string> s_asset_names;
 
@@ -329,8 +364,13 @@ static struct {
 } s_in = {false, 0, 0, 0, 0, 1, 0, 0, 0, 0}, s_prev = s_in;   // held upright, the way it is on a wrist
 static int64_t s_btn_down_us[8];
 
+#ifdef EMU_SCREEN
+EMU_API const char *emu_game_id(void) { return "screen"; }
+EMU_API const char *emu_game_name(void) { return "TILT-A-TRON"; }
+#else
 EMU_API const char *emu_game_id(void) { return tat_game.id; }
 EMU_API const char *emu_game_name(void) { return tat_game.name; }
+#endif
 
 // Before emu_begin: each file in the game's assets folder, by the name the game asks for.
 EMU_API void emu_add_asset(const char *name, const unsigned char *data, int len)
@@ -349,6 +389,21 @@ EMU_API void emu_options(const char *save_path, unsigned seed, int quiet)
 EMU_API int emu_begin(void)
 {
     nvs_read_file();
+#ifdef EMU_SCREEN
+    if (!s_engine.gfx().init()) return 0;
+    EngineEmulator::set_home(s_engine, s_home);
+#ifdef EMU_SCREEN_BOOT
+    s_game = new BootScreen;
+#else
+    s_game = new console::PowerMenu;
+#endif
+#ifdef EMU_SCREEN_HOLD
+    EngineEmulator::input(s_engine).held = wc::BTN_B;   // as the engine shows it: PWR still down
+#endif
+    s_game->begin(s_engine);
+    s_game->enter(s_engine);
+    return 1;
+#else
     for (size_t i = 0; i < s_asset_names.size() && i < 31; i++) {
         emu_set_asset((int)i, s_asset_names[i].c_str(), s_asset_bytes[i].data(),
                       s_asset_bytes[i].data() + s_asset_bytes[i].size());
@@ -362,6 +417,7 @@ EMU_API int emu_begin(void)
     s_game->begin(s_engine);
     s_game->enter(s_engine);
     return 1;
+#endif
 }
 
 // Held buttons are a mask of TAT_BTN_*; touch is in screen pixels; tilt is gravity in g,

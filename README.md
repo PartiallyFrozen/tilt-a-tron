@@ -237,6 +237,15 @@ are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the tem
 ## Console navigation
 
 - **Home** is a carousel: swipe (or tap beside the icon) to browse, tap the icon to launch; PWR does nothing on its own here.
+- **Hold PWR** anywhere = the power menu: **SLEEP**, **SHUT DOWN**, **RESTART**. The screen
+  answers half way through the six-second hold with a ring that fills for the rest of it, and
+  letting go early goes back to what was running. Each choice says what it is doing and how
+  to come back from it before the screen goes dark. SHUT DOWN is off at the power chip:
+  nothing is drawn from the battery, and PWR starts the watch from cold. (Holding for ten
+  seconds is the power chip's own cut-off, whatever the firmware is doing.)
+- **Turned on, it says so**: a watch starting from cold plays the boot animation - TILT-A-TRON
+  spun like a top, settling, flicked again - while it loads. A watch woken from sleep is
+  simply back where it was.
 - **Double-click PWR** on home = sleep (iris-out, light sleep, PWR wakes instantly where
   you left off). Still asleep after **AUTO OFF** (default 2 min) → powers down (deep
   sleep); PWR then cold-boots into the carousel. **On USB power it naps instead**: screen
@@ -265,8 +274,8 @@ are shrunk to fit (up to ~1264x1264); `tools/make_guides.py` regenerates the tem
 
 All apps follow the same conventions (use `console::ui` and `wc::Gestures`):
 bold text at scale 2 or larger; tap is the primary action; BOOT = home; PWR click
-= the app's secondary action (Breakout: change control); hold PWR is reserved
-(sleep/power later); PWR double-click on home = sleep; swipe left = the app's menu,
+= the app's secondary action (Breakout: change control); holding PWR is the console's
+power menu, so no app should ask for a hold longer than a second; PWR double-click on home = sleep; swipe left = the app's menu,
 swipe right = back; long menus use `console::ui::ScrollList`; tooltips explain
 controls before play starts.
 Default to what's fun on a watch you hold: tilt, gravity, momentum, juice.

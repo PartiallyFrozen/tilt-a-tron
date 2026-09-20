@@ -63,6 +63,21 @@ public:
     }
     bool isHome() const { return game_ == home_; }
 
+    // The power menu. Holding PWR anywhere on the console brings `menu` up, and it is the
+    // only way to it, so that a watch can always be told to sleep, shut down or restart
+    // whatever is running. The menu is shown after POWER_PEEK_S, while PWR is still down,
+    // so that the rest of the hold is not spent wondering whether anything is happening; it
+    // offers its choices at POWER_HOLD_S, and letting go before that goes back (resume()).
+    static constexpr float POWER_PEEK_S = 3.0f, POWER_HOLD_S = 6.0f;
+    void setPowerMenu(Game &menu) { power_menu_ = &menu; }
+    void resume() { pending_ = before_power_ ? before_power_ : home_; }   // back to what the power menu interrupted
+    // Off at the power chip, so nothing is drawn from the battery; PWR turns it on again, from
+    // cold. And a restart. Both take effect after the current update(), like sleep().
+    void shutDown() { shutdown_requested_ = true; }
+    void restart() { restart_requested_ = true; }
+    // True while turning off would break something (a file is on its way to the drive).
+    bool powerBusy() const { return busy_ && busy_(); }
+
     // Light sleep until PWR is pressed. Takes effect after the current update();
     // on wake the active app gets enter() again. If still asleep after the auto-off
     // time, the console powers down (deep sleep; PWR cold-boots). Hooks let the
@@ -120,6 +135,7 @@ private:
     void irisOut();
     void quiesce();
     [[noreturn]] void powerOff();
+    [[noreturn]] void doShutDown();
     bool sawActivity() const;
 
     void applyInjected(int64_t now);
@@ -142,6 +158,10 @@ private:
     Game *game_ = nullptr;
     Game *home_ = nullptr;
     Game *pending_ = nullptr;
+    Game *power_menu_ = nullptr;
+    Game *before_power_ = nullptr;
+    int64_t pwr_held_since_us_ = 0;
+    bool shutdown_requested_ = false, restart_requested_ = false;
     volatile bool redraw_req_ = false;
     bool sleep_requested_ = false;
     volatile bool wake_requested_ = false;

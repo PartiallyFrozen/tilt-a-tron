@@ -7,6 +7,10 @@ python tools/emu/emu.py play skatergirlz
 python tools/emu/emu.py shot echo "wait 0.5; tap 233 233; wait 2; shot turn.png"
 ```
 
+The console's own screens run here too, though they are not games: `@boot` is the boot
+animation, `@power` the power menu and `@hold` the power menu as the hold brings it up
+(`emu.py shot @hold "hold b; wait 2; shot ring.png; wait 1.5; shot menu.png"`).
+
 You need Python 3 with Pillow, and a C++ compiler: gcc or clang, or on Windows the MSVC build
 tools, which it finds by itself. The first run of a game builds it, in about three seconds;
 after that it rebuilds only when a source has changed.
@@ -69,6 +73,7 @@ turn <degrees>    upright, turned like a wheel, right positive
 pitch <degrees>   and tipped, top away from you positive
 tilt <ax> <ay> <az>                  gravity as the game sees it, in g
 button b [seconds]                   PWR
+hold b  /  letgo                     PWR down and left down
 shot <file.png>                      sheet <file.png>   every shot so far, tiled
 ```
 

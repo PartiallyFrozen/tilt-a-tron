@@ -60,6 +60,12 @@ CONSOLE_SOURCES = [
     "components/wc_console/pause_menu.cpp",
     "components/lodepng/lodepng.cpp",
 ]
+# The console's own screens, which are not games: `emu.py play @boot`.
+SCREENS = {"@boot": "EMU_SCREEN_BOOT", "@power": "EMU_SCREEN_POWER", "@hold": "EMU_SCREEN_HOLD"}
+SCREEN_SOURCES = [
+    "components/wc_console/boot_anim.cpp",
+    "components/wc_console/power_menu.cpp",
+]
 INCLUDES = [
     "tools/emu/stubs",
     "components/engine/include",
@@ -95,10 +101,15 @@ def library_path(game):
 
 
 def build(game, force=False, verbose=False):
-    game_dir = os.path.join(ROOT, "games", game)
-    if not os.path.isdir(game_dir):
-        sys.exit(f"no such game: games/{game}")
-    game_sources = sorted(glob.glob(os.path.join(game_dir, "*.c")))
+    defines = []
+    if game in SCREENS:
+        defines = [SCREENS[game]]
+        game_sources = [os.path.join(ROOT, s) for s in SCREEN_SOURCES]
+    else:
+        game_dir = os.path.join(ROOT, "games", game)
+        if not os.path.isdir(game_dir):
+            sys.exit(f"no such game: games/{game} (or one of {', '.join(SCREENS)})")
+        game_sources = sorted(glob.glob(os.path.join(game_dir, "*.c")))
     sources = [os.path.join(ROOT, s) for s in CONSOLE_SOURCES] + [os.path.join(HERE, "emu_core.cpp"),
                                                                  os.path.join(HERE, "emu_assets.c")] + game_sources
     lib = library_path(game)
@@ -116,7 +127,7 @@ def build(game, force=False, verbose=False):
         cl, env = msvc
         common = [cl, "/nologo", "/c", "/O2", "/MD", "/W3", "/wd4100", "/wd4996", "/wd4244", "/wd4305", "/wd4267", "/wd4018",
                   "/wd4146", "/D_USE_MATH_DEFINES", "/D_CRT_SECURE_NO_WARNINGS", "/utf-8", "/Fo" + work + os.sep]
-        common += ["/I" + i for i in incs]
+        common += ["/I" + i for i in incs] + ["/D" + d for d in defines]
         # C and C++ in two goes: MSVC will not be told a standard for both at once.
         c_files = [s for s in sources if s.endswith(".c")]
         cpp_files = [s for s in sources if not s.endswith(".c")]
@@ -137,7 +148,7 @@ def build(game, force=False, verbose=False):
             o = os.path.join(work, os.path.basename(s) + ".o")
             is_c = s.endswith(".c")
             cmd = [cc if is_c else cxx, "-c", "-O2", "-fPIC", "-std=gnu17" if is_c else "-std=gnu++20", "-w", "-o", o, s]
-            cmd += ["-I" + i for i in incs]
+            cmd += ["-I" + i for i in incs] + ["-D" + d for d in defines]
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode:
                 sys.exit(r.stdout + r.stderr)
@@ -265,6 +276,12 @@ def run_script(console, script, out_dir):
         elif op == "button":
             console.held = BTN_B
             console.run(float(a[1]) if len(a) > 1 else 0.1)
+            console.held = 0
+            console.run(0.05)
+        elif op == "hold":      # PWR down, and left down: `hold b; wait 2; letgo`
+            console.held = BTN_B
+            console.run(1 / 60)
+        elif op == "letgo":
             console.held = 0
             console.run(0.05)
         elif op == "shot":
