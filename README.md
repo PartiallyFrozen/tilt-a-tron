@@ -108,6 +108,13 @@ never at boot, so a bad package costs a message on screen and nothing else. Read
 about 450 lines, and was written, installed and revised on a running watch without the
 firmware being touched.
 
+**Try it on your PC first.** `python tools/emu/emu.py play mygame` opens the game in a window:
+the mouse is your finger and the arrow keys turn and tip the watch. It is not a lookalike - it
+builds the console's own canvas, font, menus and game API around your game and swaps only the
+hardware underneath, so what you see is what the watch draws. `emu.py shot mygame "<script>"`
+drives it from a script and saves pictures, the same every run, which is how the games here are
+tested. It builds in about three seconds; see [tools/emu/README.md](tools/emu/README.md).
+
 **Skins.** `--skin <folder>` swaps a game's art without touching its source: any file in the
 folder replaces the game's asset of the same name in that one package, and the folder can be
 anywhere. STARFALL's two ships are `player.png` (three frames side by side: banked left, level,

@@ -90,6 +90,10 @@ python tools/mktat.py games/mygame          # -> build/mygame.tat
 tiltatron-manager install build/mygame.tat  # it appears on the home screen; no restart
 ```
 
+Work on it in the emulator - `python tools/emu/emu.py play mygame` - which builds in three
+seconds and draws exactly what a watch draws ([tools/emu/README.md](tools/emu/README.md)). Put
+it on a watch before you call it finished: only a hand can say how it feels.
+
 Start from `games/echo/echo.c` (the newest, about 450 lines) and
 [docs/GAME_API.md](docs/GAME_API.md). Use the shared pause menu (`menu_*`) and banners so it
 behaves like the rest of the console - the shared feel is the point: tilt first, big bold

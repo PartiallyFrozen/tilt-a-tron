@@ -108,6 +108,11 @@ public:
     int64_t nowUs() const;
 
 private:
+    // tools/emu runs games on a PC against this same class, and has to be able to hand it
+    // the input a frame would have had and see where a game asked to go. Nothing on the
+    // watch defines this.
+    friend struct EngineEmulator;
+
     static void loopEntry(void *arg);
     void loop();
     void activate(Game &app);
