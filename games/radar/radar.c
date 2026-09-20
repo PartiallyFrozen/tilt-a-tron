@@ -5,11 +5,13 @@
 // grid is a straight 13 x 13 lattice with the corners cut off by the round panel - 137 cells
 // of ocean - and a radar sweep goes round it.
 //
-//   touch       - a pin goes where your finger is, with cross-hairs out to the rim, because
-//                 a cell is two millimetres across and the finger is on top of it. Slide to
-//                 move the pin
-//   let go      - the pin is dropped. The sweep comes round to it, and only when the line
-//                 reaches the pin do you learn what was there. A hit drops another
+//   press and hold - cross-hairs go where your finger is, out to the rim both ways, because
+//                    a cell is two millimetres across and the finger is on top of it. Slide
+//                    to move them along the board
+//   lift           - they lock there and the bomb is dropped. The sweep comes round to it,
+//                    and only when the line reaches it do you learn what was there. A quick
+//                    tap drops nothing: it only moves the cross-hairs
+//   one bomb each, turn about, hit or miss
 //   swipe left  - pause menu
 //
 // A hit marks the cell that was struck and nothing else: no hull outline, no ship class. You
@@ -97,6 +99,7 @@ static struct {
     int armed;            // the cell the pin is on, or -1
     float travel;         // how far the line still has to turn to reach it
     bool aiming;
+    float nudge_t;        // showing "hold, then lift" after a tap that dropped nothing
     bool first_touch;     // the how-to banner goes once a finger has been down
 
     // placing the fleet
@@ -295,6 +298,7 @@ static void begin_deploy(void)
     g.armed = -1;
     g.aiming = false;
     g.first_touch = false;
+    g.nudge_t = 0;
     g.ai_queued = 0;
     set_phase(DEPLOY);
     next_in_hand();
@@ -419,18 +423,38 @@ static int cell_near(int tx, int ty)
     return best_d <= (PITCH * 1.5f) * (PITCH * 1.5f) ? best : -1;
 }
 
+// A bomb is a press and hold, not a tap: a tap on a cell this small is as likely a slip as
+// an aim, and a slip costs a turn. A tap only moves the cross-hairs.
+#define HOLD_S 0.25f
+
 static void update_hunt(float dt, const tat_input_t *in)
 {
     g.sweep = fmodf(g.sweep + TAU / SWEEP_S * dt, TAU);
+    if (g.nudge_t > 0 && (g.nudge_t -= dt) <= 0) g.dirty = true;
+    if (in->touch.pressed) {
+        g.touch_t = 0;
+        g.touch_x0 = in->touch.x, g.touch_y0 = in->touch.y;
+        g.dragged = false;
+        g.nudge_t = 0;
+    }
     if (in->touch.down) {
         g.first_touch = true;
+        g.touch_t += dt;
+        const int mx = in->touch.x - g.touch_x0, my = in->touch.y - g.touch_y0;
+        if (mx * mx + my * my > 18 * 18) g.dragged = true;
         const int was = g.armed;
-        g.armed = cell_near(in->touch.x, in->touch.y);
+        const int c = cell_near(in->touch.x, in->touch.y);
+        if (c >= 0 || g.dragged) g.armed = c;   // slid off the board: nothing armed
         if (g.armed != was && g.armed >= 0) sfx_ping();
         g.aiming = true;
     } else if (g.aiming) {
         g.aiming = false;
-        if (g.armed < 0) return;   // let go off the board: nothing dropped
+        if (g.armed < 0) return;   // lifted off the board: nothing dropped
+        if (!g.dragged && g.touch_t < HOLD_S) {
+            g.nudge_t = 2.5f;      // the cross-hairs stay where the tap put them
+            return;
+        }
+        g.nudge_t = 0;
         g.shots++;
         sfx_fire();
         g.travel = turn_to(g.sweep, g.armed);
@@ -688,8 +712,7 @@ static void rd_update(float dt)
     case CONTACT:
         if (g.phase_t < (g.shot_sunk >= 0 ? 2.0f : 1.2f)) break;
         if (g.theirs.afloat == 0) finish_game(true);
-        else if (g.shot_result == SHOT_HIT) set_phase(HUNT);   // a hit shoots again
-        else begin_incoming();
+        else begin_incoming();   // one bomb each, hit or miss
         break;
 
     case INCOMING: {
@@ -709,7 +732,6 @@ static void rd_update(float dt)
     case STRUCK:
         if (g.phase_t < (g.shot_sunk >= 0 ? 1.8f : g.shot_result == SHOT_HIT ? 1.0f : 0.7f)) break;
         if (g.mine.afloat == 0) finish_game(false);
-        else if (g.shot_result == SHOT_HIT) begin_incoming();
         else set_phase(HUNT);
         break;
 
@@ -961,14 +983,16 @@ static void rd_draw(void)
                 const int y = verdict_y(g.shot_cell);
                 band(y, 38);
                 text(y + 12, g.shot_sunk >= 0 ? "SUNK" : hit ? "HIT" : "MISS", hit ? g.c_red : g.c_pale, 3);
-                text(y + 30, g.shot_sunk >= 0 ? SHIP_NAME[g.shot_sunk] : hit ? "CLASS UNKNOWN  DROP ANOTHER" : "OPEN WATER",
+                text(y + 30, g.shot_sunk >= 0 ? SHIP_NAME[g.shot_sunk] : hit ? "CLASS UNKNOWN" : "OPEN WATER",
                      g.c_pale, 1);
             }
+        } else if (g.phase == HUNT && g.nudge_t > 0) {
+            label(203, "HOLD, THEN LIFT", g.c_amber);
         } else if (g.phase == HUNT && !g.first_touch && g.played < 3) {
             band(150, 34);
-            text(158, "TOUCH TO PLACE A PIN", g.c_amber, 1);
-            text(168, "SLIDE TO MOVE IT", g.c_pale, 1);
-            text(178, "LET GO TO DROP IT", g.c_pale, 1);
+            text(158, "PRESS AND HOLD", g.c_amber, 1);
+            text(168, "SLIDE THE CROSS-HAIRS", g.c_pale, 1);
+            text(178, "LIFT TO DROP THE BOMB", g.c_pale, 1);
         }
         break;
     }
@@ -992,7 +1016,7 @@ static void rd_draw(void)
                 const int y = verdict_y(g.shot_cell);
                 band(y, 38);
                 text(y + 12, g.shot_sunk >= 0 ? "SHIP LOST" : "STRUCK", g.c_amber, 3);
-                text(y + 30, g.shot_sunk >= 0 ? SHIP_NAME[g.shot_sunk] : "THEY FIRE AGAIN", g.c_pale, 1);
+                text(y + 30, g.shot_sunk >= 0 ? SHIP_NAME[g.shot_sunk] : "YOUR TURN NEXT", g.c_pale, 1);
             }
         }
         break;

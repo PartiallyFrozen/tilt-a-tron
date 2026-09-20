@@ -464,11 +464,14 @@ Handy for checking a game without picking the watch up.
 The pencil-and-paper sea battle, on a radar scope: five ships each, hidden on a 13 x 13 grid
 with the corners cut off by the round screen, 137 cells of water.
 
-- **Touch** the board and a pin goes where your finger is, with cross-hairs out to the rim -
-  a cell is two millimetres across and the finger is on top of it. **Slide** to move the pin,
-  **let go** to drop it. Let go off the board and nothing is dropped.
-- Then the sweep comes round to the pin, and only when the line reaches it do you learn what
-  was there: HIT, MISS or SUNK. A hit drops another.
+- **Press and hold** the board and cross-hairs go where your finger is, out to the rim both
+  ways - a cell is two millimetres across and the finger is on top of it. **Slide** to move
+  them along the board; **lift** and they lock there and the bomb is dropped. Lift off the
+  board and nothing is dropped. A quick tap drops nothing either: it only moves the
+  cross-hairs, because a slip should not cost a turn.
+- Then the sweep comes round to the bomb, and only when the line reaches it do you learn what
+  was there: HIT, MISS or SUNK.
+- **One bomb each, turn about**, hit or miss.
 - A hit marks the cell that was struck and nothing else - no outline, no class. You learn what
   a ship was when it sinks.
 - Then it is their turn: the same radar in amber, over your own water. They hunt on every
