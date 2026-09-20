@@ -343,19 +343,29 @@ def star_icon():
                         col = lip if abs(tang) > 1.8 else disc_c
             px[xx, yy] = col + (255,)
     # The beam, straight down from the rim through both gaps to the star.
-    rect(img, c - 2, 2, 4, c - 8, glow)
-    rect(img, c - 1, 2, 2, c - 8, beam)
+    rect(img, c - 2, 2, 4, c - 12, glow)
+    rect(img, c - 1, 2, 2, c - 12, beam)
     rect(img, c - 3, 1, 6, 4, (58, 66, 96))
-    # The star: an octagon with a sleepy face and its door at the bottom.
+    # The star: five chubby points, a sleepy face, and the red box the light is for on top.
+    fat, s36, c36 = 0.60, math.sin(math.radians(36)), math.cos(math.radians(36))
+    R, edge_c, cy = 10.5, (176, 122, 18), c + 2
     for yy in range(L):
         for xx in range(L):
-            dx, dy = abs(xx + 0.5 - c), abs(yy + 0.5 - c)
-            if dx <= 6.5 and dy <= 6.5 and dx + dy <= 9.2:
+            dx, dy = xx + 0.5 - c, yy + 0.5 - cy
+            rr = math.hypot(dx, dy)
+            ang = abs(math.atan2(dx, -dy)) % (math.tau / 5)
+            if ang > math.tau / 10:
+                ang = math.tau / 5 - ang
+            lim = fat * s36 / (math.cos(ang) * fat * s36 - math.sin(ang) * (fat * c36 - 1))
+            if rr <= (R - 1.2) * lim:
                 px[xx, yy] = star + (255,)
-    rect(img, c - 4, c - 1, 3, 1, face)
-    rect(img, c + 1, c - 1, 3, 1, face)
-    rect(img, c - 1, c + 2, 2, 1, face)
-    rect(img, c - 2, c + 5, 4, 2, door)
+            elif rr <= R * lim:
+                px[xx, yy] = edge_c + (255,)
+    rect(img, c - 4, cy, 3, 1, face)
+    rect(img, c + 1, cy, 3, 1, face)
+    rect(img, c - 1, cy + 3, 2, 1, face)
+    rect(img, c - 3, cy - 12, 6, 6, (122, 21, 18))
+    rect(img, c - 2, cy - 11, 4, 4, (232, 48, 42))
     finish(img, "star")
 
 

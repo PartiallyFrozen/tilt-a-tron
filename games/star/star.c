@@ -1,28 +1,28 @@
-// SLEEPY STAR - a laser falls straight down onto rings of walls with gaps, mirrors and
-// splitters cut into them. Line them up so the light reaches the star's door.
+// SLEEPY STAR - a laser comes straight down onto rings of walls with holes and mirrors cut
+// into them. Turn the rings until the light reaches the red box on the star, and it wakes up.
 //
-//   turn watch  - free: the laser always comes from real-world "up", so turning the
-//                 watch moves where it enters (8 notches around the rim)
-//   tap a ring  - clicks it round one notch; the ring inside it turns the other way.
-//                 Taps are what's counted, against the level's par
-//   tap the star - a hint: the ring to tap next, or where the laser should come from
-//   PWR         - start the level over
-//   swipe left  - pause menu
+//   drag a ring   - it turns with your finger, like a dial on a combination lock, and clicks
+//                   into one of eight places. The light is redrawn as it turns, so the way
+//                   through is found by looking
+//   tap the star  - a hint: the ring that is in the wrong place
+//   PWR           - pause menu (level, sound, start the level over)
+//   swipe left    - pause menu too, from the star or the rim; a swipe that starts on a ring
+//                   is a turn of that ring
 //
-// Three things were changed after it was played. The star's door was on its far side - the
-// spec puts it at spoke 4, straight down, and the laser comes from the top, so held the way
-// a watch is held the light was aimed at the star's back and a straight shot needed the
-// watch upside down. The picture is now drawn half a turn round (VIEW), which puts the door
-// under the laser and changes nothing else: every level, every solution and every saved
-// best is what it was. The board filled barely half the screen, with a reset button beside
-// it that PWR and the menu already were; it now fills it. And it asked for a little more
-// working-out than most people bring to a watch, with nothing to fall back on - so the star
-// gives hints, from the solver that was already in here checking the levels.
+// This is the third set of rules. The first two had the laser come from wherever real-world
+// "up" was, so that turning the watch moved it round the rim, and had each ring geared to the
+// one inside it, so that a tap turned two rings in opposite directions and the puzzle was in
+// the gearing. It was clever, and played on a wrist it was work: two things moving for every
+// one that was touched, and a laser that wandered off when the hand did. What was good in it
+// was the light, the rings and the star, and those are what is left. The laser stays at the
+// top. Every ring turns by itself, under the finger that is on it. The puzzle is the light's
+// path: a hole lets it straight through, a mirror sends it one place round, a splitter does
+// both - and from the first mirrors on, some ring has no plain hole at all, so there is no
+// lining up a straight shot.
 //
-// Built from docs/SLEEPY_STAR_SPEC.md. The board is fixed to the watch; the laser emitter
-// orbits the rim to wherever real-world "up" is (8 spokes, with hysteresis). Geometry in
-// the spec is in device pixels; this draws on the 2x pixel canvas, so every spec number
-// appears here halved.
+// Geometry is docs/SLEEPY_STAR_SPEC.md's, in device pixels; this draws on the 2x pixel
+// canvas, so every spec number appears here halved. The board is drawn half a turn round
+// from the spec (VIEW), which puts the star's target at the top, under the laser.
 //
 // Written against tat_api.h alone: it includes nothing else from the console and calls
 // nothing by name.
@@ -41,50 +41,24 @@ static const tat_api_t *T;
 #define CW ((TAT_SCREEN + SCALE - 1) / SCALE)   /* 233 */
 #define C (CW / 2.0f)
 
-// ---------------------------------------------------------------- model (spec section 4)
+// ---------------------------------------------------------------- model
 
 enum { BLOCK = 0, GAP, MIRROR_L, MIRROR_R, SPLIT };
 
 #define SPOKES 8
 #define MAX_RINGS 4
-#define DOOR 4
-#define VIEW 4   /* the board is drawn this many spokes round, which puts the door at the top */
+#define DOOR 4    /* the spoke the star's target is on... */
+#define LASER 4   /* ...and the one the laser comes in on: the same, so the light has to come back to it */
+#define VIEW 4    /* the board is drawn this many spokes round, which puts both at the top */
 
 typedef struct {
     uint8_t n_rings;
     uint8_t ring[MAX_RINGS][SPOKES];   /* ring[0] = outermost */
     uint8_t start[MAX_RINGS];
-    uint8_t best;                      /* verified minimum taps */
+    uint8_t best;                      /* the fewest rings that have to be moved */
 } Level;
 
 static int m8(int n) { return ((n % 8) + 8) % 8; }
-
-// Short names so a level's eight spokes fit on one line and can be read as a picture. The
-// C++ called the wall `_`; a bare underscore is legal C but unreadable, so it is W here.
-enum { O = GAP, L_ = MIRROR_L, R_ = MIRROR_R, Y = SPLIT, W = BLOCK };
-
-typedef struct {
-    int n;
-    Level lvl;
-} Campaign;
-
-// The six machine-verified campaign levels (spec section 7). C++ would fill the unwritten
-// rings in from a bare {}; C needs at least one initialiser per aggregate, which is why the
-// short levels below still spell out every brace they open.
-static const Campaign CAMPAIGN[] = {
-    {1, {2, {{O, W, O, W, W, W, O, W}, {W, W, W, O, O, W, W, O}}, {3, 2}, 1}},
-    {2, {2, {{W, W, W, W, W, O, W, O}, {W, W, W, O, O, W, W, W}}, {7, 6}, 2}},
-    {4, {2, {{W, W, W, W, O, L_, L_, W}, {W, W, W, W, O, O, L_, W}}, {5, 0}, 3}},
-    {7, {3, {{W, W, O, L_, W, W, W, O}, {W, L_, O, W, W, W, W, R_}, {W, L_, R_, W, R_, W, W, W}}, {3, 4, 2}, 3}},
-    {11, {3, {{W, W, O, L_, W, O, W, W}, {O, W, W, W, W, L_, R_, W}, {R_, W, W, L_, Y, W, W, L_}}, {4, 3, 0}, 4}},
-    {16,
-     {4,
-      {{L_, W, W, W, O, W, L_, O}, {W, R_, W, W, W, R_, W, L_}, {L_, W, O, R_, W, R_, W, W}, {W, O, W, W, W, R_, R_, W}},
-      {0, 6, 1, 6},
-      5}},
-};
-
-#define CAMPAIGN_N ((int)(sizeof(CAMPAIGN) / sizeof(CAMPAIGN[0])))
 
 // Ring layout by ring count (spec section 3, halved): radii outer -> inner, teeth, star radius.
 typedef struct {
@@ -114,7 +88,7 @@ static const Geo GEO[MAX_RINGS + 1] = {
 #define EMIT_PX 101.0f     /* where the beam leaves the emitter */
 #define DISC_PX 104.0f
 
-#define MAX_STATES 4096
+#define MAX_STATES 4096    /* 8 places to the power of 4 rings */
 
 typedef enum { TUTORIAL, PLAYING, SOLVED } Phase;
 
@@ -136,29 +110,27 @@ typedef struct {
 
 #define HINT_S 3.0f         /* how long a hint stays up */
 #define STUCK_S 28.0f       /* no progress for this long and the star offers */
+#define SNAP_S 0.12f        /* a ring let go of settles into its place in this long */
 
 static const char *const CHEERS[] = {"NICE!", "YES!", "GOT IT!", "LOVELY!", "BRIGHT!", "WAHOO!"};
+
+// Every arrangement of the current level's rings that the light gets through, packed. The
+// hints are read from it, and so is the level's par.
+static uint16_t s_wins[MAX_STATES];
+static int s_n_wins;
 
 static struct {
     tat_canvas_t *cv;
     const uint16_t *pol_a, *pol_r;   /* the screen's polar tables, fetched once */
 
-    // The breadth-first solver's working tables. The C++ parked these in PSRAM with
-    // EXT_RAM_BSS_ATTR, which a packaged game has no way to ask for: where its memory comes
-    // from is the console's business, so they are taken from T->alloc() instead and given
-    // back on unload.
-    int8_t *dist;      /* taps from each ring configuration to the nearest winning one */
-    uint16_t *queue;
-
     /* progress */
     int level, depth;
-    bool seen_tut, flat_play;
+    bool seen_tut;
 
     /* play */
     Level lvl;
     uint8_t rot[MAX_RINGS];
-    int entry;
-    int taps;
+    int moves;     /* rings turned to a new place: what is counted against the level's best */
     Phase phase;
     float phase_t;
     int reached;   /* how many rings the beam got through on the last trace */
@@ -168,36 +140,33 @@ static struct {
     Pt stops[12];
     int n_stops;
 
-    /* ring tween: both rings step to their new angle in 3 jumps over 260 ms */
+    /* the ring under the finger */
+    int grab;               /* or -1 */
+    bool touch_on_ring;     /* this touch began on a ring, so it is not a swipe for the menu */
+    float grab_vis, turned; /* where the ring was when it was taken, and how far it has been turned since, in places */
+    float last_a;
+    uint8_t grab_rot;
+
+    /* where each ring is drawn: a ring let go of between places settles into the nearest */
     float vis_from[MAX_RINGS], vis_to[MAX_RINGS];
     float tween_t;
 
-    /* tilt (spec section 5) */
-    float up;   /* filtered screen angle of world-up */
-    bool have_up;
-    float flat_t;
-    bool nudge;
-    float gyro_sign, sign_score, last_target;
-    bool had_target;
-
     /* ui */
     bool dirty;
-    int64_t last_tap_us;
     int stars_earned;
 
     /* hints */
     float hint_t;      /* > 0 while one is showing */
-    int hint_ring;     /* the ring to tap, or -1 */
-    int hint_entry;    /* the spoke the laser should come in on, or -1 */
+    int hint_ring;     /* the ring that is in the wrong place, or -1 */
     bool hinted;       /* this level has had one, which caps it at two stars */
     float idle_t;      /* since the player last got anywhere */
     float blink_t;
 
     /* palette */
-    uint8_t c_void, c_disc, c_bezel, c_plate[4], c_tooth[4], c_lip, c_mirror, c_split;
-    uint8_t c_beam, c_glow, c_white, c_asleep, c_awake, c_halo, c_door, c_door_lit;
-    uint8_t c_face_lit, c_text, c_dim, c_stop, c_emit, c_emit_hi, c_panel, c_rays;
-    uint8_t c_orange, c_pip_edge, c_cyan, c_hint;
+    uint8_t c_void, c_disc, c_plate[4], c_tooth[4], c_lip, c_mirror, c_split;
+    uint8_t c_beam, c_glow, c_white, c_star, c_star_lit, c_star_edge, c_halo, c_box, c_box_edge, c_box_lit;
+    uint8_t c_face, c_cheek, c_text, c_dim, c_stop, c_emit, c_emit_hi, c_panel, c_rays;
+    uint8_t c_orange, c_cyan, c_hint;
 } g;
 
 // ---------------------------------------------------------------- the beam
@@ -214,10 +183,10 @@ static uint8_t outs(uint8_t el, int s)
     }
 }
 
-// Does any branch reach the door, entering on any spoke in `entry_mask`?
-static bool wins(const Level *L, const uint8_t *rot, uint8_t entry_mask)
+// Does any branch of the light reach the star's target?
+static bool wins(const Level *L, const uint8_t *rot)
 {
-    uint8_t mask = entry_mask;
+    uint8_t mask = 1u << LASER;
     for (int i = 0; i < L->n_rings && mask; i++) {
         uint8_t next = 0;
         for (int s = 0; s < SPOKES; s++)
@@ -227,7 +196,7 @@ static bool wins(const Level *L, const uint8_t *rot, uint8_t entry_mask)
     return (mask & (1u << DOOR)) != 0;
 }
 
-// ---------------------------------------------------------------- solver / generator (spec section 8)
+// ---------------------------------------------------------------- levels
 
 static int pack(const uint8_t *rot, int n)
 {
@@ -241,42 +210,35 @@ static void unpack(int v, uint8_t *rot, int n)
     for (int i = 0; i < n; i++, v /= 8) rot[i] = (uint8_t)(v % 8);
 }
 
-// Fills g.dist for every configuration; returns how many of them win at some wrist angle.
-// Only called once the tables are known to exist.
-static int solve(const Level *L)
+// Fills s_wins with every arrangement the light gets through. Four rings is 4096 to try.
+static void find_wins(const Level *L)
 {
     int total = 1;
     for (int i = 0; i < L->n_rings; i++) total *= 8;
-    int head = 0, tail = 0, winners = 0;
+    s_n_wins = 0;
     uint8_t rot[MAX_RINGS];
     for (int v = 0; v < total; v++) {
         unpack(v, rot, L->n_rings);
-        if (wins(L, rot, 0xFF)) {
-            g.dist[v] = 0;
-            g.queue[tail++] = (uint16_t)v;
-            winners++;
-        } else {
-            g.dist[v] = -1;
+        if (wins(L, rot)) s_wins[s_n_wins++] = (uint16_t)v;
+    }
+}
+
+// The winning arrangement that takes the fewest rings moved from `rot`, and how many that is
+// (99 if there is none). Rings are independent, so that is simply how many differ.
+static int nearest_win(const Level *L, const uint8_t *rot, uint8_t *out)
+{
+    int best = 99;
+    for (int k = 0; k < s_n_wins; k++) {
+        uint8_t w[MAX_RINGS];
+        unpack(s_wins[k], w, L->n_rings);
+        int differ = 0;
+        for (int i = 0; i < L->n_rings; i++) differ += w[i] != rot[i];
+        if (differ < best) {
+            best = differ;
+            if (out) memcpy(out, w, sizeof(w));
         }
     }
-    // Breadth-first backwards: the state before "tap ring i" has ring i one notch back and
-    // the ring inside it one notch forward.
-    while (head < tail) {
-        const int v = g.queue[head++];
-        unpack(v, rot, L->n_rings);
-        for (int i = 0; i < L->n_rings; i++) {
-            uint8_t p[MAX_RINGS];
-            memcpy(p, rot, sizeof(p));
-            p[i] = (uint8_t)m8(p[i] - 1);
-            if (i < L->n_rings - 1) p[i + 1] = (uint8_t)m8(p[i + 1] + 1);
-            const int pv = pack(p, L->n_rings);
-            if (g.dist[pv] < 0) {
-                g.dist[pv] = (int8_t)(g.dist[v] + 1);
-                g.queue[tail++] = (uint16_t)pv;
-            }
-        }
-    }
-    return winners;
+    return best;
 }
 
 // The generator's own xorshift, kept rather than handed over to T->random(). A level is
@@ -296,55 +258,40 @@ static uint32_t rng_next(Rng *r)
 
 static int rng_below(Rng *r, int n) { return (int)(rng_next(r) % (uint32_t)n); }
 
-// Tier schedule (spec section 8): rings, elements, target taps, rarity ceiling.
-static void tier(int n, int *rings, bool *mirrors, bool *splits, int *taps, float *max_rarity)
+// What a level is made of, by how far in it is. The first few are holes only, and are about
+// learning to turn a ring. After that one ring (`bent`) has no plain hole in it - only
+// mirrors - so the light cannot simply be lined up: it has to be sent round and brought back.
+static void tier(int n, int *rings, bool *mirrors, bool *splits, int *bent, float *max_rarity)
 {
-    if (n <= 3) {
-        *rings = 2, *mirrors = false, *splits = false, *taps = n <= 1 ? 1 : 2, *max_rarity = 0.30f;
-    } else if (n <= 6) {
-        *rings = 2, *mirrors = true, *splits = false, *taps = 3, *max_rarity = 0.16f;
-    } else if (n <= 10) {
-        *rings = 3, *mirrors = true, *splits = false, *taps = n <= 8 ? 3 : 4, *max_rarity = 0.10f;
-    } else if (n <= 15) {
-        *rings = 3, *mirrors = true, *splits = true, *taps = 4, *max_rarity = 0.06f;
-    } else if (n <= 30) {
-        *rings = 4, *mirrors = true, *splits = true, *taps = n <= 22 ? 5 : 6, *max_rarity = 0.04f;
-    } else {
-        const int t = 6 + (n - 31) / 10;
-        *rings = 4, *mirrors = true, *splits = true, *taps = t < 9 ? t : 9, *max_rarity = 0.02f;
-    }
+    *splits = false, *bent = 0;
+    if (n <= 3) *rings = 2, *mirrors = false, *max_rarity = 1.0f;
+    else if (n <= 7) *rings = 2, *mirrors = true, *bent = 1, *max_rarity = 0.20f;
+    else if (n <= 12) *rings = 3, *mirrors = true, *bent = 1, *max_rarity = 0.10f;
+    else if (n <= 18) *rings = 3, *mirrors = true, *splits = true, *bent = 1, *max_rarity = 0.08f;
+    else if (n <= 30) *rings = 4, *mirrors = true, *splits = true, *bent = 1, *max_rarity = 0.05f;
+    else *rings = 4, *mirrors = true, *splits = true, *bent = 2, *max_rarity = 0.03f;
 }
 
 // The same level for everybody: the generator is seeded by the level number.
 static void make_level(int n, Level *out)
 {
-    for (int i = 0; i < CAMPAIGN_N; i++)
-        if (CAMPAIGN[i].n == n) {
-            *out = CAMPAIGN[i].lvl;
-            return;
-        }
-    // Without the solver there is no way to know a generated level is winnable, let alone
-    // what its par is, so fall back to handing out the verified levels in turn.
-    if (!g.dist || !g.queue) {
-        *out = CAMPAIGN[(n - 1) % CAMPAIGN_N].lvl;
-        return;
-    }
-
-    int rings, taps;
+    int rings, bent;
     bool mirrors, splits;
     float max_rarity;
-    tier(n, &rings, &mirrors, &splits, &taps, &max_rarity);
-    Rng rng = {(uint32_t)n * 2654435761u + 12345u};
-    const int64_t t0 = T->now_us();
-    Level best_try;
-    memset(&best_try, 0, sizeof(best_try));
-    int best_gap = 99;
-    for (int attempt = 0; attempt < 400; attempt++) {
-        Level L;
+    tier(n, &rings, &mirrors, &splits, &bent, &max_rarity);
+    Rng rng = {(uint32_t)n * 2654435761u + 977u};
+    int total = 1;
+    for (int i = 0; i < rings; i++) total *= 8;
+
+    Level L;
+    for (int attempt = 0;; attempt++) {
         memset(&L, 0, sizeof(L));
         L.n_rings = (uint8_t)rings;
+        // Which rings have no straight way through.
+        bool is_bent[MAX_RINGS] = {false};
+        for (int k = 0; k < bent; k++) is_bent[rng_below(&rng, rings)] = true;
         for (int i = 0; i < rings; i++) {
-            const int open = 3 + rng_below(&rng, 2);   /* 3..4 holes per ring */
+            const int open = mirrors ? 3 + rng_below(&rng, 2) : 1 + rng_below(&rng, 2);
             bool split_used = false;
             for (int k = 0; k < open; k++) {
                 int s;
@@ -352,65 +299,34 @@ static void make_level(int n, Level *out)
                 while (L.ring[i][s] != BLOCK);
                 uint8_t el = GAP;
                 const int pick = rng_below(&rng, 10);
-                if (mirrors && pick >= 4) el = pick & 1 ? MIRROR_L : MIRROR_R;
-                if (splits && !split_used && pick == 9) el = SPLIT, split_used = true;
+                if (mirrors && (pick >= 4 || is_bent[i])) el = pick & 1 ? MIRROR_L : MIRROR_R;
+                if (splits && !split_used && !is_bent[i] && pick == 9) el = SPLIT, split_used = true;
                 L.ring[i][s] = el;
             }
         }
-        const int winners = solve(&L);
-        int total = 1;
-        for (int i = 0; i < rings; i++) total *= 8;
-        const float rarity = (float)winners / total;
-        // After a while, loosen the rarity ceiling rather than give up on the tap target.
-        const float ceiling = max_rarity * (attempt < 200 ? 1.0f : 2.0f);
-        if (winners == 0 || rarity > ceiling) continue;
-        // Any opening at exactly `taps` from a win will do; pick one at random.
-        int count = 0;
-        for (int v = 0; v < total; v++) count += g.dist[v] == taps;
-        if (count == 0) {
-            // Remember the nearest miss in case nothing better turns up.
-            for (int d = taps - 1; d >= 1 && best_gap > taps - d; d--)
-                for (int v = 0; v < total; v++)
-                    if (g.dist[v] == d) {
-                        best_try = L;
-                        unpack(v, best_try.start, rings);
-                        best_try.best = (uint8_t)d;
-                        best_gap = taps - d;
-                        break;
-                    }
-            continue;
+        find_wins(&L);
+        // After a while, take a commoner solution rather than never finish.
+        const float ceiling = max_rarity * (attempt < 200 ? 1.0f : 3.0f);
+        if (s_n_wins == 0 || (float)s_n_wins / total > ceiling) {
+            if (attempt < 600) continue;
+            if (s_n_wins == 0) continue;
         }
-        int pick = rng_below(&rng, count);
-        for (int v = 0; v < total; v++)
-            if (g.dist[v] == taps && pick-- == 0) {
-                unpack(v, L.start, rings);
-                break;
-            }
-        L.best = (uint8_t)taps;
-        *out = L;
-        T->log("level %d: %d rings, %d taps, rarity %d/%d, %d tries, %lld ms", n, rings, taps, winners, total,
-               attempt + 1, (long long)((T->now_us() - t0) / 1000));
-        return;
+        break;
     }
-    T->log("level %d: settled for %d taps (wanted %d)", n, best_try.best, taps);
-    *out = best_gap < 99 ? best_try : CAMPAIGN[5].lvl;
-}
-
-// Acceptance tests from the spec (section 14), run once at start-up and logged.
-static void self_test(void)
-{
-    if (!g.dist || !g.queue) return;
-    int ok = 0;
-    for (int i = 0; i < CAMPAIGN_N; i++) {
-        const Level *L = &CAMPAIGN[i].lvl;
-        solve(L);
-        const int d = g.dist[pack(L->start, L->n_rings)];
-        const bool opens_locked = !wins(L, L->start, 0xFF);
-        if (d == L->best && opens_locked) ok++;
-        else T->log("level %d fails verification: min taps %d (spec %d), locked at start %d", CAMPAIGN[i].n, d, L->best,
-                    opens_locked);
+    // Start as far from solved as a start can be found: every ring in the wrong place.
+    int far = -1;
+    for (int k = 0; k < 64 && far < rings; k++) {
+        uint8_t rot[MAX_RINGS] = {0};
+        unpack(rng_below(&rng, total), rot, rings);
+        const int d = nearest_win(&L, rot, NULL);
+        if (d > far && d < 99) {
+            far = d;
+            memcpy(L.start, rot, sizeof(L.start));
+        }
     }
-    T->log("campaign verified: %d/%d levels match their best tap count", ok, CAMPAIGN_N);
+    L.best = (uint8_t)(far < 1 ? 1 : far);
+    *out = L;
+    T->log("level %d: %d rings, %d of %d arrangements win, %d to move", n, rings, s_n_wins, total, L.best);
 }
 
 // ---------------------------------------------------------------- sound
@@ -421,8 +337,8 @@ static void tone1(float f0, float f1, uint16_t ms, uint8_t wave, float vol, uint
     T->tone(&t);
 }
 
-static void sfx_click(void) { tone1(800, 500, 40, TAT_SQUARE, 0.5f, 0); }
-static void sfx_detent(void) { tone1(1200, 0, 25, TAT_SQUARE, 0.22f, 0); }
+static void sfx_detent(void) { tone1(1200, 0, 25, TAT_SQUARE, 0.3f, 0); }
+static void sfx_settle(void) { tone1(800, 500, 40, TAT_SQUARE, 0.5f, 0); }
 
 static void sfx_deeper(int depth)
 {
@@ -443,8 +359,17 @@ static void sfx_solve(void)
 // The angle on the screen of one of the board's spokes.
 static float spoke_angle(float spoke) { return ((spoke + VIEW) * 45.0f - 90.0f) * PI / 180.0f; }
 
+// How much bigger than the spec the board is drawn, for this level's number of rings.
+static float zoom(void) { return BOARD_PX / (GEO[g.lvl.n_rings < 2 ? 2 : g.lvl.n_rings].rad[0] + TEETH_OUT); }
+
+// The star fills the hole in the innermost ring, in the spec's units.
+static float star_r(void)
+{
+    const int n = g.lvl.n_rings < 2 ? 2 : g.lvl.n_rings;
+    return GEO[n].rad[n - 1] - BAND_HALF - 1.5f;
+}
+
 // A point on the board: r in the spec's units, turned and scaled onto the canvas.
-static float zoom(void);
 static Pt polar(float r, float spoke)
 {
     const float a = spoke_angle(spoke), k = zoom();
@@ -461,35 +386,20 @@ static void load_progress(void)
     if (g.depth < 1) g.depth = 1;
     if (g.level < 1) g.level = 1;
     if (g.level > g.depth) g.level = g.depth;
-    // The API stores ints, so the two flags travel as 0 or 1.
-    int seen = g.seen_tut, flat = g.flat_play;
-    T->save_get("seen_tut", &seen, 0);
-    T->save_get("flat", &flat, 0);
+    // A new key: the rules are new, so everyone is shown them once, whatever they had seen.
+    int seen = 0;
+    T->save_get("seen_tut3", &seen, 0);
     g.seen_tut = seen != 0;
-    g.flat_play = flat != 0;
 }
 
 static void save_progress(void)
 {
     T->save_set("depth", g.depth);
     T->save_set("level", g.level);
-    T->save_set("seen_tut", g.seen_tut);
-    T->save_set("flat", g.flat_play);
-}
-
-static void save_best(int n, int used)
-{
-    char key[16];
-    snprintf(key, sizeof(key), "best_%d", n);
-    int prev = 255;
-    T->save_get(key, &prev, 0);
-    if (used < prev) T->save_set(key, used);
+    T->save_set("seen_tut3", g.seen_tut);
 }
 
 // ---------------------------------------------------------------- level flow
-
-// How much bigger than the spec the board is drawn, for this level's number of rings.
-static float zoom(void) { return BOARD_PX / (GEO[g.lvl.n_rings < 2 ? 2 : g.lvl.n_rings].rad[0] + TEETH_OUT); }
 
 // Beam walk with geometry for drawing (spec section 4.2).
 static void retrace(bool sounds)
@@ -500,8 +410,8 @@ static void retrace(bool sounds)
     int n_cur = 1, deepest = 0;
     cur[0].ring = 0;
     cur[0].from_r = EMIT_PX / zoom();
-    cur[0].from_s = g.entry;
-    cur[0].meet_s = g.entry;
+    cur[0].from_s = LASER;
+    cur[0].meet_s = LASER;
     bool win = false;
     for (int guard = 0; n_cur > 0 && guard < 16; guard++) {
         int n_nxt = 0;
@@ -523,20 +433,14 @@ static void retrace(bool sounds)
             for (int s = 0; s < SPOKES; s++) {
                 if (!(mask & (1u << s))) continue;
                 if (b.ring == g.lvl.n_rings - 1) {
-                    const Pt e = polar(G->star, (float)s);
+                    // Through the last ring: onto the star's red box, or into the dark beside it.
+                    const Pt e = polar(star_r() * (s == DOOR ? 0.86f : 1.0f), (float)s);
                     if (g.n_segs < 32) {
                         const Seg seg = {p1.x, p1.y, e.x, e.y};
                         g.segs[g.n_segs++] = seg;
                     }
-                    if (s == DOOR) {
-                        win = true;
-                        if (g.n_segs < 32) {
-                            const Seg seg = {e.x, e.y, C, C};
-                            g.segs[g.n_segs++] = seg;
-                        }
-                    } else if (g.n_stops < 12) {
-                        g.stops[g.n_stops++] = e;
-                    }
+                    if (s == DOOR) win = true;
+                    else if (g.n_stops < 12) g.stops[g.n_stops++] = e;
                 } else if (n_nxt < 8) {
                     nxt[n_nxt].ring = b.ring + 1;
                     nxt[n_nxt].from_r = R;
@@ -553,18 +457,21 @@ static void retrace(bool sounds)
     if (sounds && deepest > g.reached && !win) sfx_deeper(deepest);
     if (deepest > g.reached) g.idle_t = 0;   /* that was progress */
     g.reached = deepest;
-    if (win && !g.won && g.phase == PLAYING) {
-        g.phase = SOLVED;
-        g.phase_t = 0;
-        g.stars_earned = g.taps <= g.lvl.best ? 3 : g.taps <= g.lvl.best + 2 ? 2 : 1;
-        if (g.hinted && g.stars_earned > 2) g.stars_earned = 2;   /* help is free, but it is not perfect */
-        g.hint_t = 0;
-        save_best(g.level, g.taps);
-        if (g.level + 1 > g.depth) g.depth = g.level + 1;
-        save_progress();
-        sfx_solve();
-    }
-    g.won = win;
+    g.won = win;   /* the star opens its eyes the moment the light is on it, finger down or not */
+    g.dirty = true;
+}
+
+// Called when a ring is let go of with the light on the star.
+static void solve_level(void)
+{
+    g.phase = SOLVED;
+    g.phase_t = 0;
+    g.stars_earned = g.moves <= g.lvl.best ? 3 : g.moves <= g.lvl.best + 2 ? 2 : 1;
+    if (g.hinted && g.stars_earned > 2) g.stars_earned = 2;   /* help is free, but it is not perfect */
+    g.hint_t = 0;
+    if (g.level + 1 > g.depth) g.depth = g.level + 1;
+    save_progress();
+    sfx_solve();
     g.dirty = true;
 }
 
@@ -575,73 +482,41 @@ static void start_level(int n)
     memcpy(g.rot, g.lvl.start, sizeof(g.rot));
     for (int i = 0; i < MAX_RINGS; i++) g.vis_from[i] = g.vis_to[i] = g.rot[i];
     g.tween_t = 1;
-    g.taps = 0;
+    g.grab = -1;
+    g.touch_on_ring = false;
+    g.moves = 0;
     g.reached = 0;
+    g.won = false;
     g.hint_t = g.idle_t = 0;
-    g.hint_ring = g.hint_entry = -1;
+    g.hint_ring = -1;
     g.hinted = false;
-    solve(&g.lvl);   /* the table the hints are read from: taps to go, from every arrangement */
-    g.phase = (g.level == 1 && !g.seen_tut) ? TUTORIAL : PLAYING;
+    g.phase = g.seen_tut ? PLAYING : TUTORIAL;
     g.phase_t = 0;
     retrace(false);
     g.dirty = true;
     save_progress();
 }
 
-// What the star says when it is asked. The solver's table has, for every arrangement of the
-// rings, how many taps it is from one the light gets through - allowing the laser to come
-// from anywhere, since turning the watch is free. So if this arrangement is already zero
-// taps away, the hint is where to turn the laser to; otherwise it is whichever ring's tap
-// leads to an arrangement one tap nearer.
+// What the star says when it is asked: which ring is in the wrong place. Not where it should
+// go - finding that, with the light showing the way, is the game.
 static void give_hint(void)
 {
-    g.hint_ring = g.hint_entry = -1;
-    const int here = pack(g.rot, g.lvl.n_rings);
-    if (g.dist[here] == 0) {
-        for (int e = 0; e < SPOKES; e++)
-            if (wins(&g.lvl, g.rot, (uint8_t)(1u << e))) {
-                g.hint_entry = e;
-                break;
-            }
-    } else {
-        for (int i = 0; i < g.lvl.n_rings; i++) {
-            uint8_t next[MAX_RINGS];
-            memcpy(next, g.rot, sizeof(next));
-            next[i] = (uint8_t)m8(next[i] + 1);
-            if (i < g.lvl.n_rings - 1) next[i + 1] = (uint8_t)m8(next[i + 1] - 1);
-            if (g.dist[pack(next, g.lvl.n_rings)] == g.dist[here] - 1) {
-                g.hint_ring = i;
-                break;
-            }
-        }
-    }
+    uint8_t want[MAX_RINGS] = {0};
+    g.hint_ring = -1;
+    if (nearest_win(&g.lvl, g.rot, want) < 99)
+        for (int i = 0; i < g.lvl.n_rings && g.hint_ring < 0; i++)
+            if (want[i] != g.rot[i]) g.hint_ring = i;
+    if (g.hint_ring < 0) return;
     g.hint_t = HINT_S;
     g.hinted = true;
     g.idle_t = 0;
     g.dirty = true;
     tone1(660, 0, 60, TAT_TRIANGLE, 0.4f, 0);
     tone1(990, 0, 90, TAT_TRIANGLE, 0.4f, 70);
-    T->log("hint on level %d: %s %d", g.level, g.hint_ring >= 0 ? "tap ring" : "laser to spoke",
-           g.hint_ring >= 0 ? g.hint_ring : g.hint_entry);
+    T->log("hint on level %d: ring %d", g.level, g.hint_ring);
 }
 
-static void tap_ring(int idx)
-{
-    for (int i = 0; i < MAX_RINGS; i++) g.vis_from[i] = g.vis_to[i];
-    g.rot[idx] = (uint8_t)m8(g.rot[idx] + 1);
-    g.vis_to[idx] += 1;
-    if (idx < g.lvl.n_rings - 1) {
-        g.rot[idx + 1] = (uint8_t)m8(g.rot[idx + 1] - 1);   /* the ring inside turns the other way */
-        g.vis_to[idx + 1] -= 1;
-    }
-    g.tween_t = 0;
-    g.taps++;
-    g.hint_t = 0;   /* whatever was suggested, something has been done about it */
-    sfx_click();
-    retrace(true);
-}
-
-// ---------------------------------------------------------------- tilt -> entry spoke
+// ---------------------------------------------------------------- turning a ring
 
 static float wrap_pi(float a)
 {
@@ -652,52 +527,73 @@ static float wrap_pi(float a)
 
 static float minf(float a, float b) { return a < b ? a : b; }
 
-static void update_tilt(const tat_input_t *in, float dt)
-{
-    const float ax = in->tilt.ax, ay = in->tilt.ay;
-    const float g_mag = sqrtf(ax * ax + ay * ay);
-    const float gz = in->tilt.gz * (PI / 180.0f) * dt;
-    if (g_mag >= 0.25f) {
-        const float target = atan2f(-ay, -ax);   /* screen direction of world-up */
-        if (!g.have_up) {
-            g.up = target;
-            g.have_up = true;
-        }
-        // Learn the gyro's sign from gravity, for flat play later.
-        if (g.had_target && fabsf(gz) > 0.004f) {
-            g.sign_score += wrap_pi(target - g.last_target) * (-g.gyro_sign * gz) * 400;
-            if (g.sign_score < -1.0f) {
-                g.gyro_sign = -g.gyro_sign;
-                g.sign_score = 0;
-            }
-            g.sign_score = minf(g.sign_score, 3.0f);
-        }
-        g.last_target = target;
-        g.had_target = true;
-        g.up = wrap_pi(g.up + wrap_pi(target - g.up) * minf(1.0f, dt / 0.12f));
-        g.flat_t = 0;
-    } else {
-        g.had_target = false;
-        g.flat_t += dt;
-        // Lying flat there's no in-plane gravity. Hold the last angle, or follow the gyro if
-        // FLAT PLAY is on (it drifts, which is why it's a setting).
-        if (g.flat_play) g.up = wrap_pi(g.up - g.gyro_sign * gz);
-    }
-    const bool want_nudge = g.flat_t > 1.0f && !g.flat_play;
-    if (want_nudge != g.nudge) {
-        g.nudge = want_nudge;
-        g.dirty = true;
-    }
+// Where a ring is drawn right now, in places round from its spoke 0.
+static float vis_rot(int i) { return g.vis_from[i] + (g.vis_to[i] - g.vis_from[i]) * g.tween_t; }
 
-    // Snap to a spoke with 6 degrees of hysteresis so it can't chatter on a boundary.
-    const float deg = g.up * 180.0f / PI + 90.0f;
-    const float centre = m8(g.entry + VIEW) * 45.0f;   /* where that spoke is drawn */
-    const float off = fmodf(deg - centre + 540.0f, 360.0f) - 180.0f;
-    if (fabsf(off) > 22.5f + 6.0f) {
-        g.entry = m8((int)lroundf(deg / 45.0f) - VIEW);
-        if (g.entry == g.hint_entry) g.hint_t = 0;   /* that is where it was asked to go */
-        sfx_detent();
-        retrace(true);
+// The ring a touch is on: the nearest band, with most of the space between bands counting
+// as the band - a finger is wider than a ring. -1 on the star or out on the rim.
+static int ring_at(float r)
+{
+    const Geo *G = &GEO[g.lvl.n_rings];
+    if (r < star_r() || r > G->rad[0] + 14) return -1;
+    int hit = 0;
+    for (int i = 1; i < g.lvl.n_rings; i++)
+        if (fabsf(r - G->rad[i]) < fabsf(r - G->rad[hit])) hit = i;
+    return hit;
+}
+
+static void update_ring(const tat_input_t *in)
+{
+    const float dx = in->touch.x / (float)SCALE - C, dy = in->touch.y / (float)SCALE - C;
+    const float r_px = hypotf(dx, dy), a = atan2f(dy, dx);
+
+    if (in->touch.pressed) {
+        g.grab = ring_at(r_px / zoom());
+        g.touch_on_ring = g.grab >= 0;
+        if (g.grab >= 0) {
+            // Taken where it is drawn, even if it was still settling from the last turn.
+            g.grab_vis = vis_rot(g.grab);
+            for (int i = 0; i < MAX_RINGS; i++) g.vis_from[i] = g.vis_to[i] = i == g.grab ? g.grab_vis : g.vis_to[i];
+            g.tween_t = 1;
+            g.turned = 0;
+            g.last_a = a;
+            g.grab_rot = g.rot[g.grab];
+        }
+    }
+    if (g.grab < 0) return;
+    const int k = g.grab;
+
+    if (in->touch.down) {
+        // Too near the middle an angle means nothing: a hair's movement is half a turn.
+        if (r_px > 10) {
+            g.turned += wrap_pi(a - g.last_a) / (PI / 4);
+            g.last_a = a;
+        }
+        const float vis = g.grab_vis + g.turned;
+        if (vis != g.vis_to[k]) {
+            g.vis_from[k] = g.vis_to[k] = vis;
+            g.dirty = true;
+        }
+        const uint8_t place = (uint8_t)m8((int)lroundf(vis));
+        if (place != g.rot[k]) {
+            g.rot[k] = place;
+            g.hint_t = 0;   /* whatever was suggested, something is being done about it */
+            sfx_detent();
+            retrace(true);
+        }
+    }
+    if (in->touch.released) {
+        // Let go of between places, it settles into the nearest one.
+        g.vis_from[k] = g.vis_to[k];
+        g.vis_to[k] = roundf(g.vis_to[k]);
+        g.tween_t = g.vis_from[k] == g.vis_to[k] ? 1 : 0;
+        if (g.rot[k] != g.grab_rot) {
+            g.moves++;
+            sfx_settle();
+        }
+        g.grab = -1;
+        g.dirty = true;
+        if (g.won) solve_level();
     }
 }
 
@@ -714,17 +610,9 @@ static void star_update(float dt)
 
     if (T->menu_is_open()) {
         switch (T->menu_update()) {
-        case 0:
-            g.won = false;
-            start_level(g.level >= g.depth ? 1 : g.level + 1);   /* step through the levels reached so far */
-            break;
+        case 0: start_level(g.level >= g.depth ? 1 : g.level + 1); break;   /* step through the levels reached so far */
         case 1: T->menu_toggle_sound(); break;
         case 2:
-            g.flat_play = !g.flat_play;
-            save_progress();
-            break;
-        case 3:
-            g.won = false;
             start_level(g.level);
             T->menu_close();
             break;
@@ -732,12 +620,14 @@ static void star_update(float dt)
         if (!T->menu_is_open()) g.dirty = true;   /* the board is showing again */
         return;
     }
-    if (ges->swipe_left) {
+    // A swipe that began on a ring was a turn of that ring, however fast and however straight.
+    if ((ges->swipe_left && !g.touch_on_ring) || ((in->clicked & TAT_BTN_B) && g.phase != TUTORIAL)) {
+        g.grab = -1;
         T->menu_open();
         return;
     }
     if (g.tween_t < 1) {
-        g.tween_t = minf(1.0f, g.tween_t + dt / 0.26f);
+        g.tween_t = minf(1.0f, g.tween_t + dt / SNAP_S);
         g.dirty = true;
     }
     if (g.phase == SOLVED && g.phase_t < 0.6f) g.dirty = true;   /* banner pop */
@@ -751,64 +641,28 @@ static void star_update(float dt)
         }
         return;
     }
-    update_tilt(in, dt);
+    if (g.phase == SOLVED) {
+        if ((ges->tap && g.phase_t > 0.8f) || g.phase_t > 4.0f) start_level(g.level + 1);
+        return;
+    }
 
     if (g.hint_t > 0) {
         g.hint_t -= dt;
         g.dirty = true;   /* it pulses */
     }
-    if (g.phase == PLAYING) {
-        // Nothing getting any deeper for a while: the star lets it be known that it can help.
-        g.idle_t += dt;
-        if (g.idle_t > STUCK_S && g.hint_t <= 0) {
-            g.blink_t += dt;
-            g.dirty = true;
-        }
+    // Nothing getting any deeper for a while: the star lets it be known that it can help.
+    g.idle_t += dt;
+    if (g.idle_t > STUCK_S && g.hint_t <= 0) {
+        g.blink_t += dt;
+        g.dirty = true;
     }
 
-    if (g.phase == SOLVED) {
-        if ((ges->tap && g.phase_t > 0.8f) || g.phase_t > 4.0f) {
-            g.won = false;
-            start_level(g.level + 1);
-        }
-        return;
-    }
-    if (in->clicked & TAT_BTN_B) {   /* PWR: start the level over */
-        g.won = false;
-        start_level(g.level);
-        return;
-    }
-    if (ges->tap) {
-        const int64_t now = T->now_us();
-        if (now - g.last_tap_us < 120000) return;   /* debounce */
-        g.last_tap_us = now;
-        // The star is the hint button; the rings are the rings. Radii in the spec's units.
-        const Geo *G = &GEO[g.lvl.n_rings];
-        const float r = hypotf(ges->x - 233.0f, ges->y - 233.0f) / SCALE / zoom();
-        if (r < G->star + 3) {
-            give_hint();
-            return;
-        }
-        if (r > G->rad[0] + 10) return;   /* the rim isn't a button */
-        int hit = -1;
-        float best = 8.0f;   /* 16 device px either side of the band's centre */
-        for (int i = 0; i < g.lvl.n_rings; i++)
-            if (fabsf(r - G->rad[i]) <= best) {
-                best = fabsf(r - G->rad[i]);
-                hit = i;
-            }
-        if (hit >= 0) tap_ring(hit);
-    }
+    update_ring(in);
+    if (g.phase != PLAYING) return;
+    if (ges->tap && !g.touch_on_ring && hypotf(ges->x - 233.0f, ges->y - 233.0f) / SCALE / zoom() < star_r()) give_hint();
 }
 
 // ---------------------------------------------------------------- drawing
-
-static float vis_rot(int i)
-{
-    // Mechanical, not smooth: three discrete jumps over the tween.
-    const float step = minf(1.0f, floorf(g.tween_t * 3.0f + 1.0f) / 3.0f);
-    return g.vis_from[i] + (g.vis_to[i] - g.vis_from[i]) * (g.tween_t >= 1 ? 1.0f : step);
-}
 
 // Background, bands, teeth, holes and glyphs in one pass over the canvas. This is what the
 // polar tables are for: an atan2 and a sqrt per pixel here would be 54,000 of each a frame.
@@ -880,15 +734,6 @@ static void draw_board(void)
     }
 }
 
-static void octagon(float R, uint8_t col)
-{
-    const int ri = (int)ceilf(R);
-    for (int dy = -ri; dy <= ri; dy++)
-        for (int dx = -ri; dx <= ri; dx++)
-            if (abs(dx) <= R && abs(dy) <= R && abs(dx) + abs(dy) <= R * 1.414f)
-                T->canvas_pixel(g.cv, (int)C + dx, (int)C + dy, col);
-}
-
 static void thick_line(const Seg *s, int w, uint8_t col)
 {
     const float dx = s->x1 - s->x0, dy = s->y1 - s->y0;
@@ -914,51 +759,75 @@ static void spoke_rect(float ang, float u0, float u1, float half_v, uint8_t col)
         }
 }
 
+// The star: five points, chubby, with a face. Asleep it is a soft yellow with its eyes shut;
+// with the light on its box it is bright, wide awake and smiling. Its top point carries the
+// red box the light has to reach.
 static void draw_star(void)
 {
-    const Geo *G = &GEO[g.lvl.n_rings];
     const bool awake = g.won;
-    const float k = zoom(), R = G->star * k;
+    const float k = zoom(), R = star_r() * k;
     // Offering a hint, the star stirs: it brightens and dims.
     const bool stir = !awake && g.phase == PLAYING && g.idle_t > STUCK_S && g.hint_t <= 0 && ((int)(g.blink_t * 2.0f) & 1);
-    if (awake) octagon(R + 9 * k, g.c_halo);
-    octagon(R, awake ? g.c_awake : stir ? g.c_hint : g.c_asleep);
-    /* The door: a bright notch on the star's edge, at board spoke 4 - which VIEW puts at the
-       top, under the laser. */
-    const Pt d = polar(G->star, DOOR);
-    const int dw = (int)(6 * k), dh = (int)(4 * k);
-    T->canvas_fill_rect(g.cv, (int)d.x - dw, (int)d.y - dh, dw * 2 + 1, dh * 2, awake ? g.c_door_lit : g.c_door);
-    /* Face: shut eyes and a small mouth asleep; open eyes and a smile awake. */
-    const int u0 = (int)lroundf(R / 7);
-    const int u = u0 < 1 ? 1 : u0;
-    const int cx = (int)C, cy = (int)C;
-    const uint8_t f = awake ? g.c_face_lit : g.c_disc;
-    if (awake) {
-        T->canvas_fill_rect(g.cv, cx - 4 * u, cy - 2 * u, 2 * u, 2 * u, f);
-        T->canvas_fill_rect(g.cv, cx + 2 * u, cy - 2 * u, 2 * u, 2 * u, f);
-        T->canvas_fill_rect(g.cv, cx - 3 * u, cy + u, 6 * u, u, f);
-        T->canvas_fill_rect(g.cv, cx - 4 * u, cy, u, u, f);
-        T->canvas_fill_rect(g.cv, cx + 3 * u, cy, u, u, f);
-        for (int s = 0; s < 8; s++) {
-            const Pt p = polar(G->star + 7, (float)s);
-            T->canvas_fill_rect(g.cv, (int)p.x - 2, (int)p.y - 2, 5, 5, g.c_rays);
+    const uint8_t body = awake || stir ? g.c_star_lit : g.c_star;
+    const float fat = 0.60f, s36 = 0.587785f, c36 = 0.809017f;   /* how deep the notches are: not very */
+    const float reach = R + (awake ? 7 : 0);
+    const int ri = (int)ceilf(reach) + 1;
+    for (int y = -ri; y <= ri; y++)
+        for (int x = -ri; x <= ri; x++) {
+            const float rr = hypotf((float)x, (float)y);
+            if (rr > reach) continue;
+            // The angle from straight up, folded into the tenth of a turn between a point and a notch.
+            float a = fmodf(fabsf(atan2f((float)x, (float)-y)), TAU / 5);
+            if (a > TAU / 10) a = TAU / 5 - a;
+            const float edge = fat * s36 / (cosf(a) * fat * s36 - sinf(a) * (fat * c36 - 1.0f));   /* of R */
+            uint8_t c;
+            if (rr <= (R - 1.6f) * edge) c = body;
+            else if (rr <= R * edge) c = g.c_star_edge;
+            else if (awake && rr <= reach * edge) c = g.c_halo;
+            else continue;
+            T->canvas_pixel(g.cv, (int)C + x, (int)C + y, c);
         }
+
+    // The face sits a little low: a star's middle is below where its points make it look.
+    const int u0 = (int)lroundf(R / 8), u = u0 < 1 ? 1 : u0;
+    const int cx = (int)C, cy = (int)C + u;
+    if (awake) {
+        T->canvas_fill_rect(g.cv, cx - 3 * u, cy - 2 * u, 2 * u, 2 * u, g.c_face);
+        T->canvas_fill_rect(g.cv, cx + u, cy - 2 * u, 2 * u, 2 * u, g.c_face);
+        T->canvas_fill_rect(g.cv, cx - 2 * u, cy + 2 * u, 4 * u, u, g.c_face);
+        T->canvas_fill_rect(g.cv, cx - 3 * u, cy + u, u, u, g.c_face);
+        T->canvas_fill_rect(g.cv, cx + 2 * u, cy + u, u, u, g.c_face);
     } else {
-        T->canvas_fill_rect(g.cv, cx - 4 * u, cy - u, 2 * u, u, f);
-        T->canvas_fill_rect(g.cv, cx + 2 * u, cy - u, 2 * u, u, f);
-        T->canvas_fill_rect(g.cv, cx - u, cy + 2 * u, 2 * u, u, f);
+        T->canvas_fill_rect(g.cv, cx - 3 * u, cy - u, 2 * u, u, g.c_face);
+        T->canvas_fill_rect(g.cv, cx + u, cy - u, 2 * u, u, g.c_face);
+        T->canvas_fill_rect(g.cv, cx - u / 2 - (u > 1), cy + 2 * u, u + (u > 1), u, g.c_face);
     }
+    if (u >= 2) {
+        T->canvas_fill_rect(g.cv, cx - 5 * u, cy + u, u, u, g.c_cheek);
+        T->canvas_fill_rect(g.cv, cx + 4 * u, cy + u, u, u, g.c_cheek);
+    }
+
+    // The red box, on the star's top point: what the light is for.
+    const int half = (int)fmaxf(3.0f, R * 0.18f);
+    const int by = (int)lroundf(C - R * 0.86f);
+    T->canvas_fill_rect(g.cv, cx - half - 1, by - half - 1, 2 * half + 3, 2 * half + 3, awake ? g.c_white : g.c_box_edge);
+    T->canvas_fill_rect(g.cv, cx - half, by - half, 2 * half + 1, 2 * half + 1, awake ? g.c_box_lit : g.c_box);
+    if (awake)
+        for (int s = 1; s < 5; s++) {   /* a sparkle off every point but the one the light is on */
+            const float a = -PI / 2 + s * TAU / 5;
+            T->canvas_fill_rect(g.cv, (int)(C + cosf(a) * (R + 10)) - 1, (int)(C + sinf(a) * (R + 10)) - 1, 3, 3, g.c_rays);
+        }
 }
 
 static void banner(const char *top, const char *mid, const char *bottom, uint8_t col)
 {
     const tat_banner_t b = {
         .top = top, .mid = mid, .bottom = bottom,
-        .top_color = col, .mid_color = g.c_text, .bottom_color = g.c_awake,
+        .top_color = col, .mid_color = g.c_text, .bottom_color = g.c_star_lit,
         .panel = g.c_panel, .border = col,
         .top_scale = 2, .bars = true, .bottom_bold = true,
     };
-    T->canvas_banner(g.cv, (int)C, 96, CW - 40, &b);
+    T->canvas_banner(g.cv, (int)C, 164, CW - 40, &b);   /* under the star, which has just woken up and should be seen */
 }
 
 static void draw_menu(void)
@@ -968,10 +837,9 @@ static void draw_menu(void)
     const tat_menu_row_t rows[] = {
         {"LEVEL", buf, 0},
         T->menu_sound_row(),
-        {"FLAT PLAY", g.flat_play ? "GYRO" : "OFF", T->ui_color(g.flat_play ? TAT_UI_VALUE : TAT_UI_DIM)},
         {"RESET LEVEL", "GO", T->ui_color(TAT_UI_ACCENT)},
     };
-    T->menu_draw(rows, 4, "PAUSED");
+    T->menu_draw(rows, 3, "PAUSED");
 }
 
 static void star_draw(void)
@@ -981,41 +849,34 @@ static void star_draw(void)
         draw_menu();
         return;
     }
-    // Turn-based: nothing moves unless something changed, so don't redraw (or send a frame).
+    // Nothing moves unless something changed, so don't redraw (or send a frame).
     if (!g.dirty) return;
     g.dirty = false;
 
     draw_board();
-    draw_star();
     for (int i = 0; i < g.n_segs; i++) thick_line(&g.segs[i], 5, g.c_glow);
     for (int i = 0; i < g.n_segs; i++) thick_line(&g.segs[i], 3, g.c_beam);
     for (int i = 0; i < g.n_segs; i++) thick_line(&g.segs[i], 1, g.c_white);
+    draw_star();   /* over the end of the beam, so the light goes into the box rather than across it */
     for (int i = 0; i < g.n_stops; i++) {
         T->canvas_fill_rect(g.cv, (int)g.stops[i].x - 2, (int)g.stops[i].y - 2, 5, 5, g.c_stop);
         T->canvas_fill_rect(g.cv, (int)g.stops[i].x - 7, (int)g.stops[i].y - 1, 3, 3, g.c_stop);
         T->canvas_fill_rect(g.cv, (int)g.stops[i].x + 5, (int)g.stops[i].y - 1, 3, 3, g.c_stop);
     }
-    /* Where the star would like the laser, if that is the hint: a marker on the rim. */
-    if (g.hint_t > 0 && g.hint_entry >= 0 && ((int)(g.hint_t * 5.0f) & 1) == 0) {
-        const float ha = spoke_angle((float)g.hint_entry);
-        spoke_rect(ha, 104, 116, 9.0f, g.c_hint);
-        spoke_rect(ha, 100, 104, 4.0f, g.c_hint);
-    }
-    /* The emitter sits on the rim wherever world-up is, pointing in. */
-    const float ea = spoke_angle((float)g.entry);
+    /* The emitter, at the top of the rim, pointing in. It does not move. */
+    const float ea = spoke_angle((float)LASER);
     spoke_rect(ea, 105, 116, 8.0f, g.c_emit);
     spoke_rect(ea, 109, 113, 5.5f, g.c_emit_hi);
     spoke_rect(ea, EMIT_PX, 105, 3.8f, g.c_beam);
     spoke_rect(ea, EMIT_PX - 3, EMIT_PX, 2.0f, g.c_white);
 
-    // HUD: one line, in the sliver of screen under the board. Level, and taps against the
-    // best there is. While a hint is up it says what the hint means instead.
+    // HUD: one line, in the sliver of screen under the board. Level, and rings moved against
+    // the fewest it takes. While a hint is up it says what the hint means instead.
     char buf[32];
     const char *line = buf;
-    uint8_t line_col = g.taps > g.lvl.best ? g.c_orange : g.c_dim;
-    snprintf(buf, sizeof(buf), "L%d  %d/%d", g.level, g.taps, g.lvl.best);
-    if (g.nudge) line = "TILT ME", line_col = g.c_cyan;
-    else if (g.hint_t > 0) line = g.hint_ring >= 0 ? "TAP THIS RING" : "TURN THE LASER", line_col = g.c_hint;
+    uint8_t line_col = g.moves > g.lvl.best ? g.c_orange : g.c_dim;
+    snprintf(buf, sizeof(buf), "L%d  %d/%d", g.level, g.moves, g.lvl.best);
+    if (g.hint_t > 0) line = "TURN THIS RING", line_col = g.c_hint;
     else if (g.phase == PLAYING && g.idle_t > STUCK_S) line = "STUCK? TAP STAR", line_col = g.c_hint;
     T->canvas_fill_rect(g.cv, (int)C - 47, 216, 95, 11, g.c_void);
     T->canvas_text_centered(g.cv, (int)C, 221, line, line_col, 1, true);
@@ -1025,23 +886,24 @@ static void star_draw(void)
         T->canvas_rect(g.cv, 22, 46, CW - 44, 142, g.c_beam);
         T->canvas_rect(g.cv, 23, 47, CW - 46, 140, g.c_beam);
         T->canvas_text_centered(g.cv, (int)C, 60, "WAKE THE STAR", g.c_beam, 2, true);
-        T->canvas_text_centered(g.cv, (int)C, 84, "GET THE LIGHT IN ITS DOOR", g.c_text, 1, true);
-        T->canvas_text(g.cv, 34, 102, "TURN", g.c_cyan, 1, true);
-        T->canvas_text(g.cv, 70, 102, "YOUR WRIST: THE LASER", g.c_text, 1, false);
-        T->canvas_text(g.cv, 70, 112, "MOVES ROUND THE RIM", g.c_text, 1, false);
-        T->canvas_text(g.cv, 34, 128, "TAP", g.c_beam, 1, true);
-        T->canvas_text(g.cv, 70, 128, "A RING TO TURN IT. THE", g.c_text, 1, false);
-        T->canvas_text(g.cv, 70, 138, "ONE INSIDE TURNS BACK", g.c_text, 1, false);
+        T->canvas_text_centered(g.cv, (int)C, 84, "LIGHT UP ITS RED BOX", g.c_text, 1, true);
+        T->canvas_text(g.cv, 34, 102, "DRAG", g.c_cyan, 1, true);
+        T->canvas_text(g.cv, 74, 102, "A RING ROUND LIKE THE", g.c_text, 1, false);
+        T->canvas_text(g.cv, 74, 112, "DIAL OF A LOCK", g.c_text, 1, false);
+        T->canvas_text(g.cv, 34, 128, "HOLES", g.c_beam, 1, true);
+        T->canvas_text(g.cv, 74, 128, "LET LIGHT THROUGH.", g.c_text, 1, false);
+        T->canvas_text(g.cv, 74, 138, "MIRRORS BEND IT ROUND", g.c_text, 1, false);
         T->canvas_text(g.cv, 34, 154, "STUCK?", g.c_hint, 1, true);
         T->canvas_text(g.cv, 82, 154, "TAP THE STAR", g.c_text, 1, false);
         T->canvas_text_centered(g.cv, (int)C, 175, "TAP TO START", g.c_beam, 1, true);
     } else if (g.phase == SOLVED && g.phase_t > 0.25f) {
         char mid[64], stars[8] = "";
-        if (g.taps <= g.lvl.best && !g.hinted) snprintf(mid, sizeof(mid), "PERFECT - %d TAP%s", g.taps, g.taps == 1 ? "" : "S");
-        else if (g.taps <= g.lvl.best) snprintf(mid, sizeof(mid), "%d TAP%s, WITH A HINT", g.taps, g.taps == 1 ? "" : "S");
-        else snprintf(mid, sizeof(mid), "DONE IN %d - BEST IS %d", g.taps, g.lvl.best);
+        const char *ring_s = g.moves == 1 ? "RING" : "RINGS";
+        if (g.moves <= g.lvl.best && !g.hinted) snprintf(mid, sizeof(mid), "PERFECT - %d %s TURNED", g.moves, ring_s);
+        else if (g.moves <= g.lvl.best) snprintf(mid, sizeof(mid), "%d %s, WITH A HINT", g.moves, ring_s);
+        else snprintf(mid, sizeof(mid), "%d TURNS - IT TAKES %d", g.moves, g.lvl.best);
         for (int i = 0; i < g.stars_earned; i++) strcat(stars, "* ");
-        banner(CHEERS[g.level % 6], mid, stars, g.c_awake);
+        banner(CHEERS[g.level % 6], mid, stars, g.c_star_lit);
     }
     T->canvas_present(g.cv);
 }
@@ -1057,9 +919,7 @@ static void star_begin(const tat_api_t *api)
     memset(&g, 0, sizeof(g));
     g.level = 1;
     g.depth = 1;
-    g.up = -PI / 2;
-    g.gyro_sign = 1;
-    g.entry = m8(-VIEW);   /* the laser starts at the top of the screen, until the tilt says otherwise */
+    g.grab = -1;
     g.phase = PLAYING;
     g.tween_t = 1;
     g.dirty = true;
@@ -1073,18 +933,10 @@ static void star_begin(const tat_api_t *api)
     g.pol_r = T->polar_radii();
     if (!g.pol_a || !g.pol_r) T->log("no polar tables; the board cannot be drawn");
 
-    // The solver is only ever run between levels, but it is run often enough while hunting
-    // for a board that allocating it per level would be silly. Without it the game still
-    // plays - make_level() falls back to the verified campaign.
-    g.dist = (int8_t *)T->alloc(MAX_STATES * sizeof(int8_t));
-    g.queue = (uint16_t *)T->alloc(MAX_STATES * sizeof(uint16_t));
-    if (!g.dist || !g.queue) T->log("no memory for the solver; campaign levels only");
-
     static const uint32_t PLATE[4] = {0x2E3550, 0x343C5C, 0x3A4368, 0x404A74};
     static const uint32_t TOOTH[4] = {0x414B70, 0x48537C, 0x4F5B88, 0x566394};
     g.c_void = pal(0x0E0E1C);
     g.c_disc = pal(0x16162A);
-    g.c_bezel = pal(0x1E2438);
     for (int i = 0; i < 4; i++) {
         g.c_plate[i] = pal(PLATE[i]);
         g.c_tooth[i] = pal(TOOTH[i]);
@@ -1095,12 +947,15 @@ static void star_begin(const tat_api_t *api)
     g.c_beam = pal(0xFF4DD2);
     g.c_glow = pal(0x5C2458);   /* the beam's soft halo over the dark disc */
     g.c_white = pal(0xFFFFFF);
-    g.c_asleep = pal(0x3C4266);
-    g.c_awake = pal(0xFFD93D);
-    g.c_halo = pal(0x4A4226);
-    g.c_door = pal(0x6E7BA8);
-    g.c_door_lit = pal(0xFFF3A0);
-    g.c_face_lit = pal(0x8A5A00);
+    g.c_star = pal(0xE9BE2E);       /* asleep: a soft yellow */
+    g.c_star_lit = pal(0xFFE14A);   /* awake */
+    g.c_star_edge = pal(0xB07A12);
+    g.c_halo = pal(0x5A4E1E);
+    g.c_box = pal(0xE8302A);
+    g.c_box_edge = pal(0x7A1512);
+    g.c_box_lit = pal(0xFFF3A0);
+    g.c_face = pal(0x5A3A00);
+    g.c_cheek = pal(0xFF9A6B);
     g.c_text = pal(0xEAF0FF);
     g.c_dim = pal(0x8A97C0);
     g.c_stop = pal(0x6E7BA9);
@@ -1109,25 +964,23 @@ static void star_begin(const tat_api_t *api)
     g.c_panel = pal(0x07070F);
     g.c_rays = pal(0xFFF3A1);
     g.c_orange = pal(0xFF9A4D);
-    g.c_pip_edge = pal(0x3A4261);
     g.c_cyan = pal(0x7FE8FE);
-    g.c_hint = pal(0xFFD93D);   /* what the star points at when it is asked */
+    g.c_hint = pal(0xFFD93D);   /* the ring the star points at when it is asked */
 
-    self_test();
     load_progress();
     start_level(g.level);
 }
 
-static void star_enter(void) { g.dirty = true; }
+static void star_enter(void)
+{
+    g.dirty = true;
+    g.grab = -1;
+}
 
 static void star_redraw(void) { g.dirty = true; }
 
 static void star_unload(void)
 {
-    T->free(g.dist);
-    T->free(g.queue);
-    g.dist = NULL;
-    g.queue = NULL;
     if (g.cv) T->canvas_destroy(g.cv);
     g.cv = NULL;
 }
@@ -1137,8 +990,8 @@ const tat_game_t tat_game = {
     .api_major = TAT_API_MAJOR,
     .api_minor = TAT_API_MINOR,
     // "sleepystar" rather than "star": the id is also the save namespace, and this is
-    // where the player's depth, best times and whether they have seen the tutorial have
-    // always lived. Renaming it would quietly put everyone back on level 1.
+    // where the player's depth has always lived. Renaming it would quietly put everyone
+    // back on level 1.
     .id = "sleepystar",
     .name = "SLEEPY STAR",
     .accent_r = 255, .accent_g = 217, .accent_b = 61,

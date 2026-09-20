@@ -24,7 +24,7 @@ your own.
 <td align="center" width="20%"><img src="site/img/tiltatris.png" width="150"><br><b>TILT-A-TRIS</b><br><sub>Radial block-stacking. You turn the pile under the falling piece.</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="site/img/star.png" width="150"><br><b>SLEEPY STAR</b><br><sub>A laser falls straight down. Turn rings of gaps and mirrors to wake the star.</sub></td>
+<td align="center"><img src="site/img/star.png" width="150"><br><b>SLEEPY STAR</b><br><sub>Drag the rings round like the dials of a lock until the laser reaches the red box, and the star wakes up.</sub></td>
 <td align="center"><img src="site/img/pindrop.png" width="150"><br><b>PIN DROP</b><br><sub>Steer a falling ball through the pins into the hole. The rim is live.</sub></td>
 <td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>Chase a raider down a trench. Hold it in your sights and tap - and fly through the blast gates. In levels.</sub></td>
 <td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>A rooftop skate run with one life. Turn the watch to push, tap to ollie, tap again to kickflip for Aura.</sub></td>
@@ -372,22 +372,26 @@ Handy for checking a game without picking the watch up.
 
 ## Sleepy Star controls
 
-- A laser always falls straight down; rings of walls with gaps, mirrors and splitters sit
-  between it and a sleeping star. Get the light into the star's **door**, which faces up, at
-  the laser. **Turn the watch** and the emitter moves round the rim to real-world "up" (free,
-  8 notches); **tap a ring** to click it one notch, and the ring inside it turns the other way
-- **Stuck? Tap the star.** It shows the best next move: the ring to tap lights up gold, or a
-  gold marker on the rim shows where to turn the laser to. If nothing has got any further for
-  half a minute the star glows to say it can help. A hint is free, but a hinted level is two
-  stars at most
-- Only taps are counted, against each level's verified best (3 stars at best, 2 within two,
-  1 for any solve). Six hand-made levels at 1, 2, 4, 7, 11, 16; every other level is generated
-  on the watch from its number (the same for everybody) and solved by breadth-first search -
-  which is also where the hints come from
-- **PWR** starts the level over · **swipe left** menu (level, sound, flat play with the gyro,
-  reset) · built from `docs/SLEEPY_STAR_SPEC.md`, then changed by being played: the board now
-  fills the screen, and the whole picture is drawn half a turn round from the spec so that
-  the door is under the laser instead of on the star's far side
+- A laser comes straight down from the top of the screen onto rings of walls with holes,
+  mirrors and splitters cut into them, and in the middle a sleeping star with a **red box**
+  on its top point. Get the light onto the box and the star wakes up
+- **Drag a ring** and it turns with your finger, like the dial of a combination lock, clicking
+  into one of eight places. Every ring turns by itself, and the light is redrawn as it turns,
+  so the way through is found by looking. A hole lets the light straight through, a mirror
+  sends it one place round, a splitter does both. The first three levels are holes only;
+  after that some ring has no plain hole at all, so the light has to be sent round and
+  brought back
+- **Stuck? Tap the star.** The ring that is in the wrong place lights up gold - not where it
+  should go: finding that is the game. If nothing has got any further for half a minute the
+  star glows to say it can help. A hint is free, but a hinted level is two stars at most
+- What is counted is rings turned to a new place, against the fewest it takes (3 stars at
+  that, 2 within two, 1 for any solve). Every level is generated on the watch from its number,
+  the same for everybody
+- **PWR** or **swipe left** for the menu (level, sound, start the level over); a swipe that
+  starts on a ring is a turn of that ring, so swipe from the star or the rim
+- These are its third set of rules. The first two had the laser follow real-world "up" as the
+  watch was turned, and each ring geared to the one inside it; it was clever, and on a wrist
+  it was work. The geometry is still `docs/SLEEPY_STAR_SPEC.md`'s
 
 ## Pin Drop controls
 
