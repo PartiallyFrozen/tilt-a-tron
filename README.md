@@ -361,14 +361,21 @@ Handy for checking a game without picking the watch up.
 ## Sleepy Star controls
 
 - A laser always falls straight down; rings of walls with gaps, mirrors and splitters sit
-  between it and a sleeping star. **Turn the watch** and the emitter moves round the rim to
-  real-world "up" (free, 8 notches); **tap a ring** to click it one notch, and the ring inside
-  it turns the other way. Get the light through the star's door
+  between it and a sleeping star. Get the light into the star's **door**, which faces up, at
+  the laser. **Turn the watch** and the emitter moves round the rim to real-world "up" (free,
+  8 notches); **tap a ring** to click it one notch, and the ring inside it turns the other way
+- **Stuck? Tap the star.** It shows the best next move: the ring to tap lights up gold, or a
+  gold marker on the rim shows where to turn the laser to. If nothing has got any further for
+  half a minute the star glows to say it can help. A hint is free, but a hinted level is two
+  stars at most
 - Only taps are counted, against each level's verified best (3 stars at best, 2 within two,
   1 for any solve). Six hand-made levels at 1, 2, 4, 7, 11, 16; every other level is generated
-  on the watch from its number (the same for everybody) and solved by breadth-first search
-- **PWR** or the RST button starts the level over · **swipe left** menu (level, sound,
-  flat play with the gyro, reset) · built from `docs/SLEEPY_STAR_SPEC.md`
+  on the watch from its number (the same for everybody) and solved by breadth-first search -
+  which is also where the hints come from
+- **PWR** starts the level over · **swipe left** menu (level, sound, flat play with the gyro,
+  reset) · built from `docs/SLEEPY_STAR_SPEC.md`, then changed by being played: the board now
+  fills the screen, and the whole picture is drawn half a turn round from the spec so that
+  the door is under the laser instead of on the star's far side
 
 ## Pin Drop controls
 

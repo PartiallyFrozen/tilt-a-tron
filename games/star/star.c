@@ -5,8 +5,19 @@
 //                 watch moves where it enters (8 notches around the rim)
 //   tap a ring  - clicks it round one notch; the ring inside it turns the other way.
 //                 Taps are what's counted, against the level's par
+//   tap the star - a hint: the ring to tap next, or where the laser should come from
 //   PWR         - start the level over
 //   swipe left  - pause menu
+//
+// Three things were changed after it was played. The star's door was on its far side - the
+// spec puts it at spoke 4, straight down, and the laser comes from the top, so held the way
+// a watch is held the light was aimed at the star's back and a straight shot needed the
+// watch upside down. The picture is now drawn half a turn round (VIEW), which puts the door
+// under the laser and changes nothing else: every level, every solution and every saved
+// best is what it was. The board filled barely half the screen, with a reset button beside
+// it that PWR and the menu already were; it now fills it. And it asked for a little more
+// working-out than most people bring to a watch, with nothing to fall back on - so the star
+// gives hints, from the solver that was already in here checking the levels.
 //
 // Built from docs/SLEEPY_STAR_SPEC.md. The board is fixed to the watch; the laser emitter
 // orbits the rim to wherever real-world "up" is (8 spokes, with hysteresis). Geometry in
@@ -37,6 +48,7 @@ enum { BLOCK = 0, GAP, MIRROR_L, MIRROR_R, SPLIT };
 #define SPOKES 8
 #define MAX_RINGS 4
 #define DOOR 4
+#define VIEW 4   /* the board is drawn this many spokes round, which puts the door at the top */
 
 typedef struct {
     uint8_t n_rings;
@@ -93,9 +105,14 @@ static const Geo GEO[MAX_RINGS + 1] = {
 
 #define BAND_HALF 6.25f
 #define HOLE_HALF 6.75f
-#define EMIT_R 84.0f
-#define DISC_R 82.0f
-#define BEZEL_R 110.5f
+#define TEETH_OUT 9.5f     /* how far a ring's teeth stand out past its band */
+
+// Everything above is the spec's geometry, and it is drawn scaled up by zoom(): the outer
+// ring's teeth come out to BOARD_PX on the canvas whatever the number of rings, which is
+// most of the 116 there are. The emitter rides outside that, on the rim of the screen.
+#define BOARD_PX 99.0f
+#define EMIT_PX 101.0f     /* where the beam leaves the emitter */
+#define DISC_PX 104.0f
 
 #define MAX_STATES 4096
 
@@ -116,6 +133,9 @@ typedef struct {
     float from_r;
     int from_s, meet_s;
 } Branch;
+
+#define HINT_S 3.0f         /* how long a hint stays up */
+#define STUCK_S 28.0f       /* no progress for this long and the star offers */
 
 static const char *const CHEERS[] = {"NICE!", "YES!", "GOT IT!", "LOVELY!", "BRIGHT!", "WAHOO!"};
 
@@ -165,11 +185,19 @@ static struct {
     int64_t last_tap_us;
     int stars_earned;
 
+    /* hints */
+    float hint_t;      /* > 0 while one is showing */
+    int hint_ring;     /* the ring to tap, or -1 */
+    int hint_entry;    /* the spoke the laser should come in on, or -1 */
+    bool hinted;       /* this level has had one, which caps it at two stars */
+    float idle_t;      /* since the player last got anywhere */
+    float blink_t;
+
     /* palette */
     uint8_t c_void, c_disc, c_bezel, c_plate[4], c_tooth[4], c_lip, c_mirror, c_split;
     uint8_t c_beam, c_glow, c_white, c_asleep, c_awake, c_halo, c_door, c_door_lit;
     uint8_t c_face_lit, c_text, c_dim, c_stop, c_emit, c_emit_hi, c_panel, c_rays;
-    uint8_t c_orange, c_pip_edge, c_cyan;
+    uint8_t c_orange, c_pip_edge, c_cyan, c_hint;
 } g;
 
 // ---------------------------------------------------------------- the beam
@@ -412,10 +440,15 @@ static void sfx_solve(void)
 
 // ---------------------------------------------------------------- geometry
 
+// The angle on the screen of one of the board's spokes.
+static float spoke_angle(float spoke) { return ((spoke + VIEW) * 45.0f - 90.0f) * PI / 180.0f; }
+
+// A point on the board: r in the spec's units, turned and scaled onto the canvas.
+static float zoom(void);
 static Pt polar(float r, float spoke)
 {
-    const float a = (spoke * 45.0f - 90.0f) * PI / 180.0f;
-    const Pt p = {C + r * cosf(a), C + r * sinf(a)};
+    const float a = spoke_angle(spoke), k = zoom();
+    const Pt p = {C + r * k * cosf(a), C + r * k * sinf(a)};
     return p;
 }
 
@@ -455,6 +488,9 @@ static void save_best(int n, int used)
 
 // ---------------------------------------------------------------- level flow
 
+// How much bigger than the spec the board is drawn, for this level's number of rings.
+static float zoom(void) { return BOARD_PX / (GEO[g.lvl.n_rings < 2 ? 2 : g.lvl.n_rings].rad[0] + TEETH_OUT); }
+
 // Beam walk with geometry for drawing (spec section 4.2).
 static void retrace(bool sounds)
 {
@@ -463,7 +499,7 @@ static void retrace(bool sounds)
     Branch cur[8], nxt[8];
     int n_cur = 1, deepest = 0;
     cur[0].ring = 0;
-    cur[0].from_r = EMIT_R;
+    cur[0].from_r = EMIT_PX / zoom();
     cur[0].from_s = g.entry;
     cur[0].meet_s = g.entry;
     bool win = false;
@@ -515,11 +551,14 @@ static void retrace(bool sounds)
     }
     // "Getting warmer": a rising blip whenever the light gets one ring deeper than before.
     if (sounds && deepest > g.reached && !win) sfx_deeper(deepest);
+    if (deepest > g.reached) g.idle_t = 0;   /* that was progress */
     g.reached = deepest;
     if (win && !g.won && g.phase == PLAYING) {
         g.phase = SOLVED;
         g.phase_t = 0;
         g.stars_earned = g.taps <= g.lvl.best ? 3 : g.taps <= g.lvl.best + 2 ? 2 : 1;
+        if (g.hinted && g.stars_earned > 2) g.stars_earned = 2;   /* help is free, but it is not perfect */
+        g.hint_t = 0;
         save_best(g.level, g.taps);
         if (g.level + 1 > g.depth) g.depth = g.level + 1;
         save_progress();
@@ -538,11 +577,52 @@ static void start_level(int n)
     g.tween_t = 1;
     g.taps = 0;
     g.reached = 0;
+    g.hint_t = g.idle_t = 0;
+    g.hint_ring = g.hint_entry = -1;
+    g.hinted = false;
+    solve(&g.lvl);   /* the table the hints are read from: taps to go, from every arrangement */
     g.phase = (g.level == 1 && !g.seen_tut) ? TUTORIAL : PLAYING;
     g.phase_t = 0;
     retrace(false);
     g.dirty = true;
     save_progress();
+}
+
+// What the star says when it is asked. The solver's table has, for every arrangement of the
+// rings, how many taps it is from one the light gets through - allowing the laser to come
+// from anywhere, since turning the watch is free. So if this arrangement is already zero
+// taps away, the hint is where to turn the laser to; otherwise it is whichever ring's tap
+// leads to an arrangement one tap nearer.
+static void give_hint(void)
+{
+    g.hint_ring = g.hint_entry = -1;
+    const int here = pack(g.rot, g.lvl.n_rings);
+    if (g.dist[here] == 0) {
+        for (int e = 0; e < SPOKES; e++)
+            if (wins(&g.lvl, g.rot, (uint8_t)(1u << e))) {
+                g.hint_entry = e;
+                break;
+            }
+    } else {
+        for (int i = 0; i < g.lvl.n_rings; i++) {
+            uint8_t next[MAX_RINGS];
+            memcpy(next, g.rot, sizeof(next));
+            next[i] = (uint8_t)m8(next[i] + 1);
+            if (i < g.lvl.n_rings - 1) next[i + 1] = (uint8_t)m8(next[i + 1] - 1);
+            if (g.dist[pack(next, g.lvl.n_rings)] == g.dist[here] - 1) {
+                g.hint_ring = i;
+                break;
+            }
+        }
+    }
+    g.hint_t = HINT_S;
+    g.hinted = true;
+    g.idle_t = 0;
+    g.dirty = true;
+    tone1(660, 0, 60, TAT_TRIANGLE, 0.4f, 0);
+    tone1(990, 0, 90, TAT_TRIANGLE, 0.4f, 70);
+    T->log("hint on level %d: %s %d", g.level, g.hint_ring >= 0 ? "tap ring" : "laser to spoke",
+           g.hint_ring >= 0 ? g.hint_ring : g.hint_entry);
 }
 
 static void tap_ring(int idx)
@@ -556,6 +636,7 @@ static void tap_ring(int idx)
     }
     g.tween_t = 0;
     g.taps++;
+    g.hint_t = 0;   /* whatever was suggested, something has been done about it */
     sfx_click();
     retrace(true);
 }
@@ -610,10 +691,11 @@ static void update_tilt(const tat_input_t *in, float dt)
 
     // Snap to a spoke with 6 degrees of hysteresis so it can't chatter on a boundary.
     const float deg = g.up * 180.0f / PI + 90.0f;
-    const float centre = g.entry * 45.0f;
+    const float centre = m8(g.entry + VIEW) * 45.0f;   /* where that spoke is drawn */
     const float off = fmodf(deg - centre + 540.0f, 360.0f) - 180.0f;
     if (fabsf(off) > 22.5f + 6.0f) {
-        g.entry = m8((int)lroundf(deg / 45.0f));
+        g.entry = m8((int)lroundf(deg / 45.0f) - VIEW);
+        if (g.entry == g.hint_entry) g.hint_t = 0;   /* that is where it was asked to go */
         sfx_detent();
         retrace(true);
     }
@@ -671,6 +753,19 @@ static void star_update(float dt)
     }
     update_tilt(in, dt);
 
+    if (g.hint_t > 0) {
+        g.hint_t -= dt;
+        g.dirty = true;   /* it pulses */
+    }
+    if (g.phase == PLAYING) {
+        // Nothing getting any deeper for a while: the star lets it be known that it can help.
+        g.idle_t += dt;
+        if (g.idle_t > STUCK_S && g.hint_t <= 0) {
+            g.blink_t += dt;
+            g.dirty = true;
+        }
+    }
+
     if (g.phase == SOLVED) {
         if ((ges->tap && g.phase_t > 0.8f) || g.phase_t > 4.0f) {
             g.won = false;
@@ -687,15 +782,14 @@ static void star_update(float dt)
         const int64_t now = T->now_us();
         if (now - g.last_tap_us < 120000) return;   /* debounce */
         g.last_tap_us = now;
-        // The reset button first, then the rings (spec section 6); positions in device px.
-        if (abs(ges->x - 51) <= 26 && abs(ges->y - 233) <= 25) {
-            g.won = false;
-            start_level(g.level);
+        // The star is the hint button; the rings are the rings. Radii in the spec's units.
+        const Geo *G = &GEO[g.lvl.n_rings];
+        const float r = hypotf(ges->x - 233.0f, ges->y - 233.0f) / SCALE / zoom();
+        if (r < G->star + 3) {
+            give_hint();
             return;
         }
-        const Geo *G = &GEO[g.lvl.n_rings];
-        const float r = hypotf(ges->x - 233.0f, ges->y - 233.0f) / SCALE;
-        if (r < G->star + 3 || r > G->rad[0] + 10) return;   /* the star isn't a button; nor is the bezel */
+        if (r > G->rad[0] + 10) return;   /* the rim isn't a button */
         int hit = -1;
         float best = 8.0f;   /* 16 device px either side of the band's centre */
         for (int i = 0; i < g.lvl.n_rings; i++)
@@ -730,12 +824,15 @@ static void draw_board(void)
     }
     const Geo *G = &GEO[g.lvl.n_rings];
     int32_t rot16[MAX_RINGS];
-    for (int i = 0; i < g.lvl.n_rings; i++) rot16[i] = (int32_t)(vis_rot(i) * 8192.0f);
+    // Each ring's angle, and the half turn the whole board is drawn round by.
+    for (int i = 0; i < g.lvl.n_rings; i++) rot16[i] = (int32_t)((vis_rot(i) + VIEW) * 8192.0f);
+    const float inv_zoom = 1.0f / zoom(), disc_r = DISC_PX * inv_zoom;
+    const bool pulse = g.hint_t > 0 && g.hint_ring >= 0 && ((int)(g.hint_t * 5.0f) & 1) == 0;
     for (int y = 0; y < CW; y++) {
         for (int x = 0; x < CW; x++) {
             const int idx = (SCALE * y) * TAT_SCREEN + SCALE * x;
-            const float r = g.pol_r[idx] / 32.0f;
-            uint8_t c = r < DISC_R ? g.c_disc : (r > BEZEL_R && r < BEZEL_R + 1.5f) ? g.c_bezel : g.c_void;
+            const float r = g.pol_r[idx] / 32.0f * inv_zoom;   /* in the spec's units from here on */
+            uint8_t c = r < disc_r ? g.c_disc : g.c_void;
             if (r < G->rad[0] + 10 && r > G->star) {
                 for (int k = 0; k < g.lvl.n_rings; k++) {
                     const float dr = r - G->rad[k];
@@ -743,7 +840,7 @@ static void draw_board(void)
                     /* Angle in the ring's own frame, 0 at its spoke 0. */
                     const uint16_t a16 = (uint16_t)((int32_t)g.pol_a[idx] + 16384 - rot16[k]);
                     if (dr <= BAND_HALF) {
-                        c = g.c_plate[k];
+                        c = pulse && k == g.hint_ring ? g.c_hint : g.c_plate[k];
                         const int spoke = ((a16 + 4096) >> 13) & 7;
                         const uint8_t el = g.lvl.ring[k][spoke];
                         if (el != BLOCK) {
@@ -821,13 +918,18 @@ static void draw_star(void)
 {
     const Geo *G = &GEO[g.lvl.n_rings];
     const bool awake = g.won;
-    if (awake) octagon(G->star + 9, g.c_halo);
-    octagon(G->star, awake ? g.c_awake : g.c_asleep);
-    /* The door: a bright notch on the star's edge at board spoke 4 (straight down). */
+    const float k = zoom(), R = G->star * k;
+    // Offering a hint, the star stirs: it brightens and dims.
+    const bool stir = !awake && g.phase == PLAYING && g.idle_t > STUCK_S && g.hint_t <= 0 && ((int)(g.blink_t * 2.0f) & 1);
+    if (awake) octagon(R + 9 * k, g.c_halo);
+    octagon(R, awake ? g.c_awake : stir ? g.c_hint : g.c_asleep);
+    /* The door: a bright notch on the star's edge, at board spoke 4 - which VIEW puts at the
+       top, under the laser. */
     const Pt d = polar(G->star, DOOR);
-    T->canvas_fill_rect(g.cv, (int)d.x - 5, (int)d.y - 3, 11, 7, awake ? g.c_door_lit : g.c_door);
+    const int dw = (int)(6 * k), dh = (int)(4 * k);
+    T->canvas_fill_rect(g.cv, (int)d.x - dw, (int)d.y - dh, dw * 2 + 1, dh * 2, awake ? g.c_door_lit : g.c_door);
     /* Face: shut eyes and a small mouth asleep; open eyes and a smile awake. */
-    const int u0 = (int)lroundf(G->star / 7);
+    const int u0 = (int)lroundf(R / 7);
     const int u = u0 < 1 ? 1 : u0;
     const int cx = (int)C, cy = (int)C;
     const uint8_t f = awake ? g.c_face_lit : g.c_disc;
@@ -893,53 +995,50 @@ static void star_draw(void)
         T->canvas_fill_rect(g.cv, (int)g.stops[i].x - 7, (int)g.stops[i].y - 1, 3, 3, g.c_stop);
         T->canvas_fill_rect(g.cv, (int)g.stops[i].x + 5, (int)g.stops[i].y - 1, 3, 3, g.c_stop);
     }
-    /* The emitter sits on the rim wherever world-up is, pointing in. */
-    const float ea = (g.entry * 45.0f - 90.0f) * PI / 180.0f;
-    spoke_rect(ea, 88, 103, 7.5f, g.c_emit);
-    spoke_rect(ea, 96, 100, 5.0f, g.c_emit_hi);
-    spoke_rect(ea, 82, 88, 3.8f, g.c_beam);
-    spoke_rect(ea, 78, 82, 2.0f, g.c_white);
-
-    /* HUD: level, taps against best, progress pips, reset. */
-    char buf[24];
-    snprintf(buf, sizeof(buf), "LVL %d", g.level);
-    T->canvas_text(g.cv, 38, 42, buf, g.c_text, 1, true);
-    snprintf(buf, sizeof(buf), "%d/%d", g.taps, g.lvl.best);
-    T->canvas_text(g.cv, 195 - T->text_width(buf, 1, true), 42, buf, g.taps > g.lvl.best ? g.c_orange : g.c_dim, 1,
-                   true);
-    const int n_pips = g.lvl.n_rings + 1, pw = n_pips * 9 - 3;
-    for (int i = 0; i < n_pips; i++) {
-        const bool star_pip = i == g.lvl.n_rings;
-        const bool lit = star_pip ? g.won : g.reached > i;
-        const int x = (int)C - pw / 2 + i * 9;
-        T->canvas_fill_rect(g.cv, x, 192, 6, 6, lit ? (star_pip ? g.c_awake : g.c_beam) : g.c_disc);
-        T->canvas_rect(g.cv, x, 192, 6, 6,
-                       lit ? (star_pip ? g.c_awake : g.c_beam) : (star_pip ? g.c_awake : g.c_pip_edge));
+    /* Where the star would like the laser, if that is the hint: a marker on the rim. */
+    if (g.hint_t > 0 && g.hint_entry >= 0 && ((int)(g.hint_t * 5.0f) & 1) == 0) {
+        const float ha = spoke_angle((float)g.hint_entry);
+        spoke_rect(ha, 104, 116, 9.0f, g.c_hint);
+        spoke_rect(ha, 100, 104, 4.0f, g.c_hint);
     }
-    T->canvas_fill_rect(g.cv, 13, 105, 25, 23, g.c_panel);
-    T->canvas_rect(g.cv, 13, 105, 25, 23, g.c_emit);
-    T->canvas_text_centered(g.cv, 25, 117, "RST", g.c_dim, 1, false);
-    if (g.nudge) T->canvas_text_centered(g.cv, (int)C, 208, "TILT ME", g.c_cyan, 1, true);
+    /* The emitter sits on the rim wherever world-up is, pointing in. */
+    const float ea = spoke_angle((float)g.entry);
+    spoke_rect(ea, 105, 116, 8.0f, g.c_emit);
+    spoke_rect(ea, 109, 113, 5.5f, g.c_emit_hi);
+    spoke_rect(ea, EMIT_PX, 105, 3.8f, g.c_beam);
+    spoke_rect(ea, EMIT_PX - 3, EMIT_PX, 2.0f, g.c_white);
+
+    // HUD: one line, in the sliver of screen under the board. Level, and taps against the
+    // best there is. While a hint is up it says what the hint means instead.
+    char buf[32];
+    const char *line = buf;
+    uint8_t line_col = g.taps > g.lvl.best ? g.c_orange : g.c_dim;
+    snprintf(buf, sizeof(buf), "L%d  %d/%d", g.level, g.taps, g.lvl.best);
+    if (g.nudge) line = "TILT ME", line_col = g.c_cyan;
+    else if (g.hint_t > 0) line = g.hint_ring >= 0 ? "TAP THIS RING" : "TURN THE LASER", line_col = g.c_hint;
+    else if (g.phase == PLAYING && g.idle_t > STUCK_S) line = "STUCK? TAP STAR", line_col = g.c_hint;
+    T->canvas_fill_rect(g.cv, (int)C - 47, 216, 95, 11, g.c_void);
+    T->canvas_text_centered(g.cv, (int)C, 221, line, line_col, 1, true);
 
     if (g.phase == TUTORIAL) {
-        T->canvas_fill_rect(g.cv, 24, 50, CW - 48, 134, g.c_panel);
-        T->canvas_rect(g.cv, 24, 50, CW - 48, 134, g.c_beam);
-        T->canvas_rect(g.cv, 25, 51, CW - 50, 132, g.c_beam);
-        T->canvas_text_centered(g.cv, (int)C, 63, "WAKE THE STAR", g.c_beam, 1, true);
-        T->canvas_text(g.cv, 32, 78, "1", g.c_cyan, 1, true);
-        T->canvas_text(g.cv, 44, 78, "THE LASER ALWAYS FALLS", g.c_text, 1, false);
-        T->canvas_text(g.cv, 44, 88, "STRAIGHT DOWN. TURN YOUR", g.c_text, 1, false);
-        T->canvas_text(g.cv, 44, 98, "WRIST AND IT MOVES.", g.c_text, 1, false);
-        T->canvas_text(g.cv, 32, 114, "2", g.c_beam, 1, true);
-        T->canvas_text(g.cv, 44, 114, "TAP A RING TO TURN IT", g.c_text, 1, false);
-        T->canvas_text(g.cv, 44, 124, "ONE NOTCH.", g.c_text, 1, false);
-        T->canvas_text(g.cv, 32, 140, "3", g.c_awake, 1, true);
-        T->canvas_text(g.cv, 44, 140, "THE RING INSIDE IT TURNS", g.c_text, 1, false);
-        T->canvas_text(g.cv, 44, 150, "THE OTHER WAY.", g.c_text, 1, false);
-        T->canvas_text_centered(g.cv, (int)C, 172, "TAP: LET'S GO", g.c_beam, 1, true);
+        T->canvas_fill_rect(g.cv, 22, 46, CW - 44, 142, g.c_panel);
+        T->canvas_rect(g.cv, 22, 46, CW - 44, 142, g.c_beam);
+        T->canvas_rect(g.cv, 23, 47, CW - 46, 140, g.c_beam);
+        T->canvas_text_centered(g.cv, (int)C, 60, "WAKE THE STAR", g.c_beam, 2, true);
+        T->canvas_text_centered(g.cv, (int)C, 84, "GET THE LIGHT IN ITS DOOR", g.c_text, 1, true);
+        T->canvas_text(g.cv, 34, 102, "TURN", g.c_cyan, 1, true);
+        T->canvas_text(g.cv, 70, 102, "YOUR WRIST: THE LASER", g.c_text, 1, false);
+        T->canvas_text(g.cv, 70, 112, "MOVES ROUND THE RIM", g.c_text, 1, false);
+        T->canvas_text(g.cv, 34, 128, "TAP", g.c_beam, 1, true);
+        T->canvas_text(g.cv, 70, 128, "A RING TO TURN IT. THE", g.c_text, 1, false);
+        T->canvas_text(g.cv, 70, 138, "ONE INSIDE TURNS BACK", g.c_text, 1, false);
+        T->canvas_text(g.cv, 34, 154, "STUCK?", g.c_hint, 1, true);
+        T->canvas_text(g.cv, 82, 154, "TAP THE STAR", g.c_text, 1, false);
+        T->canvas_text_centered(g.cv, (int)C, 175, "TAP TO START", g.c_beam, 1, true);
     } else if (g.phase == SOLVED && g.phase_t > 0.25f) {
         char mid[64], stars[8] = "";
-        if (g.taps <= g.lvl.best) snprintf(mid, sizeof(mid), "PERFECT - %d TAP%s", g.taps, g.taps == 1 ? "" : "S");
+        if (g.taps <= g.lvl.best && !g.hinted) snprintf(mid, sizeof(mid), "PERFECT - %d TAP%s", g.taps, g.taps == 1 ? "" : "S");
+        else if (g.taps <= g.lvl.best) snprintf(mid, sizeof(mid), "%d TAP%s, WITH A HINT", g.taps, g.taps == 1 ? "" : "S");
         else snprintf(mid, sizeof(mid), "DONE IN %d - BEST IS %d", g.taps, g.lvl.best);
         for (int i = 0; i < g.stars_earned; i++) strcat(stars, "* ");
         banner(CHEERS[g.level % 6], mid, stars, g.c_awake);
@@ -960,6 +1059,7 @@ static void star_begin(const tat_api_t *api)
     g.depth = 1;
     g.up = -PI / 2;
     g.gyro_sign = 1;
+    g.entry = m8(-VIEW);   /* the laser starts at the top of the screen, until the tilt says otherwise */
     g.phase = PLAYING;
     g.tween_t = 1;
     g.dirty = true;
@@ -1011,6 +1111,7 @@ static void star_begin(const tat_api_t *api)
     g.c_orange = pal(0xFF9A4D);
     g.c_pip_edge = pal(0x3A4261);
     g.c_cyan = pal(0x7FE8FE);
+    g.c_hint = pal(0xFFD93D);   /* what the star points at when it is asked */
 
     self_test();
     load_progress();
