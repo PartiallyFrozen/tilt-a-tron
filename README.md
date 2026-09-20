@@ -108,6 +108,20 @@ never at boot, so a bad package costs a message on screen and nothing else. Read
 about 450 lines, and was written, installed and revised on a running watch without the
 firmware being touched.
 
+**Skins.** `--skin <folder>` swaps a game's art without touching its source: any file in the
+folder replaces the game's asset of the same name in that one package, and the folder can be
+anywhere. STARFALL's two ships are `player.png` (three frames side by side: banked left, level,
+banked right) and `raider.png` (six: the same three, twice, with the engines flickered), at
+whatever size you draw them - the game reads the frame size from the file.
+
+```bash
+python tools/mktat.py games/starfall --skin ~/my-starfall-ships
+```
+
+Art that is yours to use but not this repository's to publish belongs in a folder like that,
+outside the repo - which is why the ships in here are our own designs and not anybody's
+famous ones.
+
 The firmware build packs the games in `games/` too (`components/factory`) and carries a
 factory copy of each, which it installs the first time it starts - or whenever it finds the
 games folder empty, because storage can be wiped and a console with nothing on it is a poor

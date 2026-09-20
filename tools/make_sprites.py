@@ -447,6 +447,127 @@ def sheet(frames, path):
     print(f"{os.path.relpath(path, ROOT):24s} {len(frames)} x {fw}x{fh}  {os.path.getsize(path)} bytes")
 
 
+def starfall_sheets(root):
+    """STARFALL's two ships, seen from behind. Both are drawn here, from shapes rather than
+    letter grids, because they are symmetrical and bank: a frame is the level ship with each
+    wing raised or lowered. They are this project's own designs on purpose - see the game."""
+    out = os.path.join(root, "starfall", "assets")
+    os.makedirs(out, exist_ok=True)
+
+    def put(px, w, h, x, y, c):
+        if 0 <= x < w and 0 <= y < h:
+            px[x, y] = c + (255,)
+
+    # ---- ours: a twin-engine interceptor. Long wings with a little droop and a gun at each
+    # tip, a pod with a canopy, two engines burning blue straight at the camera, a V tail.
+    W, H, CX = 61, 33, 30
+    HULL, HULL_HI, HULL_DK, EDGE = (176, 184, 204), (232, 238, 250), (108, 118, 146), (52, 58, 80)
+    GLASS, GLINT, TEAM = (38, 60, 110), (150, 200, 255), (60, 190, 255)
+    BURN, BURN_HI, GUN, LAMP = (70, 190, 255), (235, 250, 255), (70, 76, 98), (255, 80, 80)
+    frames = []
+    for bank in (-1, 0, 1):
+        img, px = new_rgba(W, H)
+        for side in (-1, 1):
+            lift = -bank * side          # banking raises one wing and lowers the other
+            for d in range(5, 30):
+                x = CX + side * d
+                y = 17 + int(d * 0.16 + d * 0.20 * lift)
+                thick = 4 if d < 12 else 3 if d < 22 else 2
+                for k in range(thick):
+                    c = HULL_HI if k == 0 else HULL if k < thick - 1 else HULL_DK
+                    put(px, W, H, x, y + k, c)
+                if 8 <= d <= 10:
+                    for k in range(thick):
+                        put(px, W, H, x, y + k, TEAM)      # a team stripe near the root
+            tip_y = 17 + int(29 * 0.16 + 29 * 0.20 * lift)
+            for yy in range(tip_y - 3, tip_y + 5):          # the gun pod
+                put(px, W, H, CX + side * 29, yy, GUN)
+                put(px, W, H, CX + side * 30, yy, EDGE)
+            put(px, W, H, CX + side * 29, tip_y - 4, LAMP)
+            for i in range(9):                              # the V tail
+                x, y = CX + side * (3 + i), 9 - i
+                put(px, W, H, x, y, HULL_HI)
+                put(px, W, H, x, y + 1, HULL)
+                put(px, W, H, x + side, y + 1, HULL_DK)
+            for yy in range(13, 25):                        # an engine, and its fire
+                for xx in range(-3, 4):
+                    if abs(xx) == 3 and yy in (13, 24):
+                        continue
+                    put(px, W, H, CX + side * 10 + xx, yy, HULL_DK if abs(xx) == 3 else GUN)
+            ex, ey = CX + side * 10, 19
+            for yy in range(-3, 4):
+                for xx in range(-3, 4):
+                    r2 = xx * xx + yy * yy
+                    if r2 <= 9:
+                        put(px, W, H, ex + xx, ey + yy, BURN_HI if r2 <= 2 else BURN if r2 <= 6 else EDGE)
+        for yy in range(8, 26):                             # the pod, rounded
+            half = 6 if 11 <= yy <= 22 else 5 if 9 <= yy <= 24 else 4
+            for xx in range(-half, half + 1):
+                c = HULL_HI if yy < 11 else HULL_DK if abs(xx) == half or yy > 23 else HULL
+                put(px, W, H, CX + xx, yy, c)
+        for yy in range(10, 16):                            # the canopy
+            for xx in range(-3, 4):
+                if abs(xx) == 3 and yy in (10, 15):
+                    continue
+                put(px, W, H, CX + xx, yy, GLASS)
+        put(px, W, H, CX - 2, 11, GLINT)
+        put(px, W, H, CX - 1, 11, GLINT)
+        put(px, W, H, CX - 2, 12, GLINT)
+        frames.append(img)
+    sheet_img = Image.new("RGBA", (W * 3, H), (0, 0, 0, 0))
+    for i, f in enumerate(frames):
+        sheet_img.paste(f, (i * W, 0))
+    path = os.path.join(out, "player.png")
+    sheet_img.save(path, optimize=True)
+    print(f"{os.path.relpath(path, ROOT):24s} 3 x {W}x{H}  {os.path.getsize(path)} bytes")
+
+    # ---- theirs: a crescent. One wing swept up into two horns, a pod hung in the middle of
+    # it with a single red slit of an eye, a fin below, two engines burning red. Six frames:
+    # banked left, level, banked right, and the same again with the engines flickered.
+    W, H, CX = 43, 29, 21
+    SKIN, SKIN_HI, SKIN_DK, DARK = (150, 158, 132), (208, 214, 186), (92, 100, 82), (46, 50, 44)
+    EYE, EYE_HI, FIRE_A, FIRE_B = (255, 60, 50), (255, 200, 150), (255, 80, 60), (255, 170, 60)
+    frames = []
+    for flick in (0, 1):
+        for bank in (-1, 0, 1):
+            img, px = new_rgba(W, H)
+            for side in (-1, 1):
+                lift = -bank * side
+                for d in range(3, 21):
+                    t = d / 20.0
+                    x = CX + side * d
+                    y = 17 - int(t * t * 13) - int(d * 0.22 * lift)
+                    thick = 6 if d < 8 else 5 if d < 13 else 3 if d < 17 else 2
+                    for k in range(thick):
+                        c = SKIN_HI if k == 0 else SKIN_DK if k == thick - 1 else SKIN
+                        put(px, W, H, x, y + k, c)
+                    if d in (9, 14):
+                        for k in range(1, thick - 1):
+                            put(px, W, H, x, y + k, DARK)    # panel lines
+                put(px, W, H, CX + side * 20, 17 - 13 - int(20 * 0.22 * lift) - 1, SKIN_HI)   # the point of the horn
+                fx, fy = CX + side * 4, 23
+                for yy in range(0, 3):
+                    for xx in range(-1, 2):
+                        put(px, W, H, fx + xx, fy + yy, (FIRE_B if flick else FIRE_A) if xx == 0 or yy == 1 else DARK)
+            for yy in range(10, 24):                           # the pod
+                half = 5 if 13 <= yy <= 20 else 4 if 11 <= yy <= 22 else 3
+                for xx in range(-half, half + 1):
+                    c = SKIN_HI if yy < 12 else SKIN_DK if abs(xx) == half or yy > 21 else SKIN
+                    put(px, W, H, CX + xx, yy, c)
+            for xx in range(-3, 4):                            # the eye
+                put(px, W, H, CX + xx, 15, EYE)
+                put(px, W, H, CX + xx, 16, EYE if abs(xx) > 1 else EYE_HI)
+            for yy in range(24, 29):                           # the fin below
+                put(px, W, H, CX, yy, SKIN_DK)
+            frames.append(img)
+    sheet_img = Image.new("RGBA", (W * 6, H), (0, 0, 0, 0))
+    for i, f in enumerate(frames):
+        sheet_img.paste(f, (i * W, 0))
+    path = os.path.join(out, "raider.png")
+    sheet_img.save(path, optimize=True)
+    print(f"{os.path.relpath(path, ROOT):24s} 6 x {W}x{H}  {os.path.getsize(path)} bytes")
+
+
 def main():
     jump = os.path.join(ROOT, "jump", "assets")
     os.makedirs(jump, exist_ok=True)
@@ -458,6 +579,7 @@ def main():
     sheet([CLOUD_A, CLOUD_B], os.path.join(jump, "clouds.png"))
     racer_sheets(ROOT)
     maze_sheets(ROOT)
+    starfall_sheets(ROOT)
 
 
 if __name__ == "__main__":

@@ -124,6 +124,12 @@ static struct {
     float gain_t;                  /* "+3S" floating up */
     int gain;
 
+    // The two ships, as sprite sheets from the package: ours in three frames (banked left,
+    // level, banked right), theirs in six (the same three, twice, with the engines flickered).
+    // A sheet's frame size is read from the file, so a skin may be any size it likes.
+    tat_sheet_t *sh_ship, *sh_raider;
+    int ship_w, ship_h, raider_w, raider_h;
+
     Part parts[MAX_PARTS];
     uint8_t col_floor[CW + 1], col_left[CW + 1], col_right[CW + 1];
     uint32_t seed;
@@ -643,6 +649,9 @@ static void draw_gate(const Gate *gt)
     rect(hr, ht, 1, hb - ht, e);
 }
 
+// The ships are sprites when the package has them, and these line drawings when it does
+// not - a skin that leaves one out still gets a ship.
+//
 // The raider, seen from behind: a narrow body, wings swept down and back, a tail fin, two
 // engines burning red. Drawn from lines so that it can roll as it weaves, and drawn large
 // and pale against the dark of the trench, because a target nobody can find is not a target.
@@ -650,6 +659,12 @@ static void draw_raider(float fx, float fy)
 {
     const int x = (int)fx, y = (int)fy;
     const float roll = clampf((g.jink_x + sinf(g.weave_t) * 20.0f) / 60.0f, -0.6f, 0.6f);
+    if (g.sh_raider) {
+        const int bank = roll < -0.18f ? 0 : roll > 0.18f ? 2 : 1;
+        const int flicker = ((int)(g.anim_t * 24.0f) & 1) ? 3 : 0;
+        T->canvas_sprite(g.cv, g.sh_raider, bank + flicker, x - g.raider_w / 2, y - g.raider_h / 2, false);
+        return;
+    }
     const int tip = (int)(roll * 9.0f);
     for (int k = 0; k < 3; k++) {   /* wings, three lines thick */
         T->canvas_line(g.cv, x - 3, y + k, x - 20, y + 7 + k + tip, g.c_raider);
@@ -675,6 +690,12 @@ static void draw_ship(void)
     const int x = CC + (int)(g.vx * 0.10f), y = CW - 46 + (int)(g.vy * 0.06f) + jolt();
     const int bank = (int)clampf(g.vx * 0.09f, -8.0f, 8.0f);
     const bool hurt = g.hurt > 0 && ((int)(g.anim_t * 24.0f) & 1);
+    if (g.sh_ship) {
+        if (hurt) return;   /* it flickers when it has been hit */
+        const int frame = bank < -2 ? 0 : bank > 2 ? 2 : 1;
+        T->canvas_sprite(g.cv, g.sh_ship, frame, x - g.ship_w / 2, y - g.ship_h / 2 + 2, false);
+        return;
+    }
     const uint8_t hull = hurt ? g.c_danger : g.c_hull, wing = hurt ? g.c_danger : g.c_wing;
     for (int k = 0; k < 3; k++) {
         T->canvas_line(g.cv, x - 4, y + k, x - 30, y + 6 + k + bank, wing);
@@ -772,6 +793,24 @@ static void banner(const char *top, const char *mid, const char *bottom, uint8_t
 
 static uint8_t col(uint8_t r, uint8_t gg, uint8_t b) { return T->canvas_color(g.cv, T->rgb(r, gg, b)); }
 
+// A sheet of `frames` side by side. The width and height are the PNG's own, from its header,
+// so that somebody's replacement art does not have to match ours pixel for pixel.
+static tat_sheet_t *load_ship(const char *name, int frames, int *fw, int *fh)
+{
+    size_t len = 0;
+    const uint8_t *png = T->asset(name, &len);
+    if (!png || len < 24 || png[1] != 'P' || png[2] != 'N' || png[3] != 'G') return NULL;
+    const int w = (png[16] << 24) | (png[17] << 16) | (png[18] << 8) | png[19];
+    const int h = (png[20] << 24) | (png[21] << 16) | (png[22] << 8) | png[23];
+    if (w <= 0 || h <= 0 || w % frames || w / frames > 120 || h > 100) {
+        T->log("%s is %d x %d, which is not %d frames side by side", name, w, h, frames);
+        return NULL;
+    }
+    *fw = w / frames;
+    *fh = h;
+    return T->sheet_load(g.cv, png, len, *fw, *fh);
+}
+
 static void sf_begin(const tat_api_t *api)
 {
     T = api;
@@ -822,6 +861,10 @@ static void sf_begin(const tat_api_t *api)
     g.c_go = col(60, 220, 120);
     g.c_panel = col(8, 10, 20);
     g.c_shield = col(90, 200, 255);
+
+    g.sh_ship = load_ship("player.png", 3, &g.ship_w, &g.ship_h);
+    g.sh_raider = load_ship("raider.png", 6, &g.raider_w, &g.raider_h);
+    if (!g.sh_ship || !g.sh_raider) T->log("no ship art in the package; drawing them from lines");
 
     g.seed = (uint32_t)T->now_us() | 1u;
     T->save_get("score", &g.best, 0);   /* the old "best" was a different game's score */
@@ -1056,8 +1099,8 @@ const tat_game_t tat_game = {
     .id = "starfall",
     .name = "STARFALL",
     .accent_r = 120, .accent_g = 240, .accent_b = 255,
-    .assets = NULL,
-    .asset_count = 0,
+    .assets = tat_assets,   /* player.png and raider.png: the loader fills this in from the package */
+    .asset_count = 2,
     .begin = sf_begin,
     .enter = sf_enter,
     .update = sf_update,

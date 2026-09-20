@@ -150,7 +150,7 @@ def section(kind, payload):
     return kind, payload, zlib.crc32(payload) & 0xFFFFFFFF
 
 
-def build_package(game_dir, out, verbose=False, gcc=None, work_root=None):
+def build_package(game_dir, out, verbose=False, gcc=None, work_root=None, skin=None):
     meta_path = os.path.join(game_dir, "game.json")
     if not os.path.exists(meta_path):
         sys.exit(f"{game_dir} has no game.json")
@@ -201,13 +201,28 @@ def build_package(game_dir, out, verbose=False, gcc=None, work_root=None):
     # folder with the firmware build, so game.json may point at it rather than the files
     # being copied into the repo twice.
     asset_dir = os.path.join(game_dir, meta.get("assets", "assets"))
+    # A skin is a folder of files with the same names as some of the game's assets, which
+    # take their place in this one package. It is how somebody puts their own art on a game
+    # - their own ships in STARFALL, say - without touching its source, and the folder can
+    # be anywhere: art that is theirs to use but not this repository's to publish stays out
+    # of it. A skin cannot add files the game does not already ask for.
+    skinned = {}
+    if skin:
+        for path in glob.glob(os.path.join(skin, "*")):
+            skinned[os.path.basename(path)] = path
     for path in sorted(glob.glob(os.path.join(asset_dir, "*"))):
         name = os.path.basename(path)
+        if name in skinned:
+            path = skinned.pop(name)
+            print(f"  skin: {name} from {path}")
         if len(name.encode()) > 15:
             sys.exit(f"asset name too long (15 bytes max): {name}")
         with open(path, "rb") as f:
             body = f.read()
         sections.append(section(SEC_ASSET, name.encode().ljust(16, b"\0") + body))
+    skinned.pop("icon.png", None)
+    if skinned:
+        sys.exit("the skin has files this game does not use: " + ", ".join(sorted(skinned)))
 
     # Header, then the section table, then the payloads. Offsets are from the file start,
     # so the watch can check a section's CRC without having parsed anything before it.
@@ -266,10 +281,11 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true", help="show the build commands")
     ap.add_argument("--gcc", help="the xtensa gcc to use (the firmware build passes its own)")
     ap.add_argument("--work", help="where intermediate files go (default build/tat)")
+    ap.add_argument("--skin", help="a folder of files that replace the game's assets of the same name")
     args = ap.parse_args()
 
     out = args.out or os.path.join(ROOT, "build", os.path.basename(args.game_dir.rstrip("/\\")) + ".tat")
-    build_package(args.game_dir, out, args.verbose, args.gcc, args.work)
+    build_package(args.game_dir, out, args.verbose, args.gcc, args.work, args.skin)
 
 
 if __name__ == "__main__":
