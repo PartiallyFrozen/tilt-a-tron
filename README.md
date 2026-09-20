@@ -472,15 +472,21 @@ with the corners cut off by the round screen, 137 cells of water.
 - Then the sweep comes round to the bomb, and only when the line reaches it do you learn what
   was there: HIT, MISS or SUNK.
 - **One bomb each, turn about**, hit or miss.
+- The arm lights up what it passes: your misses flare white as it goes over them and fade
+  back as it sweeps away.
+- Their turn begins like yours, with cross-hairs on the board - only these are not yours to
+  move. They wander your water, slow, settle, blink, and the bomb is dropped.
 - A hit marks the cell that was struck and nothing else - no outline, no class. You learn what
   a ship was when it sinks.
 - Then it is their turn: the same radar in amber, over your own water. They hunt on every
   other cell, and once they have hit something they work along it.
-- **Placing the fleet**: drag a ship (it rides above your finger), **tap** it or twist the
-  watch to turn it, let go to put it down; red means it cannot go there. Nothing is final:
-  touch any ship to pick it up again. With all five down the game asks **ACCEPT** or **PLACE
-  AGAIN**; after "place again" there is an ACCEPT button at the bottom for when you are
-  happy. **PWR** places whatever is left, or shuffles the lot.
+- **Placing the fleet**: the ships come one at a time, and everything is done on the ship
+  itself. **Touch a ship and slide** and it comes up off the board and goes with your finger;
+  let go and it is put down there (somewhere it cannot go, it goes back). **Tap a ship** and
+  it turns. **Hold a ship** that is already down and it comes up to be moved again - nothing
+  is final. Open water does nothing, so a stray thumb moves nothing. With all five down the
+  game asks **ACCEPT** or **PLACE AGAIN**; after "place again" there is an ACCEPT button at
+  the bottom. **PWR** places whatever is left, or shuffles the lot.
 - **Swipe left** for the menu. The title screen keeps your wins and your fewest shots.
 
 ## Pocket Watch (Clock)
