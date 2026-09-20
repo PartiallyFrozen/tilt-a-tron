@@ -393,40 +393,56 @@ def pindrop_icon():
 
 
 def starfall_icon():
-    """Looking down the shaft: rings closing in, each with its one gap, and the ship at the rim."""
-    img = canvas((6, 8, 20))
-    c = L / 2
+    """Down the trench: walls running to a point, the sight, and a raider caught in it."""
+    img = canvas((4, 5, 14))
     px = img.load()
-    rnd = random.Random(7)
-    for _ in range(26):
-        x, y = rnd.randrange(L), rnd.randrange(L)
-        px[x, y] = rnd.choice(((90, 100, 140), (150, 160, 200), (60, 70, 110))) + (255,)
-    # Far rings are small, dim and thin; the near one is wide and bright. Each has a gap,
-    # and the gaps do not line up - which is the whole game.
-    rings = ((6, 8, (44, 60, 110), 200), (11, 14, (60, 96, 170), 320), (17, 21, (90, 170, 235), 95))
-    for r0, r1, col, gap_at in rings:
-        for yy in range(L):
-            for xx in range(L):
-                dx, dy = xx + 0.5 - c, yy + 0.5 - c
-                d = math.hypot(dx, dy)
-                if not (r0 <= d < r1):
-                    continue
-                a = math.degrees(math.atan2(dy, dx)) % 360
-                off = (a - gap_at + 180) % 360 - 180
-                if abs(off) < 26:
-                    continue
-                px[xx, yy] = col + (255,)
-    disc(img, c, c, 2, (255, 240, 200))
-    # The ship, low on the rim, nose toward the centre, with its shot already away.
-    ship, ship_hi, flame = (127, 232, 255), (240, 252, 255), (255, 150, 60)
-    rect(img, 25, 40, 2, 2, ship_hi)
-    rect(img, 24, 42, 4, 3, ship)
-    rect(img, 22, 44, 8, 2, ship)
-    rect(img, 25, 46, 2, 2, flame)
-    rect(img, 25, 33, 2, 4, (255, 230, 120))
-    # A mine riding between the rings.
-    disc(img, 38, 18, 2.5, (255, 84, 92))
-    px[37, 17] = (255, 200, 204, 255)
+    c = L / 2
+    rnd = random.Random(11)
+    for _ in range(18):
+        px[rnd.randrange(L), rnd.randrange(18)] = (150, 160, 200, 255)
+    floor = ((58, 72, 110), (44, 56, 90), (31, 40, 66))
+    wall = ((74, 80, 104), (56, 62, 84), (39, 44, 62))
+    vx, vy = c, c - 2
+    for yy in range(L):
+        for xx in range(L):
+            dx, dy = abs(xx + 0.5 - vx), yy + 0.5 - vy
+            if dy > 0 and dx * 10 < dy * 14:
+                z = 260.0 / dy
+                shade = floor
+            elif dx > 0 and dy * 14 <= 10 * dx and -dy * 14 <= 10 * dx:
+                z = 364.0 / dx
+                shade = wall
+            else:
+                continue
+            if z > 130:
+                px[xx, yy] = (12, 15, 28, 255)
+                continue
+            band = int(z / 7.0) & 1
+            level = 0 if z < 34 else 1 if z < 70 else 2
+            col = shade[level]
+            if band:
+                col = tuple(int(v * 0.78) for v in col)
+            px[xx, yy] = col + (255,)
+    # The raider, pale against the dark, with its engines lit.
+    rx, ry = 26, 23
+    for k in range(7):
+        rect(img, rx - 3 - k, ry + k // 2 + 1, 2, 2, (196, 204, 170))
+        rect(img, rx + 1 + k, ry + k // 2 + 1, 2, 2, (196, 204, 170))
+    rect(img, rx - 2, ry - 2, 4, 5, (196, 204, 170))
+    rect(img, rx - 1, ry - 6, 2, 4, (124, 134, 106))
+    rect(img, rx - 3, ry + 1, 2, 2, (255, 70, 60))
+    rect(img, rx + 1, ry + 1, 2, 2, (255, 70, 60))
+    # And the sight around it, locked.
+    ring(img, rx, ry + 1, 9, 10.5, (255, 70, 80), gaps=(), seg=None) if False else None
+    for a in range(0, 360, 30):
+        t = math.radians(a)
+        x, y = int(rx + math.cos(t) * 10), int(ry + 1 + math.sin(t) * 10)
+        if 0 <= x < L and 0 <= y < L:
+            px[x, y] = (255, 70, 80, 255)
+    rect(img, rx - 14, ry + 1, 3, 1, (255, 70, 80))
+    rect(img, rx + 12, ry + 1, 3, 1, (255, 70, 80))
+    rect(img, rx, ry - 13, 1, 3, (255, 70, 80))
+    rect(img, rx, ry + 13, 1, 3, (255, 70, 80))
     finish(img, "starfall")
 
 

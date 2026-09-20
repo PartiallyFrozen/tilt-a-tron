@@ -26,7 +26,7 @@ your own.
 <tr>
 <td align="center"><img src="site/img/star.png" width="150"><br><b>SLEEPY STAR</b><br><sub>A laser falls straight down. Turn rings of gaps and mirrors to wake the star.</sub></td>
 <td align="center"><img src="site/img/pindrop.png" width="150"><br><b>PIN DROP</b><br><sub>Steer a falling ball through the pins into the hole. The rim is live.</sub></td>
-<td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>A run down a shaft seen head on. Find the gap in every ring; shoot the mines.</sub></td>
+<td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>Chase a raider down a trench. Hold it in your sights and tap - and fly through the blast gates. In levels.</sub></td>
 <td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>A rooftop skate run with one life. Turn the watch to push, tap to ollie, tap again to kickflip for Aura.</sub></td>
 <td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then touch them in the same order. One more each round, for as long as you can remember.</sub></td>
 </tr>
@@ -358,10 +358,24 @@ Handy for checking a game without picking the watch up.
 
 ## Starfall controls
 
-- The shaft is seen head on: the middle of the screen is far away and the rim is right in
-  front of you. Barriers come as rings with one gap each
-- **Turn the watch** to move your ship round the rim into the gap · **tap** to shoot the mines
-- **Swipe left** menu (sound, new run, best) · **BOOT** home. Best score is saved
+- You are on a raider's tail down a trench at speed. **Tilt** flies your ship, and the ship
+  has mass: it gathers way, overshoots, and has to be caught and steadied. "Level" is however
+  you are holding the watch when you start
+- Your guns point where your ship points, which is the middle of the screen. Hold the raider
+  inside the sight for a moment and it turns red - **LOCK** - then **tap**. A kill puts
+  seconds back on the clock; a shot without a lock costs you some. A red mark on the edge of
+  the sight shows which way the raider went
+- **Blast gates** come down the trench with one opening each, edged in gold. Be in the
+  opening when it arrives, or lose a shield - so the same flying that holds the raider has to
+  thread the gates, and the two pull against each other
+- **Levels.** Each is a sortie: so many raiders before the clock runs out, on three shields.
+  Clear it for a bonus on the time left and a shield back; the next has more raiders, quicker
+  ones, a smaller sight, and gates that come oftener with less room
+- **Swipe left** menu (sound, up/down inverted, new run, best) · **BOOT** home. Best score
+  and best level are saved
+- A hybrid: the chase is the idea of *X-Wing Pursuit* by The Last Outpost Workshop (MIT),
+  turned inside out so the thing you line up with moves; the gates are what was good in the
+  first Starfall. The ships and art are our own - the famous ones belong to somebody else
 
 ## Skater Girlz controls
 
