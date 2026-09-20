@@ -11,7 +11,7 @@ idf_component_register(
     REQUIRES loader storage nvs_flash
 )
 
-set(FACTORY_GAMES breakout maze racer jump tiltatris star pindrop starfall skatergirlz echo)
+set(FACTORY_GAMES breakout maze racer jump tiltatris star pindrop starfall skatergirlz echo radar)
 
 set(repo "${CMAKE_CURRENT_LIST_DIR}/../..")
 set(mktat "${repo}/tools/mktat.py")

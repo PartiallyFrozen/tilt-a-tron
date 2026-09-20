@@ -15,6 +15,7 @@ static const char *TAG = "factory";
 #define FACTORY(id) extern const uint8_t _binary_##id##_tat_start[], _binary_##id##_tat_end[];
 FACTORY(breakout) FACTORY(maze) FACTORY(racer) FACTORY(jump) FACTORY(tiltatris)
 FACTORY(star) FACTORY(pindrop) FACTORY(starfall) FACTORY(skatergirlz) FACTORY(echo)
+FACTORY(radar)
 #undef FACTORY
 
 // In the order they appear on a new watch's home screen.
@@ -24,6 +25,7 @@ static const struct {
 } s_games[] = {
     ENTRY(breakout), ENTRY(maze),    ENTRY(racer),    ENTRY(jump),        ENTRY(tiltatris),
     ENTRY(star),     ENTRY(pindrop), ENTRY(starfall), ENTRY(skatergirlz), ENTRY(echo),
+    ENTRY(radar),
 };
 #define N_GAMES ((int)(sizeof(s_games) / sizeof(s_games[0])))
 

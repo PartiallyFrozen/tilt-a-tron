@@ -4,7 +4,7 @@
 
 **A pocket-watch game console you tilt, turn and tap.** Open-source firmware for the Waveshare
 **ESP32-S3-Touch-AMOLED-1.75** - a 466×466 round AMOLED with touch, a motion sensor and a speaker -
-plus ten games made for a round screen, a desktop app to manage them, and an API for writing
+plus eleven games made for a round screen, a desktop app to manage them, and an API for writing
 your own.
 
 - **Install it from a web page** in about a minute: <https://partiallyfrozen.github.io/tilt-a-tron/>
@@ -29,6 +29,9 @@ your own.
 <td align="center"><img src="site/img/starfall.png" width="150"><br><b>STARFALL</b><br><sub>Chase a raider down a trench. Hold it in your sights and tap - and fly through the blast gates. In levels.</sub></td>
 <td align="center"><img src="site/img/skatergirlz.png" width="150"><br><b>SKATER GIRLZ</b><br><sub>A rooftop skate run with one life. Turn the watch to push, tap to ollie, tap again to kickflip for Aura.</sub></td>
 <td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then touch them in the same order. One more each round, for as long as you can remember.</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="site/img/radar.png" width="150"><br><b>RADAR</b><br><sub>Sea battle on a radar scope. Hold to aim along the sweep, let go to fire - and then their radar comes looking for you.</sub></td>
 </tr>
 </table>
 
@@ -455,6 +458,24 @@ Handy for checking a game without picking the watch up.
 - That is all of it, on purpose: the one game here that does not use tilt. A first version
   pressed pads by tipping the watch toward them, and it was clever and no fun
 - **Swipe left** menu (sound, new game, best) · **BOOT** home. Best round is saved
+
+## Radar controls
+
+The pencil-and-paper sea battle, on a radar scope: five ships each, hidden on a 13 x 13 grid
+with the corners cut off by the round screen, 137 cells of water. The cells are two millimetres
+across, so nothing is aimed by poking at one. **A shot can only go where the sweep line is**:
+the cells it is crossing light up amber.
+
+- **Hold** anywhere and the sweep slows to a crawl, with a pin armed on the line. How far out
+  the pin sits follows how far from the middle your finger is, so the finger is a slider and
+  never has to cover the cell it is aiming at. **Let go** to fire. A hit fires again.
+- A hit marks the cell that was struck and nothing else - no outline, no class. You learn what
+  a ship was when it sinks.
+- Then it is their turn: the same radar in amber, over your own water. They hunt on every
+  other cell, and once they have hit something they work along it.
+- **Placing the fleet**: drag a ship (it rides above your finger), **tap** or twist the watch
+  to turn it, let go to put it down; red means it cannot go there. **PWR** places the rest.
+- **Swipe left** for the menu. The title screen keeps your wins and your fewest shots.
 
 ## Pocket Watch (Clock)
 

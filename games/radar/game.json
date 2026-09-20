@@ -1,0 +1,13 @@
+{
+  "id": "radar",
+  "name": "RADAR",
+  "author": "Tilt-a-tron",
+  "version": 1,
+  "api_major": 1,
+  "api_minor": 3,
+  "accent": [
+    52,
+    240,
+    154
+  ]
+}

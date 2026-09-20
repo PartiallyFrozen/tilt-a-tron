@@ -514,7 +514,37 @@ def echo_icon():
     finish(img, "echo")
 
 
+def radar_icon():
+    """A radar scope: the dot grid, the sweep with its glow behind it, and one hit."""
+    img = canvas((0, 0, 0))
+    c = L / 2
+    px = img.load()
+    sweep = math.radians(-35)
+    for yy in range(L):
+        for xx in range(L):
+            dx, dy = xx + 0.5 - c, yy + 0.5 - c
+            d = math.hypot(dx, dy)
+            if d > 23:
+                continue
+            behind = (sweep - math.atan2(dy, dx)) % math.tau
+            k = max(0.0, 1 - behind / (math.tau * 0.3)) ** 2 * 0.55
+            col = (int(52 * k), int(240 * k), int(154 * k))
+            if 21.5 < d <= 23:
+                col = (23, 169, 107)
+            elif (xx - 2) % 6 == 0 and (yy - 2) % 6 == 0:
+                col = (70, 190, 135)
+            px[xx, yy] = col + (255,)
+    for t in range(0, 22):
+        x, y = c + math.cos(sweep) * t, c + math.sin(sweep) * t
+        px[int(x), int(y)] = (170, 255, 210, 255)
+    for k in range(-3, 4):
+        for x, y in ((32 + k, 32 + k), (33 + k, 32 + k), (32 + k, 32 - k), (33 + k, 32 - k)):
+            px[x, y] = (255, 92, 70, 255)
+    finish(img, "radar")
+
+
 def main():
+    radar_icon()
     echo_icon()
     starfall_icon()
     skatergirlz_icon()
