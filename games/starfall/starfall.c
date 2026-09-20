@@ -2,14 +2,14 @@
 //
 // You are flying a fighter down a trench at speed. There is a raider ahead of you that does
 // not want to be caught, and there are blast gates coming down the trench with one opening
-// in each. Tilting the watch flies your ship, and your ship has mass: it gathers way, it
-// overshoots, it has to be caught and steadied. Your guns point where your ship points,
-// which is the middle of the screen - so the same stick that holds the raider in your sight
-// has to put you through the gap in the next gate, and those two jobs pull against each
-// other. That is the game.
+// in each, and mines. Tilting the watch moves your sight, directly: tip it and the sight is
+// there. The ship flies to wherever you are aiming and gets there a moment later. So you
+// aim with the tilt and you fly with the aim - where you look is where you go - and the
+// same hand that holds the sight on the raider has to bring the ship round to the opening
+// in the next gate in time. Those two jobs pull against each other. That is the game.
 //
-//   tilt        - fly. The ship drifts; flying it is catching the drift
-//   tap         - fire. With a lock it is a kill and time back; without one it costs time
+//   tilt        - aim. The ship follows the sight, a moment behind it
+//   tap         - fire at what the sight is on. A lock is a hit; a shot at nothing costs time
 //   swipe left  - pause menu
 //
 // It comes in levels. Each is a sortie: so many raiders to bring down before the clock runs
@@ -23,6 +23,11 @@
 // which was a tunnel seen head on with rings to find the gap in. None of the first game's
 // code is here, and none of its art could be: those ships belong to somebody else. These
 // are ours.
+//
+// The first cut of this had the sight fixed in the middle of the screen and the tilt as
+// thrust on a ship with inertia, so aiming meant wrestling the whole ship into line. It was
+// the reference's model and it is a fine one for a target that sits still; with one that
+// weaves it was all fight and no aim. The sight leads now and the ship follows.
 //
 // Written against tat_api.h alone. Built as a package with tools/mktat.py.
 #include <math.h>
@@ -52,16 +57,19 @@ static const tat_api_t *T;
 #define STRIPE 28.0f       /* the plating is banded every this many units, which is what shows the speed */
 #define FLY_SPEED 175.0f   /* units a second: a gate is in sight for about three seconds */
 
-// Flying. Tilt is a force, not a position.
-#define THRUST 250.0f      /* units/s^2 at a full tilt */
-#define FULL_TILT 0.40f    /* g of tilt, away from level, that counts as full */
-#define DRAG 1.9f          /* 1/s: left alone, the ship loses most of its way in a second */
+// Aiming and flying. Tilt is where the sight is; the ship chases the sight.
+#define FULL_TILT 0.36f    /* g of tilt, away from level, that puts the sight at the edge of its reach */
+#define AIM_X 72.0f        /* how far from the middle of the trench the sight can get */
+#define AIM_Y 46.0f
+#define AIM_SNAP 16.0f     /* 1/s: the sight follows the hand almost at once - just enough to take tremor out */
+#define FOLLOW 2.4f        /* 1/s: the ship closes on the sight; about half a second behind */
 #define REACH_X 60.0f      /* how far from the middle of the trench the ship can get */
 #define REACH_Y 38.0f
 
 #define LEVEL_S 30.0f
-#define MISS_COST_S 1.5f
-#define LOCK_S 0.20f       /* how long the raider has to stay in the sight before it is a lock */
+#define MISS_COST_S 1.0f
+#define LOCK_S 0.10f       /* how long something has to stay in the sight before it is a lock */
+#define MAX_MINES 4
 #define SHIELDS 3
 #define MAX_GATES 4
 #define MAX_PARTS 48
@@ -71,12 +79,14 @@ typedef enum { OUT_OF_TIME, SHOT_DOWN } Ending;
 
 typedef struct { float x, y, vx, vy, life; uint8_t col; } Part;
 typedef struct { float z, hx, hy, hw, hh; bool alive; } Gate;   /* the opening, in trench units */
+typedef struct { float x, y, z; bool alive; } Mine;
+enum { NOTHING = -2, THE_RAIDER = -1 };   /* what the sight is on; 0 and up is a mine */
 
 static struct {
     tat_canvas_t *cv;
 
     uint8_t c_space, c_star, c_floor[3][2], c_wall[3][2], c_end, c_rim;
-    uint8_t c_gate[3], c_gate_edge;
+    uint8_t c_gate[3], c_gate_edge, c_mine, c_mine_hi;
     uint8_t c_hull, c_hull_dk, c_wing, c_engine, c_engine_hi;       /* ours */
     uint8_t c_raider, c_raider_dk, c_raider_eng, c_raider_eye;      /* theirs */
     uint8_t c_sight, c_lock, c_bolt, c_bolt_hi, c_fire[3];
@@ -92,6 +102,8 @@ static struct {
     float clock;
 
     float x, y, vx, vy;            /* our ship, in trench units from the middle */
+    float aim_x, aim_y;            /* the sight, likewise: where the guns point and the ship is heading */
+    int target;                    /* what the sight is on */
     float level_x, level_y;        /* what the tilt reads when the watch is held "level" */
     float rx, ry;                  /* the raider, likewise */
     float weave_t, jink_t, jink_x, jink_y;
@@ -102,8 +114,10 @@ static struct {
 
     Gate gates[MAX_GATES];
     float gate_in;                 /* seconds until the next one */
+    Mine mines[MAX_MINES];
+    float mine_in;
 
-    float bolt_t;
+    float bolt_t, bolt_x, bolt_y;   /* a shot on its way, and where it is going */
     bool bolt_hit;
     float boom_t, boom_x, boom_y;
     float flash, hurt, shake;
@@ -196,6 +210,7 @@ static float time_back(void) { return g.level < 4 ? 4.0f : g.level < 8 ? 3.0f : 
 static float gate_every(void) { return clampf(6.2f - 0.5f * (float)g.level, 2.2f, 6.2f); }
 static float gate_half_w(void) { return clampf(36.0f - 2.0f * (float)g.level, 20.0f, 36.0f); }
 static float gate_half_h(void) { return clampf(27.0f - 1.2f * (float)g.level, 17.0f, 27.0f); }
+static float mine_every(void) { return g.level < 2 ? 0 : clampf(5.5f - 0.45f * (float)g.level, 1.8f, 5.5f); }   /* 0: none yet */
 
 // ---------------------------------------------------------------- the run
 
@@ -229,13 +244,17 @@ static void begin_level(int level)
     g.clock = LEVEL_S;
     g.bolt_t = g.boom_t = g.gain_t = 0;
     for (int i = 0; i < MAX_GATES; i++) g.gates[i].alive = false;
+    for (int i = 0; i < MAX_MINES; i++) g.mines[i].alive = false;
     g.gate_in = 3.5f;   /* a breath to find the raider before the first gate */
+    g.mine_in = 2.0f;
+    g.target = NOTHING;
     new_raider();
 }
 
 static void new_run(void)
 {
     g.x = g.y = g.vx = g.vy = 0;
+    g.aim_x = g.aim_y = 0;
     g.score = 0;
     g.shields = SHIELDS;
     g.flash = g.hurt = g.shake = 0;
@@ -271,47 +290,54 @@ static void raider_screen(float *sx, float *sy)
 
 // ---------------------------------------------------------------- flying
 
+// Where the sight is on the screen. The view is from the ship, so the sight sits off-centre
+// by however far the ship still has to go to reach it, and drifts back as the ship arrives.
+static int sight_px(void) { return px_of(g.aim_x, RAIDER_Z); }
+static int sight_py(void) { return py_of(g.aim_y, RAIDER_Z); }
+
 static void fly(const tat_input_t *in, float dt)
 {
-    // The tilt, away from however the watch was being held when the run began, is thrust.
+    // The tilt, away from however the watch was being held when the run began, is where the
+    // sight is. Not a push on it: tip the watch a little and the sight is a little way
+    // over, and it stays there.
     float tx = (in->tilt.ax - g.level_x) / FULL_TILT;
     float ty = (in->tilt.ay - g.level_y) / FULL_TILT;
     if (g.invert) ty = -ty;
 #ifdef SF_AUTOPILOT
     // Flying it over Wi-Fi is not possible - a tilt arrives a second late - so a test build
-    // flies itself: at the opening of the next gate when one is close, otherwise at the
-    // raider, and it fires on a lock. No shipped build defines this.
+    // flies itself: it aims at the raider, or a mine that is close, and keeps its aim inside
+    // the opening of any gate that is near. It fires on a lock. No shipped build defines this.
     {
         float want_x = g.rx, want_y = g.ry;
-        for (int i = 0; i < MAX_GATES; i++)
-            if (g.gates[i].alive && g.gates[i].z > SHIP_Z && g.gates[i].z < 300.0f) {
-                want_x = clampf(g.rx, g.gates[i].hx - g.gates[i].hw + 12, g.gates[i].hx + g.gates[i].hw - 12);
-                want_y = clampf(g.ry, g.gates[i].hy - g.gates[i].hh + 10, g.gates[i].hy + g.gates[i].hh - 10);
+        for (int i = 0; i < MAX_MINES; i++)
+            if (g.mines[i].alive && g.mines[i].z < 200.0f && g.mines[i].z > SHIP_Z + 20) {
+                want_x = g.x + (g.mines[i].x - g.x) * RAIDER_Z / g.mines[i].z;
+                want_y = g.y + (g.mines[i].y - g.y) * RAIDER_Z / g.mines[i].z;
             }
-        tx = ((want_x - g.x) * 3.0f - g.vx * 1.3f) / 60.0f;
-        ty = ((want_y - g.y) * 3.0f - g.vy * 1.3f) / 60.0f;
+        for (int i = 0; i < MAX_GATES; i++)
+            if (g.gates[i].alive && g.gates[i].z > SHIP_Z && g.gates[i].z < 330.0f) {
+                want_x = clampf(want_x, g.gates[i].hx - g.gates[i].hw + 12, g.gates[i].hx + g.gates[i].hw - 12);
+                want_y = clampf(want_y, g.gates[i].hy - g.gates[i].hh + 10, g.gates[i].hy + g.gates[i].hh - 10);
+            }
+        tx = want_x / AIM_X;
+        ty = want_y / AIM_Y;
     }
 #endif
-    const float m = sqrtf(tx * tx + ty * ty);
-    if (m > 1) tx /= m, ty /= m;
-    if (m < 0.06f) tx = ty = 0;
+    tx = clampf(tx, -1.0f, 1.0f);
+    ty = clampf(ty, -1.0f, 1.0f);
+    const float snap = 1.0f - expf(-AIM_SNAP * dt);
+    g.aim_x += (tx * AIM_X - g.aim_x) * snap;
+    g.aim_y += (ty * AIM_Y - g.aim_y) * snap;
 
-    g.vx += tx * THRUST * dt;
-    g.vy += ty * THRUST * dt;
-    const float keep = expf(-DRAG * dt);
-    g.vx *= keep;
-    g.vy *= keep;
-    g.x += g.vx * dt;
-    g.y += g.vy * dt;
-    // The trench has walls, and leaning on one takes the way off the ship.
-    if (g.x < -REACH_X || g.x > REACH_X) {
-        g.x = clampf(g.x, -REACH_X, REACH_X);
-        g.vx *= -0.3f;
-    }
-    if (g.y < -REACH_Y || g.y > REACH_Y) {
-        g.y = clampf(g.y, -REACH_Y, REACH_Y);
-        g.vy *= -0.3f;
-    }
+    // The ship heads for the sight and gets there a moment later. It cannot go quite as far
+    // as the sight can - there are walls - so the far corners can be shot at but not flown to.
+    const float close = 1.0f - expf(-FOLLOW * dt);
+    const float nx = g.x + (clampf(g.aim_x, -REACH_X, REACH_X) - g.x) * close;
+    const float ny = g.y + (clampf(g.aim_y, -REACH_Y, REACH_Y) - g.y) * close;
+    g.vx = (nx - g.x) / dt;   /* kept for the picture: the ship banks into where it is going */
+    g.vy = (ny - g.y) / dt;
+    g.x = nx;
+    g.y = ny;
 
     // The raider weaves in a slow figure that never quite repeats, and every so often
     // breaks off it altogether - which is the moment a lock is lost.
@@ -331,10 +357,26 @@ static void fly(const tat_input_t *in, float dt)
     g.rx += (wx - g.rx) * ease;
     g.ry += (wy - g.ry) * ease;
 
-    // In the sight, and staying there, is a lock.
-    const float dx = g.rx - g.x, dy = g.ry - g.y;   /* at the raider's distance a unit is a pixel */
-    const bool in_sight = g.boom_t <= 0 && dx * dx + dy * dy < sight_r() * sight_r();
-    if (in_sight) {
+    // Whatever is nearest the middle of the sight, and inside it, is what it is on; staying on
+    // it for a moment is a lock. Things are compared where they appear, so a mine that is
+    // close, and so large on the screen, is easier to find than one far off.
+    int on = NOTHING;
+    float nearest = 1e9f;
+    const float sxp = (float)sight_px(), syp = (float)sight_py();
+    if (g.boom_t <= 0) {
+        const float dx = (float)px_of(g.rx, RAIDER_Z) - sxp, dy = (float)py_of(g.ry, RAIDER_Z) - syp;
+        const float d2 = dx * dx + dy * dy;
+        if (d2 < sight_r() * sight_r()) on = THE_RAIDER, nearest = d2;
+    }
+    for (int i = 0; i < MAX_MINES; i++) {
+        const Mine *m = &g.mines[i];
+        if (!m->alive || m->z > 340.0f || m->z < SHIP_Z + 6.0f) continue;
+        const float dx = (float)px_of(m->x, m->z) - sxp, dy = (float)py_of(m->y, m->z) - syp;
+        const float reach = sight_r() * 0.6f + 8.0f * FOCAL / m->z;
+        const float d2 = dx * dx + dy * dy;
+        if (d2 < reach * reach && d2 < nearest) on = i, nearest = d2;
+    }
+    if (on != NOTHING && on == g.target) {
         g.lock_t += dt;
         if (!g.locked && g.lock_t >= LOCK_S) {
             g.locked = true;
@@ -344,6 +386,7 @@ static void fly(const tat_input_t *in, float dt)
         g.lock_t = 0;
         g.locked = false;
     }
+    g.target = on;
 }
 
 // Gates come down the trench at the speed the plating does. Each has one opening, put
@@ -398,14 +441,81 @@ static void run_gates(float dt)
     }
 }
 
+// Mines drift down the trench toward the ship. Shoot one and it is points; fly round it and
+// it is nothing; meet it and it is a shield. They are the reason to aim anywhere but at the
+// raider, and the reason the sight leading the ship matters: the shot goes where you look,
+// now, while the ship is still on its way.
+static void run_mines(float dt)
+{
+    const float every = mine_every();
+    if (every > 0 && (g.mine_in -= dt) <= 0) {
+        g.mine_in = every * frand(0.7f, 1.3f);
+        for (int i = 0; i < MAX_MINES; i++) {
+            Mine *m = &g.mines[i];
+            if (m->alive) continue;
+            m->alive = true;
+            m->z = FAR_Z * 0.8f;
+            // Somewhere near where the ship is heading, so that it matters.
+            m->x = clampf(g.aim_x * 0.7f + frand(-34.0f, 34.0f), -REACH_X, REACH_X);
+            m->y = clampf(g.aim_y * 0.7f + frand(-24.0f, 24.0f), -REACH_Y, REACH_Y);
+            break;
+        }
+    }
+    for (int i = 0; i < MAX_MINES; i++) {
+        Mine *m = &g.mines[i];
+        if (!m->alive) continue;
+        const float before = m->z;
+        m->z -= FLY_SPEED * 0.85f * dt;
+        if (before > SHIP_Z && m->z <= SHIP_Z) {
+            m->alive = false;
+            if (fabsf(m->x - g.x) < 17.0f && fabsf(m->y - g.y) < 13.0f) {
+                g.shields--;
+                g.hurt = 1.0f;
+                g.shake = 1.0f;
+                sfx_gate_hit();
+                for (int k = 0; k < 18; k++)
+                    puff(CC + frand(-24, 24), CW - 50 + frand(-16, 10), frand(-120, 120), frand(-140, 10), frand(0.3f, 0.7f),
+                         g.c_fire[k % 3]);
+                T->log("hit a mine on level %d, %d shields left", g.level, g.shields);
+                if (g.shields <= 0) {
+                    end_run(SHOT_DOWN);
+                    return;
+                }
+            }
+        }
+    }
+}
+
 static void fire(void)
 {
-    if (g.bolt_t > 0 || g.boom_t > 0) return;
+    if (g.bolt_t > 0) return;
     g.bolt_t = 0.16f;
     g.bolt_hit = g.locked;
+    g.bolt_x = (float)sight_px();   /* at whatever the sight is on, or at nothing */
+    g.bolt_y = (float)sight_py();
     sfx_fire();
-    if (g.locked) {
+    if (g.locked && g.target >= 0) {
+        // A mine: points, and one less thing to fly round.
+        Mine *m = &g.mines[g.target];
+        const float mx = (float)px_of(m->x, m->z), my = (float)py_of(m->y, m->z);
+        g.bolt_x = mx;
+        g.bolt_y = my;
+        m->alive = false;
+        g.score += 50 * g.level;
+        g.flash = 0.6f;
+        g.locked = false;
+        g.lock_t = 0;
+        g.target = NOTHING;
+        sfx_boom();
+        for (int i = 0; i < 16; i++) {
+            const float a = frand(0, 2 * PI), v = frand(20.0f, 110.0f);
+            puff(mx, my, cosf(a) * v, sinf(a) * v, frand(0.25f, 0.6f), g.c_fire[i % 3]);
+        }
+        T->log("mine shot on level %d", g.level);
+    } else if (g.locked) {
         raider_screen(&g.boom_x, &g.boom_y);
+        g.bolt_x = g.boom_x;
+        g.bolt_y = g.boom_y;
         g.boom_t = 0.7f;
         g.flash = 1.0f;
         g.kills++;
@@ -416,6 +526,7 @@ static void fire(void)
         g.gain_t = 1.0f;
         g.locked = false;
         g.lock_t = 0;
+        g.target = NOTHING;
         sfx_boom();
         for (int i = 0; i < 26; i++) {
             const float a = frand(0, 2 * PI), v = frand(20.0f, 130.0f);
@@ -583,28 +694,42 @@ static void draw_ship(void)
     rect(x + 7, y + 9, 4, 2, g.c_engine);
 }
 
+static void draw_mine(const Mine *m)
+{
+    const int x = px_of(m->x, m->z), y = py_of(m->y, m->z);
+    const int r = (int)(7.0f * FOCAL / m->z) + 1;
+    T->canvas_fill_circle(g.cv, x, y, r, g.c_mine);
+    if (r > 2) {
+        T->canvas_fill_circle(g.cv, x - r / 3, y - r / 3, r / 3, g.c_mine_hi);
+        rect(x - r - r / 2, y, r * 3, 1, g.c_mine);   /* spikes */
+        rect(x, y - r - r / 2, 1, r * 3, g.c_mine);
+    }
+    if (((int)(g.anim_t * 6.0f) & 1) && r > 1) rect(x, y, 1, 1, g.c_danger);
+}
+
 static void draw_sight(void)
 {
-    const int r = (int)sight_r(), cy = CY + jolt();
+    const int r = (int)sight_r(), cx = sight_px(), cy = sight_py();
     const uint8_t c = g.locked ? g.c_lock : g.c_sight;
     // A ring of dashes, so that what is inside it can still be seen.
     for (int a = 0; a < 24; a++) {
         if (!g.locked && (a & 1)) continue;
         const float t = a * (2 * PI / 24) + (g.locked ? g.anim_t * 4.0f : 0);
-        T->canvas_pixel(g.cv, CC + (int)(cosf(t) * r), cy + (int)(sinf(t) * r), c);
-        T->canvas_pixel(g.cv, CC + (int)(cosf(t) * (r + 1)), cy + (int)(sinf(t) * (r + 1)), c);
+        rect(cx + (int)(cosf(t) * r) - 1, cy + (int)(sinf(t) * r) - 1, 2, 2, c);
     }
-    rect(CC - r - 6, cy, 4, 1, c);
-    rect(CC + r + 3, cy, 4, 1, c);
-    rect(CC, cy - r - 6, 1, 4, c);
-    rect(CC, cy + r + 3, 1, 4, c);
-    rect(CC, cy, 1, 1, c);
-    if (g.locked) T->canvas_text_centered(g.cv, CC, cy + r + 14, "LOCK", g.c_lock, 1, true);
+    // Heavy ticks and a dot: it is the thing the player's eye lives on, against a busy trench.
+    rect(cx - r - 8, cy - 1, 6, 2, c);
+    rect(cx + r + 3, cy - 1, 6, 2, c);
+    rect(cx - 1, cy - r - 8, 2, 6, c);
+    rect(cx - 1, cy + r + 3, 2, 6, c);
+    rect(cx - 1, cy - 1, 2, 2, c);
+    if (g.locked) T->canvas_text_centered(g.cv, cx, cy + r + 14, "LOCK", g.c_lock, 1, true);
 
-    // Which way the raider has gone, when it is a long way out: a mark on the edge of the
-    // sight, so that a chase always has a direction.
-    const float dx = g.rx - g.x, dy = g.ry - g.y, d = sqrtf(dx * dx + dy * dy);
-    if (d > 52.0f && g.boom_t <= 0) rect(CC + (int)(dx / d * 38.0f) - 1, cy + (int)(dy / d * 38.0f) - 1, 3, 3, g.c_danger);
+    // Which way the raider is from the sight, when it is a long way off: a mark on the edge
+    // of the ring, so that a chase always has a direction.
+    const float dx = g.rx - g.aim_x, dy = g.ry - g.aim_y, d = sqrtf(dx * dx + dy * dy);
+    if (d > 44.0f && g.boom_t <= 0)
+        rect(cx + (int)(dx / d * (r + 12)) - 1, cy + (int)(dy / d * (r + 12)) - 1, 3, 3, g.c_danger);
 }
 
 static void draw_hud(void)
@@ -672,6 +797,8 @@ static void sf_begin(const tat_api_t *api)
     g.c_gate[1] = col(104, 42, 34);
     g.c_gate[2] = col(70, 32, 30);
     g.c_gate_edge = col(255, 200, 90);
+    g.c_mine = col(250, 150, 40);
+    g.c_mine_hi = col(255, 226, 150);
     g.c_hull = col(226, 232, 244);
     g.c_hull_dk = col(120, 132, 160);
     g.c_wing = col(190, 200, 222);
@@ -778,6 +905,8 @@ static void sf_update(float dt)
 #endif
         run_gates(dt);
         if (g.phase != FLYING) break;   /* the last shield went */
+        run_mines(dt);
+        if (g.phase != FLYING) break;
         if (g.boom_t > 0 && (g.boom_t -= dt) <= 0) {
             if (g.kills >= g.quota) {
                 // The sortie is flown. What is left on the clock is worth something.
@@ -785,6 +914,7 @@ static void sf_update(float dt)
                 g.phase = CLEARED;
                 g.phase_t = 0;
                 for (int i = 0; i < MAX_GATES; i++) g.gates[i].alive = false;
+                for (int i = 0; i < MAX_MINES; i++) g.mines[i].alive = false;
                 sfx_cleared();
                 T->log("level %d cleared with %.0f s left, score %d", g.level, (double)g.clock, g.score);
                 break;
@@ -859,12 +989,16 @@ static void sf_draw(void)
     }
     for (int i = 0; i < MAX_GATES; i++)
         if (g.gates[i].z < 0) g.gates[i].z = -g.gates[i].z;
+    for (int i = 0; i < MAX_MINES; i++)
+        if (g.mines[i].alive && g.mines[i].z >= RAIDER_Z && g.mines[i].z < 380.0f) draw_mine(&g.mines[i]);
     if (!raider_drawn) draw_raider(ex, ey);
+    for (int i = 0; i < MAX_MINES; i++)
+        if (g.mines[i].alive && g.mines[i].z < RAIDER_Z && g.mines[i].z > SHIP_Z) draw_mine(&g.mines[i]);
 
     // The shot: two bolts from the wingtips that meet at the sight.
     if (g.bolt_t > 0) {
         const float t = 1.0f - g.bolt_t / 0.16f;
-        const int tx = g.bolt_hit ? (int)g.boom_x : CC, ty = g.bolt_hit ? (int)g.boom_y : CY;
+        const int tx = (int)g.bolt_x, ty = (int)g.bolt_y;
         for (int side = -1; side <= 1; side += 2) {
             const int x0 = CC + side * 30, y0 = CW - 40;
             const float t1 = clampf(t + 0.35f, 0, 1);
@@ -891,7 +1025,7 @@ static void sf_draw(void)
 
     char top[28], mid[32], bottom[32];
     if (g.phase == READY) {
-        banner("SIGHT IT AND TAP", "FLY THROUGH THE GATES", "TILT TO FLY - TAP TO START", g.c_accent);
+        banner("TILT TO AIM - TAP TO FIRE", "THE SHIP FOLLOWS YOUR SIGHT", "TAP TO START", g.c_accent);
     } else if (g.phase == CLEARED) {
         snprintf(top, sizeof(top), "LEVEL %d CLEAR", g.level);
         snprintf(mid, sizeof(mid), "NEXT: %d RAIDERS", level_quota(g.level + 1));

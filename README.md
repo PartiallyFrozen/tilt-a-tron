@@ -358,24 +358,25 @@ Handy for checking a game without picking the watch up.
 
 ## Starfall controls
 
-- You are on a raider's tail down a trench at speed. **Tilt** flies your ship, and the ship
-  has mass: it gathers way, overshoots, and has to be caught and steadied. "Level" is however
-  you are holding the watch when you start
-- Your guns point where your ship points, which is the middle of the screen. Hold the raider
-  inside the sight for a moment and it turns red - **LOCK** - then **tap**. A kill puts
-  seconds back on the clock; a shot without a lock costs you some. A red mark on the edge of
-  the sight shows which way the raider went
-- **Blast gates** come down the trench with one opening each, edged in gold. Be in the
-  opening when it arrives, or lose a shield - so the same flying that holds the raider has to
-  thread the gates, and the two pull against each other
+- You are on a raider's tail down a trench at speed. **Tilt moves your sight**, directly: tip
+  the watch and the sight is there. **The ship flies to wherever you are aiming** and gets
+  there a moment later - so you aim with the tilt and you fly with the aim. "Level" is
+  however you are holding the watch when you start
+- Put the sight on something and it turns red - **LOCK** - then **tap**. A raider is a kill
+  and seconds back on the clock; a shot at nothing costs you a second. A red mark on the edge
+  of the sight shows which way the raider went
+- **Blast gates** come down the trench with one opening each, edged in gold. The ship has to
+  be in the opening when it arrives, or you lose a shield - and the ship trails the sight, so
+  you have to bring it round early, while still holding the raider
+- **Mines**, from level 2: shoot them for points, fly round them, or lose a shield
 - **Levels.** Each is a sortie: so many raiders before the clock runs out, on three shields.
   Clear it for a bonus on the time left and a shield back; the next has more raiders, quicker
-  ones, a smaller sight, and gates that come oftener with less room
+  ones, a smaller sight, more mines, and gates that come oftener with less room
 - **Swipe left** menu (sound, up/down inverted, new run, best) · **BOOT** home. Best score
   and best level are saved
-- A hybrid: the chase is the idea of *X-Wing Pursuit* by The Last Outpost Workshop (MIT),
-  turned inside out so the thing you line up with moves; the gates are what was good in the
-  first Starfall. The ships and art are our own - the famous ones belong to somebody else
+- A hybrid: the chase is the idea of *X-Wing Pursuit* by The Last Outpost Workshop (MIT); the
+  gates are what was good in the first Starfall. The ships and art are our own - the famous
+  ones belong to somebody else
 
 ## Skater Girlz controls
 
