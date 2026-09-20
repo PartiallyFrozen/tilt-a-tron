@@ -31,7 +31,7 @@ your own.
 <td align="center"><img src="site/img/echo.png" width="150"><br><b>ECHO</b><br><sub>Watch the pads light up, then touch them in the same order. One more each round, for as long as you can remember.</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="site/img/radar.png" width="150"><br><b>RADAR</b><br><sub>Sea battle on a radar scope. Hold to aim along the sweep, let go to fire - and then their radar comes looking for you.</sub></td>
+<td align="center"><img src="site/img/radar.png" width="150"><br><b>RADAR</b><br><sub>Sea battle on a radar scope. Drop a pin anywhere, and the sweep comes round to tell you what was there. Then their radar comes looking for you.</sub></td>
 </tr>
 </table>
 
@@ -462,13 +462,13 @@ Handy for checking a game without picking the watch up.
 ## Radar controls
 
 The pencil-and-paper sea battle, on a radar scope: five ships each, hidden on a 13 x 13 grid
-with the corners cut off by the round screen, 137 cells of water. The cells are two millimetres
-across, so nothing is aimed by poking at one. **A shot can only go where the sweep line is**:
-the cells it is crossing light up amber.
+with the corners cut off by the round screen, 137 cells of water.
 
-- **Hold** anywhere and the sweep slows to a crawl, with a pin armed on the line. How far out
-  the pin sits follows how far from the middle your finger is, so the finger is a slider and
-  never has to cover the cell it is aiming at. **Let go** to fire. A hit fires again.
+- **Touch** the board and a pin goes where your finger is, with cross-hairs out to the rim -
+  a cell is two millimetres across and the finger is on top of it. **Slide** to move the pin,
+  **let go** to drop it. Let go off the board and nothing is dropped.
+- Then the sweep comes round to the pin, and only when the line reaches it do you learn what
+  was there: HIT, MISS or SUNK. A hit drops another.
 - A hit marks the cell that was struck and nothing else - no outline, no class. You learn what
   a ship was when it sinks.
 - Then it is their turn: the same radar in amber, over your own water. They hunt on every

@@ -3,14 +3,13 @@
 // The old pencil-and-paper sea battle: two fleets of five ships hidden on two grids, and the
 // players take shots at each other's water. What is new is the screen it is played on. The
 // grid is a straight 13 x 13 lattice with the corners cut off by the round panel - 137 cells
-// of ocean - and a radar sweep goes round it. You can only fire along the sweep: the cells
-// the line is crossing light up, and that is where a shot can go. So a shot is aimed by
-// waiting for the line, not by poking at a cell two millimetres across.
+// of ocean - and a radar sweep goes round it.
 //
-//   hold        - the sweep slows right down, and a pin is armed on the line. How far out it
-//                 sits follows how far from the middle your finger is, so the finger works
-//                 as a slider and never has to cover the cell it is aiming at
-//   let go      - fire at the pin. A hit shoots again
+//   touch       - a pin goes where your finger is, with cross-hairs out to the rim, because
+//                 a cell is two millimetres across and the finger is on top of it. Slide to
+//                 move the pin
+//   let go      - the pin is dropped. The sweep comes round to it, and only when the line
+//                 reaches the pin do you learn what was there. A hit drops another
 //   swipe left  - pause menu
 //
 // A hit marks the cell that was struck and nothing else: no hull outline, no ship class. You
@@ -48,16 +47,14 @@ static const tat_api_t *T;
 
 #define TAU 6.2831853f
 #define SWEEP_S 7.0f      /* one turn of the radar */
-#define AIM_SLOW 0.22f    /* and how much of that speed is left while a finger is down */
+#define TRACK_S 2.0f       /* a turn at the speed it comes round to a dropped pin, or to theirs */
 #define WEDGE 0.30f       /* of a turn: how long the glow behind the line is */
 #define GLOW 8
-#define ON_LINE 7.5f      /* a cell is on the line within this many pixels of it */
-#define ENEMY_SWEEP_S 2.0f
 
 static const int SHIP_LEN[SHIPS] = {5, 4, 3, 3, 2};
 static const char *const SHIP_NAME[SHIPS] = {"CARRIER", "CRUISER", "DESTROYER", "SUBMARINE", "PATROL BOAT"};
 
-enum { TITLE, DEPLOY, READY, HUNT, CONTACT, INCOMING, STRUCK, RESULT };
+enum { TITLE, DEPLOY, READY, HUNT, TRACK, CONTACT, INCOMING, STRUCK, RESULT };
 enum { WATER = 0, SHOT_MISS = 1, SHOT_HIT = 2 };
 
 typedef struct {
@@ -93,9 +90,9 @@ static struct {
     float phase_t;
 
     float sweep;          // radians, clockwise from east, the way the tables count
-    int sweeps;           // turns of the radar spent hunting
     int shots, hits;
-    int armed;            // the cell a shot would go to, or -1
+    int armed;            // the cell the pin is on, or -1
+    float travel;         // how far the line still has to turn to reach it
     bool aiming;
     bool first_touch;     // the how-to banner goes once a finger has been down
 
@@ -254,7 +251,6 @@ static void begin_deploy(void)
     g.twist = 0;
     g.dragged = false;
     g.mine.ship[0] = (ship_t){-2, 0, false, false, 0};   // in the hand: shown, not yet put down
-    g.sweeps = 0;
     g.shots = g.hits = 0;
     g.sweep = -TAU / 4;
     g.their_sweep = TAU / 4;
@@ -296,7 +292,7 @@ static void finish_game(bool won)
             T->save_set("best", g.best);
         }
     }
-    T->log("battle over: %s, %d shots, %d sweeps", won ? "won" : "lost", g.shots, g.sweeps + 1);
+    T->log("battle over: %s, %d shots, %d hits", won ? "won" : "lost", g.shots, g.hits);
     sfx_end(won);
     set_phase(RESULT);
 }
@@ -364,6 +360,16 @@ static int ai_pick(void)
 
 static float bearing_of(int c) { return atan2f((float)cell_j(c), (float)cell_i(c)); }
 
+// How far a line at `from` turns to reach a cell: the long way round if the cell is close, so
+// that the line is always seen coming.
+static float turn_to(float from, int c)
+{
+    float turn = fmodf(bearing_of(c) - from, TAU);
+    if (turn < 0) turn += TAU;
+    if (turn < TAU * 0.3f) turn += TAU;
+    return turn;
+}
+
 static void begin_incoming(void)
 {
     g.their_target = ai_pick();
@@ -371,72 +377,62 @@ static void begin_incoming(void)
         set_phase(HUNT);
         return;
     }
-    // Their line comes round to the cell, the long way if it is close, so it is seen coming.
-    float turn = fmodf(bearing_of(g.their_target) - g.their_sweep, TAU);
-    if (turn < 0) turn += TAU;
-    if (turn < TAU * 0.3f) turn += TAU;
-    g.their_travel = turn;
+    g.their_travel = turn_to(g.their_sweep, g.their_target);
     set_phase(INCOMING);
 }
 
 // ---------------------------------------------------------------------------- hunting
 
-// The cell on the line nearest to `reach` pixels out, or -1 if the line is over nothing new.
-static int cell_on_line(float reach)
+// The cell of their water nearest a touch that has not been fired on, or -1 off the board.
+static int cell_near(int tx, int ty)
 {
-    const float cs = cosf(g.sweep), sn = sinf(g.sweep);
+    const float x = (float)tx / SCALE - CC, y = (float)ty / SCALE - CC;
     int best = -1;
     float best_d = 1e9f;
     for (int c = 0; c < CELLS; c++) {
         const int i = cell_i(c), j = cell_j(c);
         if (!is_ocean(i, j) || g.theirs.shot[c] != WATER) continue;
-        const float x = (float)(i * PITCH), y = (float)(j * PITCH);
-        const float along = x * cs + y * sn, across = fabsf(-x * sn + y * cs);
-        if (along < -1 || across > ON_LINE) continue;
-        const float d = fabsf(along - reach);
+        const float dx = x - i * PITCH, dy = y - j * PITCH, d = dx * dx + dy * dy;
         if (d < best_d) best_d = d, best = c;
     }
-    return best;
-}
-
-static bool on_line(int c)
-{
-    const float cs = cosf(g.sweep), sn = sinf(g.sweep);
-    const float x = (float)(cell_i(c) * PITCH), y = (float)(cell_j(c) * PITCH);
-    return x * cs + y * sn >= -1 && fabsf(-x * sn + y * cs) <= ON_LINE;
+    return best_d <= (PITCH * 1.5f) * (PITCH * 1.5f) ? best : -1;
 }
 
 static void update_hunt(float dt, const tat_input_t *in)
 {
-    const bool down = in->touch.down;
-    const float before = g.sweep;
-    g.sweep += TAU / SWEEP_S * dt * (down ? AIM_SLOW : 1.0f);
-    if (g.sweep >= TAU) g.sweep -= TAU;
-    // Counted as it passes north, where the sweep number is written.
-    const float north = TAU * 0.75f;
-    if ((before < north && g.sweep >= north) || (before > g.sweep && before < north)) g.sweeps++;
-
-    if (down) {
+    g.sweep = fmodf(g.sweep + TAU / SWEEP_S * dt, TAU);
+    if (in->touch.down) {
         g.first_touch = true;
-        const float dx = (float)in->touch.x / SCALE - CC, dy = (float)in->touch.y / SCALE - CC;
         const int was = g.armed;
-        g.armed = cell_on_line(sqrtf(dx * dx + dy * dy));
+        g.armed = cell_near(in->touch.x, in->touch.y);
         if (g.armed != was && g.armed >= 0) sfx_ping();
         g.aiming = true;
     } else if (g.aiming) {
         g.aiming = false;
-        const int c = g.armed;
-        g.armed = -1;
-        if (c < 0) return;
+        if (g.armed < 0) return;   // let go off the board: nothing dropped
         g.shots++;
         sfx_fire();
-        fire(&g.theirs, c);
-        if (g.shot_result == SHOT_HIT) g.hits++;
-        if (g.shot_sunk >= 0) sfx_sunk();
-        else if (g.shot_result == SHOT_HIT) sfx_hit();
-        else sfx_miss();
-        set_phase(CONTACT);
+        g.travel = turn_to(g.sweep, g.armed);
+        set_phase(TRACK);
     }
+}
+
+// The pin is down and the line is on its way. What was there is found out when it arrives.
+static void update_track(float dt)
+{
+    const float step = TAU / TRACK_S * dt;
+    g.sweep = fmodf(g.sweep + step, TAU);
+    g.travel -= step;
+    if (g.travel > 0) return;
+    const int c = g.armed;
+    g.armed = -1;
+    g.sweep = fmodf(bearing_of(c) + TAU, TAU);
+    fire(&g.theirs, c);
+    if (g.shot_result == SHOT_HIT) g.hits++;
+    if (g.shot_sunk >= 0) sfx_sunk();
+    else if (g.shot_result == SHOT_HIT) sfx_hit();
+    else sfx_miss();
+    set_phase(CONTACT);
 }
 
 // ---------------------------------------------------------------------------- placing
@@ -584,6 +580,10 @@ static void rd_update(float dt)
         update_hunt(dt, in);
         break;
 
+    case TRACK:
+        update_track(dt);
+        break;
+
     case CONTACT:
         if (g.phase_t < (g.shot_sunk >= 0 ? 2.0f : 1.2f)) break;
         if (g.theirs.afloat == 0) finish_game(true);
@@ -592,7 +592,7 @@ static void rd_update(float dt)
         break;
 
     case INCOMING: {
-        const float step = TAU / ENEMY_SWEEP_S * dt;
+        const float step = TAU / TRACK_S * dt;
         g.their_sweep = fmodf(g.their_sweep + step, TAU);
         g.their_travel -= step;
         if (g.their_travel > 0) break;
@@ -707,6 +707,13 @@ static void label(int y, const char *s, uint8_t col)
     T->canvas_text_centered(g.cv, CC, y, s, col, 1, true);
 }
 
+// Where the word about a shot goes: across the middle, unless that is where the shot landed.
+static int verdict_y(int c)
+{
+    const int y = cell_y(c);
+    return y < 84 || y > 150 ? 98 : y < CC ? 146 : 52;
+}
+
 static void band(int y, int h) { T->canvas_fill_rect(g.cv, 0, y, CW, h, g.c_bg); }
 static void text(int y, const char *s, uint8_t col, int scale) { T->canvas_text_centered(g.cv, CC, y, s, col, scale, true); }
 
@@ -750,7 +757,7 @@ static void rd_draw(void)
         return;
     }
     // Everything that moves is a sweep; the rest is drawn when it changes.
-    const bool moving = g.phase == TITLE || g.phase == HUNT || g.phase == INCOMING || g.phase == CONTACT ||
+    const bool moving = g.phase == TITLE || g.phase == HUNT || g.phase == TRACK || g.phase == INCOMING || g.phase == CONTACT ||
                         g.phase == STRUCK;
     if (!moving && !g.dirty) return;
     g.dirty = false;
@@ -800,25 +807,27 @@ static void rd_draw(void)
     }
 
     case HUNT:
+    case TRACK:
     case CONTACT: {
         paint_scope(g.sweep, false, true);
         draw_fleet(&g.theirs, true, g.c_red, g.c_sunk_bed);
-        if (g.phase == HUNT) {
-            // What the line is over: where a shot could go right now.
-            for (int c = 0; c < CELLS; c++) {
-                if (!is_ocean(cell_i(c), cell_j(c)) || g.theirs.shot[c] != WATER || !on_line(c)) continue;
-                T->canvas_fill_rect(g.cv, cell_x(c) - 6, cell_y(c) - 6, 13, 13, g.c_cand_bed);
-                T->canvas_rect(g.cv, cell_x(c) - 6, cell_y(c) - 6, 13, 13, g.c_cand);
-                T->canvas_pixel(g.cv, cell_x(c), cell_y(c), g.c_amber);
-            }
-        }
         sweep_line(g.sweep, g.c_green);
         draw_shots(&g.theirs, g.c_red, g.c_hit_bed);
         if (g.armed >= 0) {
-            ring(cell_x(g.armed), cell_y(g.armed), 6, g.c_amber, true);
-            T->canvas_fill_circle(g.cv, cell_x(g.armed), cell_y(g.armed), 2, g.c_amber);
+            const int x = cell_x(g.armed), y = cell_y(g.armed);
+            if (g.phase == HUNT) {
+                // Cross-hairs out to the rim: the finger is on top of the pin itself.
+                const int reach_x = (int)sqrtf((float)(R_PLAY * R_PLAY - (y - CC) * (y - CC)));
+                const int reach_y = (int)sqrtf((float)(R_PLAY * R_PLAY - (x - CC) * (x - CC)));
+                T->canvas_fill_rect(g.cv, CC - reach_x, y, 2 * reach_x + 1, 1, g.c_cand);
+                T->canvas_fill_rect(g.cv, x, CC - reach_y, 1, 2 * reach_y + 1, g.c_cand);
+                T->canvas_fill_rect(g.cv, x - 6, y - 6, 13, 13, g.c_cand_bed);
+                T->canvas_rect(g.cv, x - 6, y - 6, 13, 13, g.c_amber);
+            }
+            ring(x, y, 6, g.c_amber, true);
+            T->canvas_fill_circle(g.cv, x, y, 2, g.c_amber);
         }
-        snprintf(line, sizeof(line), "SWEEP %02d", g.sweeps + 1);
+        snprintf(line, sizeof(line), "SWEEP %02d", g.shots + (g.phase == HUNT ? 1 : 0));
         label(12, line, g.c_dim);
         snprintf(line, sizeof(line), "%d/5 AFLOAT", g.theirs.afloat);
         label(221, line, g.c_dim);
@@ -827,16 +836,17 @@ static void rd_draw(void)
             const bool hit = g.shot_result == SHOT_HIT;
             bloom(g.shot_cell, g.phase_t, hit ? g.c_red : g.c_miss);
             if (g.phase_t > 0.25f) {
-                band(98, 38);
-                text(110, g.shot_sunk >= 0 ? "SUNK" : hit ? "HIT" : "MISS", hit ? g.c_red : g.c_pale, 3);
-                text(128, g.shot_sunk >= 0 ? SHIP_NAME[g.shot_sunk] : hit ? "CLASS UNKNOWN  FIRE AGAIN" : "OPEN WATER",
+                const int y = verdict_y(g.shot_cell);
+                band(y, 38);
+                text(y + 12, g.shot_sunk >= 0 ? "SUNK" : hit ? "HIT" : "MISS", hit ? g.c_red : g.c_pale, 3);
+                text(y + 30, g.shot_sunk >= 0 ? SHIP_NAME[g.shot_sunk] : hit ? "CLASS UNKNOWN  DROP ANOTHER" : "OPEN WATER",
                      g.c_pale, 1);
             }
-        } else if (!g.first_touch && g.played < 3) {
+        } else if (g.phase == HUNT && !g.first_touch && g.played < 3) {
             band(150, 34);
-            text(158, "HOLD TO AIM ON THE LINE", g.c_amber, 1);
-            text(168, "SLIDE IN AND OUT", g.c_pale, 1);
-            text(178, "LET GO TO FIRE", g.c_pale, 1);
+            text(158, "TOUCH TO PLACE A PIN", g.c_amber, 1);
+            text(168, "SLIDE TO MOVE IT", g.c_pale, 1);
+            text(178, "LET GO TO DROP IT", g.c_pale, 1);
         }
         break;
     }
@@ -857,9 +867,10 @@ static void rd_draw(void)
             const bool hit = g.shot_result == SHOT_HIT;
             bloom(g.shot_cell, g.phase_t, hit ? g.c_amber : g.c_miss);
             if (g.phase_t > 0.25f && (hit || g.shot_sunk >= 0)) {
-                band(98, 38);
-                text(110, g.shot_sunk >= 0 ? "SHIP LOST" : "STRUCK", g.c_amber, 3);
-                text(128, g.shot_sunk >= 0 ? SHIP_NAME[g.shot_sunk] : "THEY FIRE AGAIN", g.c_pale, 1);
+                const int y = verdict_y(g.shot_cell);
+                band(y, 38);
+                text(y + 12, g.shot_sunk >= 0 ? "SHIP LOST" : "STRUCK", g.c_amber, 3);
+                text(y + 30, g.shot_sunk >= 0 ? SHIP_NAME[g.shot_sunk] : "THEY FIRE AGAIN", g.c_pale, 1);
             }
         }
         break;
@@ -874,7 +885,7 @@ static void rd_draw(void)
         text(86, g.won ? "ALL CONTACTS SUNK" : "YOUR FLEET IS LOST", g.c_dim, 1);
         text(104, g.won ? "VICTORY" : "DEFEAT", g.won ? g.c_green : g.c_red, 3);
         const char *stat_name[3] = {"SWEEPS", "ACCURACY", g.won ? "HULL LEFT" : "THEIR HULL"};
-        int value[3] = {g.sweeps + 1, g.shots ? g.hits * 100 / g.shots : 0, g.won ? g.mine.hull : g.theirs.hull};
+        int value[3] = {g.shots, g.shots ? g.hits * 100 / g.shots : 0, g.won ? g.mine.hull : g.theirs.hull};
         for (int k = 0; k < 3; k++) {
             const int x = CC + (k - 1) * 62;
             T->canvas_text_centered(g.cv, x, 126, stat_name[k], g.c_dim, 1, false);
