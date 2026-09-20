@@ -17,11 +17,14 @@
 // amber over your own water, so the two sides are never confused.
 //
 // Placing the fleet: drag a ship to where it should go, tap it (or twist the watch) to turn
-// it, and let go. PWR places whatever is left for you.
+// it. Nothing is final until you say so: any ship can be picked up and moved again, and when
+// all five are down the game asks whether to accept the fleet or place again. PWR places
+// whatever is left for you, or shuffles the lot.
 //
 // Written against tat_api.h alone. Built as a package with tools/mktat.py.
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "tat/tat_api.h"
@@ -54,7 +57,7 @@ static const tat_api_t *T;
 static const int SHIP_LEN[SHIPS] = {5, 4, 3, 3, 2};
 static const char *const SHIP_NAME[SHIPS] = {"CARRIER", "CRUISER", "DESTROYER", "SUBMARINE", "PATROL BOAT"};
 
-enum { TITLE, DEPLOY, READY, HUNT, TRACK, CONTACT, INCOMING, STRUCK, RESULT };
+enum { TITLE, DEPLOY, CONFIRM, READY, HUNT, TRACK, CONTACT, INCOMING, STRUCK, RESULT };
 enum { WATER = 0, SHOT_MISS = 1, SHOT_HIT = 2 };
 
 typedef struct {
@@ -97,7 +100,10 @@ static struct {
     bool first_touch;     // the how-to banner goes once a finger has been down
 
     // placing the fleet
-    int hand;             // the ship being placed
+    int hand;             // the ship being handled, or -1 when all are down and none is picked up
+    bool shown[SHIPS];    // it has been given somewhere to be
+    bool editing;         // "place again" was chosen: no more asking, an ACCEPT button instead
+    bool on_button;       // this touch began on it
     float twist;          // degrees turned since the last flip
     float touch_t;
     int touch_x0, touch_y0;
@@ -242,15 +248,47 @@ static void set_phase(int p)
     g.dirty = true;
 }
 
+static bool all_placed(void)
+{
+    for (int s = 0; s < SHIPS; s++)
+        if (!g.mine.ship[s].placed) return false;
+    return true;
+}
+
+// The next ship that is not down goes into the hand, somewhere it fits for the player to
+// move. With all five down, the fleet is offered for acceptance - once; after "place again"
+// there is a button for it instead.
+static void next_in_hand(void)
+{
+    g.dirty = true;
+    g.hand = -1;
+    for (int s = 0; s < SHIPS && g.hand < 0; s++)
+        if (!g.mine.ship[s].placed) g.hand = s;
+    if (g.hand < 0) {
+        if (!g.editing) set_phase(CONFIRM);
+        return;
+    }
+    if (g.shown[g.hand]) return;
+    for (int tries = 0;; tries++) {
+        const int span = tries < 40 ? 3 : HALF;
+        const int i = rnd(2 * span + 1) - span, j = rnd(2 * span + 1) - span;
+        if (!ship_fits(&g.mine, g.hand, i, j, false)) continue;
+        g.mine.ship[g.hand] = (ship_t){(int8_t)i, (int8_t)j, false, false, 0};
+        break;
+    }
+    g.shown[g.hand] = true;
+}
+
 static void begin_deploy(void)
 {
     fleet_clear(&g.mine);
     fleet_clear(&g.theirs);
     for (int s = 0; s < SHIPS; s++) ship_scatter(&g.theirs, s);
-    g.hand = 0;
+    memset(g.shown, 0, sizeof(g.shown));
+    g.editing = false;
+    g.on_button = false;
     g.twist = 0;
     g.dragged = false;
-    g.mine.ship[0] = (ship_t){-2, 0, false, false, 0};   // in the hand: shown, not yet put down
     g.shots = g.hits = 0;
     g.sweep = -TAU / 4;
     g.their_sweep = TAU / 4;
@@ -259,24 +297,7 @@ static void begin_deploy(void)
     g.first_touch = false;
     g.ai_queued = 0;
     set_phase(DEPLOY);
-}
-
-static void next_in_hand(void)
-{
-    while (g.hand < SHIPS && g.mine.ship[g.hand].placed) g.hand++;
-    if (g.hand >= SHIPS) {
-        set_phase(READY);
-        return;
-    }
-    // Somewhere it fits, near the middle, for the player to move.
-    for (int tries = 0;; tries++) {
-        const int span = tries < 40 ? 3 : HALF;
-        const int i = rnd(2 * span + 1) - span, j = rnd(2 * span + 1) - span;
-        if (!ship_fits(&g.mine, g.hand, i, j, false)) continue;
-        g.mine.ship[g.hand] = (ship_t){(int8_t)i, (int8_t)j, false, false, 0};
-        break;
-    }
-    g.dirty = true;
+    next_in_hand();
 }
 
 static void finish_game(bool won)
@@ -445,8 +466,7 @@ static bool hand_ok(void)
     return ship_fits(&g.mine, g.hand, h->i, h->j, h->vertical);
 }
 
-// The hand's ship is kept out of `at` until it is put down, so that it can be dragged over
-// the others.
+// A ship that is not down is kept out of `at`, so that it can be dragged over the others.
 static void hand_set(int i, int j, bool vertical)
 {
     ship_t *h = &g.mine.ship[g.hand];
@@ -464,13 +484,22 @@ static void hand_set(int i, int j, bool vertical)
 static void hand_turn(void)
 {
     ship_t *h = &g.mine.ship[g.hand];
+    const ship_t was = *h;
+    const bool was_ok = hand_ok();
     // About its middle, so that it turns where it is and not about one end.
     const int mid = SHIP_LEN[g.hand] / 2;
     if (h->vertical) hand_set(h->i - mid, h->j + mid, false);
     else hand_set(h->i + mid, h->j - mid, true);
+    // A ship that was fine where it was is not turned into somewhere it cannot be.
+    if (was_ok && !hand_ok()) {
+        *h = was;
+        sfx_no();
+        return;
+    }
     sfx_turn();
 }
 
+// Puts the hand's ship down if it can go there; if not it stays in the hand, red.
 static void hand_commit(void)
 {
     ship_t *h = &g.mine.ship[g.hand];
@@ -483,33 +512,79 @@ static void hand_commit(void)
     next_in_hand();
 }
 
+// The ship under a touch, down or not, or -1.
+static int ship_under(int tx, int ty)
+{
+    const float x = (float)tx / SCALE, y = (float)ty / SCALE;
+    int best = -1;
+    float best_d = 11.0f * 11.0f;   // a little more than half a cell: a thumb is not a stylus
+    for (int s = 0; s < SHIPS; s++) {
+        if (!g.shown[s]) continue;
+        const ship_t *h = &g.mine.ship[s];
+        for (int k = 0; k < SHIP_LEN[s]; k++) {
+            const float dx = x - (CC + (h->i + (h->vertical ? 0 : k)) * PITCH);
+            const float dy = y - (CC + (h->j + (h->vertical ? k : 0)) * PITCH);
+            if (dx * dx + dy * dy < best_d) best_d = dx * dx + dy * dy, best = s;
+        }
+    }
+    return best;
+}
+
+// The ACCEPT button of "place again", where the instructions were.
+static bool on_accept(int tx, int ty) { return ty / SCALE >= 208 && abs(tx / SCALE - CC) <= 42; }
+
 static void update_deploy(float dt, const tat_input_t *in)
 {
     if (in->clicked & TAT_BTN_B) {
-        // The rest, anywhere. The ship in the hand goes down where it is if it can.
-        if (hand_ok()) hand_commit();
-        for (int s = 0; s < SHIPS; s++)
+        // Whatever is not down goes down anywhere; with everything down, the lot is shuffled.
+        if (g.hand >= 0 && hand_ok()) ship_put(&g.mine, g.hand, g.mine.ship[g.hand].i, g.mine.ship[g.hand].j,
+                                               g.mine.ship[g.hand].vertical);
+        if (all_placed())
+            for (int s = 0; s < SHIPS; s++) ship_lift(&g.mine, s);
+        for (int s = 0; s < SHIPS; s++) {
             if (!g.mine.ship[s].placed) ship_scatter(&g.mine, s);
-        g.hand = SHIPS;
+            g.shown[s] = true;
+        }
         sfx_place();
-        set_phase(READY);
+        next_in_hand();
         return;
     }
 
-    // A twist of the watch turns the ship: a quarter turn's worth of intent is enough.
+    // A twist of the watch turns the ship in the hand: a quarter turn's worth of intent.
     g.twist += in->tilt.gz * dt;
     g.twist *= 1.0f - 1.5f * dt;   // and it has to be a twist, not a slow drift
     if (fabsf(g.twist) > 28.0f) {
         g.twist = 0;
-        hand_turn();
+        if (g.hand >= 0) hand_turn();
     }
 
-    const ship_t *h = &g.mine.ship[g.hand];
     if (in->touch.pressed) {
         g.touch_t = 0;
         g.touch_x0 = in->touch.x, g.touch_y0 = in->touch.y;
         g.dragged = false;
+        g.on_button = g.editing && all_placed() && on_accept(in->touch.x, in->touch.y);
+        // Any ship can be picked up again, down or not. A touch on open water is for the
+        // ship already in the hand.
+        const int s = g.on_button ? -1 : ship_under(in->touch.x, in->touch.y);
+        if (s >= 0) {
+            if (g.mine.ship[s].placed) ship_lift(&g.mine, s);
+            g.hand = s;
+            g.dirty = true;
+        }
     }
+    if (g.on_button) {
+        if (in->touch.released) {
+            g.on_button = false;
+            if (on_accept(in->touch.x, in->touch.y)) {
+                sfx_place();
+                set_phase(READY);
+            }
+        }
+        return;
+    }
+    if (g.hand < 0) return;
+
+    const ship_t *h = &g.mine.ship[g.hand];
     if (in->touch.down) {
         g.touch_t += dt;
         const int mx = in->touch.x - g.touch_x0, my = in->touch.y - g.touch_y0;
@@ -524,8 +599,30 @@ static void update_deploy(float dt, const tat_input_t *in)
         }
     }
     if (in->touch.released) {
-        if (g.dragged) hand_commit();
-        else if (g.touch_t < 0.4f) hand_turn();
+        if (!g.dragged && g.touch_t < 0.4f) hand_turn();
+        hand_commit();
+    }
+}
+
+// "Accept fleet?" Two buttons, in canvas pixels.
+#define ASK_Y 178
+#define ASK_H 22
+#define ASK_ACCEPT_X 38
+#define ASK_AGAIN_X 121
+#define ASK_W 74
+
+static void update_confirm(const tat_gestures_t *ges)
+{
+    if (!ges->tap) return;
+    const int x = ges->x / SCALE, y = ges->y / SCALE;
+    if (y < ASK_Y - 4 || y > ASK_Y + ASK_H + 4) return;
+    if (x >= ASK_ACCEPT_X && x < ASK_ACCEPT_X + ASK_W) {
+        sfx_place();
+        set_phase(READY);
+    } else if (x >= ASK_AGAIN_X && x < ASK_AGAIN_X + ASK_W) {
+        g.editing = true;
+        sfx_turn();
+        set_phase(DEPLOY);
     }
 }
 
@@ -570,6 +667,10 @@ static void rd_update(float dt)
             break;
         }
         update_deploy(dt, in);
+        break;
+
+    case CONFIRM:
+        update_confirm(ges);
         break;
 
     case READY:
@@ -778,30 +879,51 @@ static void rd_draw(void)
         break;
 
     case DEPLOY:
+    case CONFIRM:
     case READY: {
         paint_scope(0, false, false);
-        for (int s = 0; s < SHIPS; s++)
-            if (g.mine.ship[s].placed) hull(&g.mine.ship[s], SHIP_LEN[s], g.c_green, g.c_hull_bed);
+        for (int s = 0; s < SHIPS; s++) {
+            if (!g.shown[s]) continue;
+            const ship_t *h = &g.mine.ship[s];
+            if (h->placed) hull(h, SHIP_LEN[s], g.c_green, g.c_hull_bed);
+            else if (s != g.hand) hull(h, SHIP_LEN[s], g.c_cand, g.c_cand_bed);   // put aside for another
+        }
         if (g.phase == DEPLOY) {
-            const bool ok = hand_ok();
-            hull(&g.mine.ship[g.hand], SHIP_LEN[g.hand], ok ? g.c_amber : g.c_red, ok ? g.c_amber_bed : g.c_sunk_bed);
-            snprintf(line, sizeof(line), "%s %d", SHIP_NAME[g.hand], SHIP_LEN[g.hand]);
             label(12, "DEPLOY FLEET", g.c_dim);
-            label(23, line, g.c_amber);
-            label(211, "DRAG  TAP TO TURN", g.c_dim);
-            label(221, "PWR AUTO", g.c_dim);
+            if (g.hand >= 0) {
+                const bool ok = hand_ok();
+                hull(&g.mine.ship[g.hand], SHIP_LEN[g.hand], ok ? g.c_amber : g.c_red, ok ? g.c_amber_bed : g.c_sunk_bed);
+                snprintf(line, sizeof(line), "%s %d", SHIP_NAME[g.hand], SHIP_LEN[g.hand]);
+                label(23, line, ok ? g.c_amber : g.c_red);
+            } else {
+                label(23, "MOVE ANY SHIP", g.c_pale);
+            }
+            if (g.editing && all_placed()) {
+                T->canvas_fill_rect(g.cv, CC - 34, 211, 68, 14, g.c_green);
+                T->canvas_text_centered(g.cv, CC, 218, "ACCEPT", g.c_bg, 1, true);
+            } else {
+                label(211, "DRAG  TAP TO TURN", g.c_dim);
+                label(221, "PWR AUTO", g.c_dim);
+            }
+            // The roster: a bar per ship, as long as it is.
+            int x = CC - 46;
+            for (int s = 0; s < SHIPS; s++) {
+                const int w = SHIP_LEN[s] * 4;
+                const uint8_t col = g.mine.ship[s].placed ? g.c_green : s == g.hand ? g.c_amber : g.c_tick;
+                T->canvas_fill_rect(g.cv, x, 200, w, 3, col);
+                x += w + 5;
+            }
+        } else if (g.phase == CONFIRM) {
+            band(150, 58);   // low, so that most of the fleet being asked about can be seen
+            text(163, "ACCEPT FLEET?", g.c_white, 2);
+            T->canvas_fill_rect(g.cv, ASK_ACCEPT_X, ASK_Y, ASK_W, ASK_H, g.c_green);
+            T->canvas_text_centered(g.cv, ASK_ACCEPT_X + ASK_W / 2, ASK_Y + ASK_H / 2, "ACCEPT", g.c_bg, 1, true);
+            T->canvas_rect(g.cv, ASK_AGAIN_X, ASK_Y, ASK_W, ASK_H, g.c_amber);
+            T->canvas_text_centered(g.cv, ASK_AGAIN_X + ASK_W / 2, ASK_Y + ASK_H / 2, "PLACE AGAIN", g.c_amber, 1, true);
         } else {
             band(100, 34);
             text(111, "FLEET READY", g.c_green, 2);
             text(126, "FIND THEIRS", g.c_pale, 1);
-        }
-        // The roster: a bar per ship, as long as it is.
-        int x = CC - 46;
-        for (int s = 0; s < SHIPS && g.phase == DEPLOY; s++) {
-            const int w = SHIP_LEN[s] * 4;
-            const uint8_t col = g.mine.ship[s].placed ? g.c_green : s == g.hand ? g.c_amber : g.c_tick;
-            T->canvas_fill_rect(g.cv, x, 200, w, 3, col);
-            x += w + 5;
         }
         break;
     }

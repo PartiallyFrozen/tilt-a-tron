@@ -473,8 +473,11 @@ with the corners cut off by the round screen, 137 cells of water.
   a ship was when it sinks.
 - Then it is their turn: the same radar in amber, over your own water. They hunt on every
   other cell, and once they have hit something they work along it.
-- **Placing the fleet**: drag a ship (it rides above your finger), **tap** or twist the watch
-  to turn it, let go to put it down; red means it cannot go there. **PWR** places the rest.
+- **Placing the fleet**: drag a ship (it rides above your finger), **tap** it or twist the
+  watch to turn it, let go to put it down; red means it cannot go there. Nothing is final:
+  touch any ship to pick it up again. With all five down the game asks **ACCEPT** or **PLACE
+  AGAIN**; after "place again" there is an ACCEPT button at the bottom for when you are
+  happy. **PWR** places whatever is left, or shuffles the lot.
 - **Swipe left** for the menu. The title screen keeps your wins and your fewest shots.
 
 ## Pocket Watch (Clock)
