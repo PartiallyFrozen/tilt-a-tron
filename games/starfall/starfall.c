@@ -1028,7 +1028,7 @@ static void sf_draw(void)
         const tat_menu_row_t rows[] = {
             T->menu_sound_row(),
             {"UP / DOWN", g.invert ? "INVERTED" : "NORMAL", 0},
-            {"NEW RUN", "GO", T->ui_color(TAT_UI_ACCENT)},
+            {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
             {"BEST", best, T->ui_color(TAT_UI_LABEL)},
         };
         T->menu_draw(rows, 4, "PAUSED");

@@ -279,7 +279,8 @@ All apps follow the same conventions (use `console::ui` and `wc::Gestures`):
 bold text at scale 2 or larger; tap is the primary action; BOOT = home; PWR click
 = the app's secondary action (Breakout: change control); holding PWR is the console's
 power menu, so no app should ask for a hold longer than a second; PWR double-click on home = sleep; swipe left = the app's menu,
-swipe right = back; long menus use `console::ui::ScrollList`; tooltips explain
+swipe right = back; every game's menu has a **RESTART GAME** row, called that, so that
+starting over is never a matter of losing on purpose; long menus use `console::ui::ScrollList`; tooltips explain
 controls before play starts.
 Default to what's fun on a watch you hold: tilt, gravity, momentum, juice.
 
@@ -331,7 +332,8 @@ Handy for checking a game without picking the watch up.
 - **Tilt** (default): the paddle is locked to real-world "down". Turn the watch like
   a wheel and the paddle stays at the bottom while the rings rotate around it
 - **Tap** to launch / restart · **PWR** cycles control: tilt → drag → follow · **BOOT** home
-- **Swipe left** pauses (control, tilt direction, speed, home); saved to NVS
+- **Swipe left** pauses (control - drag, follow, tilt, tilt mirrored - speed, sound, restart
+  game); saved to NVS
 
 ## Marble Maze controls
 
@@ -346,7 +348,7 @@ Handy for checking a game without picking the watch up.
 
 - The picture stays upright; the whole watch is the steering wheel. Twist to steer
 - **Tilt forward** for throttle, **back** to brake (sensitivity or OFF in the menu)
-- **Touch** pauses · **Swipe left** menu (steering, tilt speed, sound, restart) · **BOOT** home
+- **Touch** pauses · **Swipe left** menu (steering, tilt speed, sound, restart game) · **BOOT** home
 - Three laps against five rivals; the pseudo-3D road is drawn upright into a 256x256
   buffer and rotated by the device's roll straight into the display bands
 
@@ -357,7 +359,7 @@ Handy for checking a game without picking the watch up.
 - Green ledges bounce, blue ones slide, brown ones crumble, red springs launch you
 - Stomp monsters from above or shoot them; touching one from the side ends the run
 - The sky turns to stars as you climb. **Swipe left** menu (tilt sensitivity, sound,
-  new game, best) · **BOOT** home. Best height is saved
+  restart game, best) · **BOOT** home. Best height is saved
 
 ## Tilt-a-tris controls
 
@@ -367,7 +369,7 @@ Handy for checking a game without picking the watch up.
 - **Tap** rotates the piece · **hold** soft-drops · **PWR** hard-drops
 - Some level-ups flip gravity: pieces rise from the core and the pile builds against
   the rim, until the next flip
-- Score, level and the next piece live in the core. **Swipe left** menu (sound, new
+- Score, level and the next piece live in the core. **Swipe left** menu (sound, restart
   game, best) · **BOOT** home. Best score is saved
 
 ## Sleepy Star controls
@@ -387,7 +389,7 @@ Handy for checking a game without picking the watch up.
 - What is counted is rings turned to a new place, against the fewest it takes (3 stars at
   that, 2 within two, 1 for any solve). Every level is generated on the watch from its number,
   the same for everybody
-- **PWR** or **swipe left** for the menu (level, sound, start the level over); a swipe that
+- **PWR** or **swipe left** for the menu (level, sound, restart game - which starts the level over); a swipe that
   starts on a ring is a turn of that ring, so swipe from the star or the rim
 - These are its third set of rules. The first two had the laser follow real-world "up" as the
   watch was turned, and each ring geared to the one inside it; it was clever, and on a wrist
@@ -419,7 +421,7 @@ Handy for checking a game without picking the watch up.
 - **Levels.** Each is a sortie: so many raiders before the clock runs out, on three shields.
   Clear it for a bonus on the time left and a shield back; the next has more raiders, quicker
   ones, a smaller sight, more mines, and gates that come oftener with less room
-- **Swipe left** menu (sound, up/down inverted, new run, best) · **BOOT** home. Best score
+- **Swipe left** menu (sound, up/down inverted, restart game, best) · **BOOT** home. Best score
   and best level are saved
 - A hybrid: the chase is the idea of *X-Wing Pursuit* by The Last Outpost Workshop (MIT); the
   gates are what was good in the first Starfall. The ships and art are our own - the famous
@@ -446,7 +448,7 @@ Handy for checking a game without picking the watch up.
   third triple, and anything landed onto a rail is doubled again. Letting go of the ollie
   early is what buys the time, so the height a gap does not need is the height there is to spend
 - Land on a rail from above to grind it: +5 m and a little speed back. Tap to pop off
-- The score is metres plus Aura. **Swipe left** menu (sound, tilt, new run, best) · **BOOT** home
+- The score is metres plus Aura. **Swipe left** menu (sound, tilt, restart game, best) · **BOOT** home
 - The mechanics are Canabalt's - speed that only builds, jump height by how long you hold,
   obstacles that cost speed rather than lives - learned from the MIT-licensed source of its
   HaxeFlixel port. None of its code or art is here; the tilt and the rails are ours
@@ -461,7 +463,7 @@ Handy for checking a game without picking the watch up.
   the round you reached is your score
 - That is all of it, on purpose: the one game here that does not use tilt. A first version
   pressed pads by tipping the watch toward them, and it was clever and no fun
-- **Swipe left** menu (sound, new game, best) · **BOOT** home. Best round is saved
+- **Swipe left** menu (sound, restart game, best) · **BOOT** home. Best round is saved
 
 ## Radar controls
 

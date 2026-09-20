@@ -837,7 +837,7 @@ static void draw_menu(void)
     const tat_menu_row_t rows[] = {
         {"LEVEL", buf, 0},
         T->menu_sound_row(),
-        {"RESET LEVEL", "GO", T->ui_color(TAT_UI_ACCENT)},
+        {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
     };
     T->menu_draw(rows, 3, "PAUSED");
 }

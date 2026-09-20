@@ -731,7 +731,7 @@ static void mz_draw(void)
         const tat_menu_row_t rows[] = {
             {"LEVEL", g.tilt_nx == 0 && g.tilt_ny == 0 ? "FLAT" : "CUSTOM", T->ui_color(TAT_UI_ACCENT)},
             T->menu_sound_row(),
-            {"NEW GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
+            {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
             {"BEST LEVEL", buf, T->ui_color(TAT_UI_LABEL)},
         };
         T->menu_draw(rows, 4, "PAUSED");

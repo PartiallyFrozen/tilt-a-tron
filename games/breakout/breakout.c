@@ -654,10 +654,22 @@ static void handle_input(float dt)
 
     if (T->menu_is_open()) {
         switch (T->menu_update()) {
-        case 0: set_mode((Mode)((g.mode + 1) % 3)); break;
-        case 1: g.tilt_invert = !g.tilt_invert; break;
-        case 2: g.speed_idx = (g.speed_idx + 1) % 3; break;
-        case 3: T->menu_toggle_sound(); break;
+        case 0:
+            // DRAG, FOLLOW, TILT, TILT MIRROR: the mirror is a way of tilting, not a setting
+            // of its own, and folding it in here leaves a row for RESTART GAME.
+            if (g.mode == MODE_TILT && !g.tilt_invert) {
+                g.tilt_invert = true;
+            } else {
+                g.tilt_invert = false;
+                set_mode((Mode)((g.mode + 1) % 3));
+            }
+            break;
+        case 1: g.speed_idx = (g.speed_idx + 1) % 3; break;
+        case 2: T->menu_toggle_sound(); break;
+        case 3:
+            new_game();
+            T->menu_close();
+            break;
         }
         // RESUME and HOME are handled inside menu_update(); either way the game resumes
         // through close_menu()'s settings save.
@@ -1165,10 +1177,10 @@ static void bk_draw(void)
     if (!g.scene) return;
     if (T->menu_is_open()) {
         const tat_menu_row_t rows[] = {
-            {"CONTROL", MODE_NAMES[g.mode], 0},
-            {"TILT DIR", g.tilt_invert ? "MIRROR" : "NORMAL", 0},
+            {"CONTROL", g.mode == MODE_TILT && g.tilt_invert ? "TILT MIRROR" : MODE_NAMES[g.mode], 0},
             {"SPEED", SPEED_NAMES[g.speed_idx], 0},
             T->menu_sound_row(),
+            {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
         };
         T->menu_draw(rows, 4, "PAUSED");
         return;

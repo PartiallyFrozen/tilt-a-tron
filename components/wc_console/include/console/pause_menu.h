@@ -17,7 +17,7 @@
 //   draw():
 //       if (menu_.isOpen()) {
 //           const ui::PauseMenu::Row rows[] = {{"TILT", kSens[tilt_sens]}, menu_.soundRow(),
-//                                              {"NEW GAME", "GO", ui::ACCENT}};
+//                                              {"RESTART GAME", "GO", ui::ACCENT}};
 //           menu_.draw(g, rows, 3);
 //           return;
 //       }

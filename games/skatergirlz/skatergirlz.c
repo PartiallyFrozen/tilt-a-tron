@@ -1093,7 +1093,7 @@ static void sk_draw(void)
         const tat_menu_row_t rows[] = {
             T->menu_sound_row(),
             {"TILT", SENS[g.sens], 0},
-            {"NEW RUN", "GO", T->ui_color(TAT_UI_ACCENT)},
+            {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
             {"BEST", best, T->ui_color(TAT_UI_LABEL)},
         };
         T->menu_draw(rows, 4, "PAUSED");

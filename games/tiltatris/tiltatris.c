@@ -583,7 +583,7 @@ static void tt_draw(void)
         snprintf(buf, sizeof(buf), "%d", g.best);
         const tat_menu_row_t rows[] = {
             T->menu_sound_row(),
-            {"NEW GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
+            {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
             {"BEST", buf, T->ui_color(TAT_UI_LABEL)},
         };
         T->menu_draw(rows, 3, "PAUSED");

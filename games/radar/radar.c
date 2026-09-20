@@ -955,7 +955,7 @@ static void rd_draw(void)
     if (T->menu_is_open()) {
         const tat_menu_row_t rows[] = {
             T->menu_sound_row(),
-            {"NEW BATTLE", "GO", T->ui_color(TAT_UI_ACCENT)},
+            {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
         };
         T->menu_draw(rows, 2, "PAUSED");
         return;

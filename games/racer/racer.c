@@ -908,7 +908,7 @@ static void rc_draw(void)
             {"STEERING", g.mirror ? "MIRROR" : "NORMAL", 0},
             {"TILT SPEED", kSens[g.pitch_sens], g.pitch_sens ? 0 : T->ui_color(TAT_UI_DIM)},
             T->menu_sound_row(),
-            {"RESTART RACE", "GO", T->ui_color(TAT_UI_ACCENT)},
+            {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
         };
         T->menu_draw(rows, 4, "PAUSED");
         return;

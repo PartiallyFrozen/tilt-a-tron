@@ -650,7 +650,7 @@ static void pd_draw(void)
         const tat_menu_row_t rows[] = {
             {"LEVEL", lvl, 0},
             T->menu_sound_row(),
-            {"RETRY", "GO", T->ui_color(TAT_UI_ACCENT)},
+            {"RESTART GAME", "GO", T->ui_color(TAT_UI_ACCENT)},
             {"FEWEST PINGS", g.best_bounces ? bnc : "-", T->ui_color(TAT_UI_LABEL)},
         };
         T->menu_draw(rows, 4, "PAUSED");
