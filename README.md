@@ -279,8 +279,9 @@ All apps follow the same conventions (use `console::ui` and `wc::Gestures`):
 bold text at scale 2 or larger; tap is the primary action; BOOT = home; PWR click
 = the app's secondary action (Breakout: change control); holding PWR is the console's
 power menu, so no app should ask for a hold longer than a second; PWR double-click on home = sleep; swipe left = the app's menu,
-swipe right = back; every game's menu has a **RESTART GAME** row, called that, so that
-starting over is never a matter of losing on purpose; long menus use `console::ui::ScrollList`; tooltips explain
+swipe right = back; every game's menu has a **RESTART GAME** row, called that, and it means
+a fresh start - level 1, no score, full lives, with records and the levels reached kept - so
+that starting over is never a matter of losing on purpose; long menus use `console::ui::ScrollList`; tooltips explain
 controls before play starts.
 Default to what's fun on a watch you hold: tilt, gravity, momentum, juice.
 
@@ -389,7 +390,7 @@ Handy for checking a game without picking the watch up.
 - What is counted is rings turned to a new place, against the fewest it takes (3 stars at
   that, 2 within two, 1 for any solve). Every level is generated on the watch from its number,
   the same for everybody
-- **PWR** or **swipe left** for the menu (level, sound, restart game - which starts the level over); a swipe that
+- **PWR** or **swipe left** for the menu (level, sound, restart game); a swipe that
   starts on a ring is a turn of that ring, so swipe from the star or the rim
 - These are its third set of rules. The first two had the laser follow real-world "up" as the
   watch was turned, and each ring geared to the one inside it; it was clever, and on a wrist

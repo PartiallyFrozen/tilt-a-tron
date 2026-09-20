@@ -5,7 +5,7 @@
 //                   into one of eight places. The light is redrawn as it turns, so the way
 //                   through is found by looking
 //   tap the star  - a hint: the ring that is in the wrong place
-//   PWR           - pause menu (level, sound, start the level over)
+//   PWR           - pause menu (level, sound, restart game)
 //   swipe left    - pause menu too, from the star or the rim; a swipe that starts on a ring
 //                   is a turn of that ring
 //
@@ -612,8 +612,8 @@ static void star_update(float dt)
         switch (T->menu_update()) {
         case 0: start_level(g.level >= g.depth ? 1 : g.level + 1); break;   /* step through the levels reached so far */
         case 1: T->menu_toggle_sound(); break;
-        case 2:
-            start_level(g.level);
+        case 2:   /* RESTART GAME: from the top. How far has been got is kept, and LEVEL goes back there */
+            start_level(1);
             T->menu_close();
             break;
         }

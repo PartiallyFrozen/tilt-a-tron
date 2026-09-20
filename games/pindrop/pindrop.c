@@ -491,8 +491,8 @@ static void pd_update(float dt)
             T->menu_invalidate();
             break;
         case 1: T->menu_toggle_sound(); break;
-        case 2:   /* RETRY */
-            start_run(g.level);
+        case 2:   /* RESTART GAME: from the top - level 1, a full set of lives. The levels reached are kept */
+            start_run(1);
             T->menu_close();
             break;
         }
