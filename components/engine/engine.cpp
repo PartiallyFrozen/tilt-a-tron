@@ -335,7 +335,8 @@ void Engine::loop()
         if (sleep_requested_) {
             sleep_requested_ = false;
             // Never drop the USB connection out from under a file copy.
-            if (!(busy_ && busy_())) doSleep();
+            if (busy_ && busy_()) ESP_LOGW(TAG, "sleep refused: a transfer is in progress");
+            else doSleep();
             continue;
         }
         if (pending_) continue;   // app asked to switch; skip drawing a stale frame

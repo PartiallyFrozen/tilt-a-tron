@@ -43,14 +43,17 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_ESP_WIFI_IRAM_OPT=n
 CONFIG_ESP_WIFI_RX_IRAM_OPT=n
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
-# Wi-Fi shares internal RAM with the display pipeline, so keep
-# its buffer pools modest and dynamic (dynamic ones can live in PSRAM).
+# Wi-Fi shares internal RAM with the display pipeline, so keep its buffer pools modest.
+# Receive buffers are mostly dynamic, which can live in PSRAM. Transmit buffers cannot: with
+# SPIRAM_TRY_ALLOCATE_WIFI_LWIP the driver only offers static ones (this file used to ask for
+# dynamic, and was quietly ignored), so say what is actually built: 16, in internal RAM.
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=24
-CONFIG_ESP_WIFI_TX_BUFFER_TYPE=1
-CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=24
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=16
 CONFIG_ESP_WIFI_RX_BA_WIN=8
-# Firmware uploads were ~13 KB/s with the default 5.7 KB TCP window.
+# Firmware uploads were ~13 KB/s with the default 5.7 KB TCP window. The send buffer stays
+# at 32 KB too: cutting it to 11 KB, to keep a burst inside those 16 transmit buffers, was
+# measured and made sending slower (about 200 KB/s against 250).
 CONFIG_LWIP_TCP_WND_DEFAULT=32768
 CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
 CONFIG_LWIP_TCP_RECVMBOX_SIZE=32

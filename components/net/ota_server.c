@@ -1,6 +1,7 @@
 #include "net/net.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -18,6 +19,7 @@
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "lwip/sockets.h"
 
 static const char *TAG = "ota";
 
@@ -115,6 +117,8 @@ static esp_err_t tilt_get(httpd_req_t *req)
 
 void net_set_screen_hook(net_screen_fn fn) { s_screen_fn = fn; }
 
+#define SEND_CHUNK 8192
+
 static esp_err_t screen_get(httpd_req_t *req)
 {
     if (!authed(req)) return deny(req);
@@ -128,18 +132,46 @@ static esp_err_t screen_get(httpd_req_t *req)
     }
     httpd_resp_set_type(req, png[0] == 'B' ? "image/bmp" : "image/png");   // BMP when memory is short
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    // A picture is a hundred times the size of anything else this server sends, and this
-    // board sends slowly (5-15 KB/s measured; why is not yet known - the log shows the Wi-Fi
-    // driver failing to get transmit buffers). Sent whole, one stall past the send timeout
-    // left the client with half a PNG. In pieces, with the radio out of power save and a
-    // longer timeout, it is still slow but it arrives.
+    // A picture is a hundred times the size of anything else this server sends. Sent whole,
+    // one stall past the send timeout left the client with half a PNG; so it goes in pieces,
+    // with the radio out of power save. (It once crawled at 5-15 KB/s on a weak signal. On a
+    // good one it measured 160 KB/s, and 250-300 once on_open() stopped every piece waiting
+    // for the last to be acknowledged - tools/wifi_speed.py. Most of a screenshot's time is
+    // now the three seconds the PNG takes to encode.)
     esp_wifi_set_ps(WIFI_PS_NONE);
     esp_err_t err = ESP_OK;
-    for (size_t at = 0; at < n && err == ESP_OK; at += 4096)
-        err = httpd_resp_send_chunk(req, (const char *)png + at, n - at < 4096 ? n - at : 4096);
+    for (size_t at = 0; at < n && err == ESP_OK; at += SEND_CHUNK)
+        err = httpd_resp_send_chunk(req, (const char *)png + at, n - at < SEND_CHUNK ? n - at : SEND_CHUNK);
     if (err == ESP_OK) err = httpd_resp_send_chunk(req, NULL, 0);
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
     free(png);
+    return err;
+}
+
+// GET /speed?kb=N: N KB of nothing in particular, as fast as it will go. The transmit path
+// and nothing else, for tools/wifi_speed.py - a screenshot's time is mostly spent encoding it.
+static esp_err_t speed_get(httpd_req_t *req)
+{
+    if (!authed(req)) return deny(req);
+    note_request();
+    char q[64] = "", v[12] = "";
+    int kb = 256;
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK && httpd_query_key_value(q, "kb", v, sizeof(v)) == ESP_OK)
+        kb = atoi(v);
+    if (kb < 1) kb = 1;
+    if (kb > 4096) kb = 4096;
+    char *block = heap_caps_malloc(SEND_CHUNK, MALLOC_CAP_SPIRAM);
+    if (!block) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no memory");
+    for (int i = 0; i < SEND_CHUNK; i++) block[i] = (char)(i * 31);
+    httpd_resp_set_type(req, "application/octet-stream");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    esp_err_t err = ESP_OK;
+    for (int left = kb * 1024; left > 0 && err == ESP_OK; left -= SEND_CHUNK)
+        err = httpd_resp_send_chunk(req, block, left < SEND_CHUNK ? left : SEND_CHUNK);
+    if (err == ESP_OK) err = httpd_resp_send_chunk(req, NULL, 0);
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+    free(block);
     return err;
 }
 
@@ -351,6 +383,17 @@ static esp_err_t update_post(httpd_req_t *req)
     return err;
 }
 
+// Every connection: send what there is, when there is some. Nagle's algorithm holds a short
+// last packet back until the one before it is acknowledged, and the other end holds its
+// acknowledgement back in case there is more to acknowledge; a chunked reply is all short
+// last packets, so every chunk waited out the other end's patience.
+static esp_err_t on_open(httpd_handle_t server, int fd)
+{
+    const int on = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
+    return ESP_OK;
+}
+
 esp_err_t ota_server_start(void)
 {
     if (s_server) return ESP_OK;
@@ -359,6 +402,7 @@ esp_err_t ota_server_start(void)
     cfg.recv_wait_timeout = 15;
     cfg.send_wait_timeout = 20;   // the default 5 s is shorter than a bad patch of Wi-Fi
     cfg.max_uri_handlers = 12;
+    cfg.open_fn = on_open;
     esp_err_t err = httpd_start(&s_server, &cfg);
     if (err != ESP_OK) return err;
     const httpd_uri_t uris[] = {
@@ -367,6 +411,7 @@ esp_err_t ota_server_start(void)
         {.uri = "/log", .method = HTTP_GET, .handler = log_get},
         {.uri = "/reboot", .method = HTTP_GET, .handler = reboot_get},
         {.uri = "/screen", .method = HTTP_GET, .handler = screen_get},
+        {.uri = "/speed", .method = HTTP_GET, .handler = speed_get},
         {.uri = "/input", .method = HTTP_GET, .handler = input_get},
         {.uri = "/tilt", .method = HTTP_GET, .handler = tilt_get},
         {.uri = "/update", .method = HTTP_POST, .handler = update_post},

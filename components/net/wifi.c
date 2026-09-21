@@ -244,10 +244,16 @@ bool net_enabled(void)
 static void save_enabled(bool on)
 {
     nvs_handle_t h;
-    if (nvs_open("wifi", NVS_READWRITE, &h) != ESP_OK) return;
-    nvs_set_u8(h, "enabled", on);
-    nvs_commit(h);
-    nvs_close(h);
+    // Said out loud when it fails: a switch that does not stay switched looks, from outside,
+    // exactly like a switch nobody touched.
+    esp_err_t err = nvs_open("wifi", NVS_READWRITE, &h);
+    if (err == ESP_OK) {
+        err = nvs_set_u8(h, "enabled", on);
+        if (err == ESP_OK) err = nvs_commit(h);
+        nvs_close(h);
+    }
+    if (err == ESP_OK) ESP_LOGI(TAG, "WI-FI switched %s", on ? "on" : "off");
+    else ESP_LOGE(TAG, "could not save WI-FI %s: %s", on ? "on" : "off", esp_err_to_name(err));
 }
 
 static void apply_config(const char *ssid, const char *pass)
@@ -271,15 +277,19 @@ void net_start_forced(void)
 void net_start(void)
 {
     if (!net_enabled() && !s_forced) {
+        ESP_LOGI(TAG, "not started: WI-FI is switched off in Settings");
         s_state = NET_OFF;
         return;
     }
     char ssid[33], pass[65];
     if (!get_creds(ssid, sizeof(ssid), pass, sizeof(pass))) {
+        ESP_LOGW(TAG, "not started: switched on, but no network has been chosen");
         s_state = NET_NO_NETWORK;
         return;
     }
     if (radio_on() != ESP_OK) {
+        ESP_LOGE(TAG, "not started: the radio would not come up (%u bytes of internal RAM free)",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
         s_state = NET_FAILED;
         return;
     }

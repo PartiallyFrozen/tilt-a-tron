@@ -1,6 +1,7 @@
 #include "engine/input.h"
 
 #include "board/board.h"
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -83,7 +84,11 @@ void input_task(void *)
                     if (last_click_us[i] && now_us - last_click_us[i] < kDoubleClickUs) {
                         dbl |= bit;
                         last_click_us[i] = 0;
+                        ESP_LOGI("input", "%s double-click", i ? "PWR" : "BOOT");
                     } else {
+                        ESP_LOGD("input", "%s click, held %d ms, %d ms after the last", i ? "PWR" : "BOOT",
+                                 int((now_us - press_start_us[i]) / 1000),
+                                 last_click_us[i] ? int((now_us - last_click_us[i]) / 1000) : -1);
                         last_click_us[i] = now_us;
                     }
                 }
@@ -153,7 +158,7 @@ void input_task(void *)
 
 bool Input::init()
 {
-    return xTaskCreatePinnedToCore(input_task, "input", 4096, nullptr, configMAX_PRIORITIES - 3, nullptr, 0) ==
+    return xTaskCreatePinnedToCore(input_task, "input", 5120, nullptr, configMAX_PRIORITIES - 3, nullptr, 0) ==
            pdPASS;
 }
 

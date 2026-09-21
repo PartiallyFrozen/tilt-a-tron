@@ -172,6 +172,13 @@ extern "C" void app_main(void)
 
     // Everything logged from here on can be read over Wi-Fi at /log.
     net_log_capture_start();
+    {
+        // Settings, saves and the Wi-Fi switch all live in NVS, and a full one fails quietly.
+        nvs_stats_t st;
+        if (nvs_get_stats(nullptr, &st) == ESP_OK)
+            ESP_LOGI(TAG, "nvs: %u of %u entries used, %u free", (unsigned)st.used_entries, (unsigned)st.total_entries,
+                     (unsigned)st.free_entries);
+    }
 
     // Three crashed boots in a row = safe mode: skip everything optional and just
     // bring up Wi-Fi so a fixed build can be sent over the air.

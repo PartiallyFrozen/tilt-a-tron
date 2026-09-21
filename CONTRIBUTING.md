@@ -55,8 +55,9 @@ builds for everyone.
 ```
 
 They compile the real firmware sources against stubs, so they test what ships. CI runs them
-before it builds anything. `python tools/bench.py` measures a watch over USB when you want
-to show a performance change rather than argue it.
+before it builds anything. `python tools/bench.py` measures a watch over USB, and
+`python tools/wifi_speed.py` how fast it sends over Wi-Fi, when you want to show a performance
+change rather than argue it.
 
 ## House style
 
