@@ -60,6 +60,10 @@ of ESP-IDF headers the firmware's sources include.
 | P | save a picture to `build/emu/<game>/` |
 | Esc, H | BOOT: home, which here is quit |
 
+`play <game> --record clip.mp4` films what is played (it needs ffmpeg): every frame, pixel for
+pixel at 2x on a black 1080 square, at exactly sixty frames a second of the game's own time, so
+the film is smooth even where the window was not.
+
 ## Testing
 
 `shot` has no window. It runs a script at exactly sixty frames a second of its own time, with
@@ -76,6 +80,9 @@ button b [seconds]                   PWR
 hold b  /  letgo                     PWR down and left down
 shot <file.png>                      sheet <file.png>   every shot so far, tiled
 ```
+
+From Python, `Console(game, defines=("SK_AUTOPILOT",))` builds the game with a test switch
+of its own turned on, as a separate library.
 
 `--seed N` changes the dice, `--fresh` forgets the saved scores first, `--quiet` drops the log.
 The log is the same one the watch serves at `/log`: whatever the game says with `T->log()`.

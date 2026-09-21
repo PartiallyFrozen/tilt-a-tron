@@ -95,15 +95,16 @@ def find_msvc():
     return cl, env
 
 
-def library_path(game):
+def library_path(game, defines=()):
     ext = ".dll" if os.name == "nt" else ".dylib" if sys.platform == "darwin" else ".so"
-    return os.path.join(OUT, game, game + ext)
+    # A build with test switches is a different library: it must not be mistaken for the game.
+    return os.path.join(OUT, game, game + "".join("+" + d for d in defines) + ext)
 
 
-def build(game, force=False, verbose=False):
-    defines = []
+def build(game, force=False, verbose=False, extra_defines=()):
+    defines = list(extra_defines)
     if game in SCREENS:
-        defines = [SCREENS[game]]
+        defines += [SCREENS[game]]
         game_sources = [os.path.join(ROOT, s) for s in SCREEN_SOURCES]
     else:
         game_dir = os.path.join(ROOT, "games", game)
@@ -112,7 +113,7 @@ def build(game, force=False, verbose=False):
         game_sources = sorted(glob.glob(os.path.join(game_dir, "*.c")))
     sources = [os.path.join(ROOT, s) for s in CONSOLE_SOURCES] + [os.path.join(HERE, "emu_core.cpp"),
                                                                  os.path.join(HERE, "emu_assets.c")] + game_sources
-    lib = library_path(game)
+    lib = library_path(game, extra_defines)
     headers = glob.glob(os.path.join(ROOT, "components", "*", "include", "**", "*.h"), recursive=True)
     newest = max(os.path.getmtime(p) for p in sources + headers + [os.path.abspath(__file__)])
     if not force and os.path.exists(lib) and os.path.getmtime(lib) >= newest:
@@ -168,12 +169,15 @@ def build(game, force=False, verbose=False):
 class Console:
     """One game, running. step() is a frame; frame() is what is on the screen."""
 
-    def __init__(self, game, seed=0, quiet=False, fresh=False, verbose=False):
+    _runs = 0
+
+    def __init__(self, game, seed=0, quiet=False, fresh=False, verbose=False, defines=()):
         self.game = game
-        lib = build(game, verbose=verbose)
+        lib = build(game, verbose=verbose, extra_defines=tuple(defines))
         # Loaded from a copy, so that the next build can replace the library while a window
         # still has the last one open.
-        self._copy = os.path.join(OUT, game, f"run-{os.getpid()}{os.path.splitext(lib)[1]}")
+        Console._runs += 1   # a second console in one process cannot overwrite a library still loaded
+        self._copy = os.path.join(OUT, game, f"run-{os.getpid()}-{Console._runs}{os.path.splitext(lib)[1]}")
         shutil.copyfile(lib, self._copy)
         self.lib = ctypes.CDLL(self._copy)
         L = self.lib
@@ -307,7 +311,10 @@ def run_script(console, script, out_dir):
 
 # ---------------------------------------------------------------------------- the window
 
-def play(console, zoom=1.0):
+def play(console, zoom=1.0, record=None):
+    """A window to play in. With `record`, what is played is also filmed: every frame, pixel for
+    pixel at 2x on a black 1080 square, at exactly sixty frames a second of the game's own time -
+    so the film is smooth even where the window was not."""
     import tkinter as tk
     from PIL import Image, ImageTk
 
@@ -320,6 +327,16 @@ def play(console, zoom=1.0):
     label.pack(padx=18, pady=(18, 6))
     status = tk.Label(root, bg="#0e0e1c", fg="#8a97c0", font=("Consolas", 9))
     status.pack(pady=(0, 10))
+
+    film = None
+    if record:
+        if not shutil.which("ffmpeg"):
+            sys.exit("recording needs ffmpeg on the PATH")
+        os.makedirs(os.path.dirname(os.path.abspath(record)) or ".", exist_ok=True)
+        film = subprocess.Popen(
+            ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", "1080x1080", "-r", "60",
+             "-i", "-", "-c:v", "libx264", "-preset", "fast", "-crf", "12", "-pix_fmt", "yuv420p", "-movflags",
+             "+faststart", record], stdin=subprocess.PIPE)
 
     state = {"turn": 0.0, "pitch": 0.0, "flat": False, "keys": set(), "quit": False, "photo": None, "last": time.time(), "shot": 0}
 
@@ -352,7 +369,7 @@ def play(console, zoom=1.0):
 
     def frame():
         now = time.time()
-        dt = min(0.05, now - state["last"])
+        dt = 1 / 60 if film else min(0.05, now - state["last"])
         state["last"] = now
         keys = state["keys"]
         rate = (25.0 if ("shift_l" in keys or "shift_r" in keys) else 90.0) * dt
@@ -366,9 +383,18 @@ def play(console, zoom=1.0):
         console.held = BTN_B if "b" in keys else 0
 
         if console.step(dt) or state["quit"]:
+            if film:
+                film.stdin.close()
+                film.wait()
+                print("filmed", record)
             console.close()
             root.destroy()
             return
+        if film:
+            shot = Image.new("RGB", (1080, 1080), (0, 0, 0))
+            shot.paste(Image.frombytes("RGB", (SCREEN, SCREEN), console.frame(corner=(0, 0, 0))).resize((932, 932), Image.NEAREST),
+                       (74, 74))
+            film.stdin.write(shot.tobytes())
         img = Image.frombytes("RGB", (SCREEN, SCREEN), console.frame(corner=(14, 14, 28)))
         if zoom != 1.0:
             img = img.resize((size, size), Image.NEAREST)
@@ -390,6 +416,7 @@ def main():
     p.add_argument("game")
     p.add_argument("--zoom", type=float, default=1.0)
     p.add_argument("--fresh", action="store_true", help="forget the saved scores first")
+    p.add_argument("--record", metavar="FILE.mp4", help="film what is played (needs ffmpeg)")
     s = sub.add_parser("shot", help="run a script and save pictures")
     s.add_argument("game")
     s.add_argument("script", help="the steps, or a file of them")
@@ -406,7 +433,7 @@ def main():
             build(g, force=True, verbose=True)
         return
     if args.cmd == "play":
-        play(Console(args.game, fresh=args.fresh, verbose=True), args.zoom)
+        play(Console(args.game, fresh=args.fresh, verbose=True), args.zoom, args.record)
         return
     script = open(args.script).read() if os.path.exists(args.script) else args.script
     console = Console(args.game, seed=args.seed, quiet=args.quiet, fresh=args.fresh, verbose=True)
