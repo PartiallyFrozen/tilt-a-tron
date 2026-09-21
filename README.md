@@ -193,7 +193,7 @@ wraps `idf.py` with the ESP-IDF 5.5.5 environment (`C:\Espressif`), e.g.
 | `components/link` | The USB link: the framed protocol over the serial port that the manager app speaks (`docs/GAME_API.md`) |
 | `components/audio` | Chiptune synth through the ES8311 codec |
 | `main/` | App registry (carousel order) + `BenchGame` bring-up/calibration app |
-| `docs/` | Board schematic, `GAME_API.md` (the OS/packages design), `SLEEPY_STAR_SPEC.md` |
+| `docs/` | `GAME_API.md` (the OS/packages design), `SLEEPY_STAR_SPEC.md`. The board's schematic is Waveshare's, and is on [their page for it](https://www.waveshare.com/esp32-s3-touch-amoled-1.75.htm) |
 
 ## Themes
 
